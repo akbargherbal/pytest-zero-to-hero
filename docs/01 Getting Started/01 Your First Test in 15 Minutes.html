@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>01 Your First Test in 15 Minutes</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #8b5cf6;
+            --bg-main: #0f172a;
+            --bg-card: #1e293b;
+            --bg-code: #0f172a;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --border: #334155;
+            --accent: #06b6d4;
+            --success: #10b981;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body { 
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.7; 
+            color: var(--text-primary); 
+            background: var(--bg-main);
+        }
+        
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            padding: 20px; 
+        }
+        
+        .home-btn { 
+            position: fixed; 
+            top: 20px; 
+            right: 20px; 
+            background: var(--accent);
+            color: white; 
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            text-decoration: none; 
+            z-index: 1000;
+            box-shadow: 0 4px 20px rgba(6, 182, 212, 0.4);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .home-btn:hover { 
+            background: #0891b2;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(6, 182, 212, 0.5);
+        }
+        
+        .breadcrumb { 
+            background: var(--bg-card);
+            padding: 12px 0; 
+            margin-bottom: 24px; 
+            font-size: 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        
+        .breadcrumb a { 
+            color: var(--accent);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        
+        .breadcrumb a:hover { 
+            color: var(--primary);
+            text-decoration: underline;
+        }
+        
+        .content { 
+            background: var(--bg-card);
+            padding: 3rem; 
+            border-radius: 16px; 
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border);
+        }
+        
+        .file-list { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); 
+            gap: 1.5rem; 
+            margin: 2rem 0; 
+        }
+        
+        .file-item { 
+            padding: 1.5rem; 
+            border: 1px solid var(--border);
+            border-radius: 12px; 
+            background: var(--bg-main);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .file-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .file-item:hover { 
+            transform: translateY(-4px); 
+            box-shadow: 0 8px 30px rgba(99, 102, 241, 0.3);
+            border-color: var(--primary);
+        }
+        
+        .file-item:hover::before {
+            opacity: 1;
+        }
+        
+        .file-item a { 
+            color: var(--text-primary);
+            text-decoration: none; 
+            font-weight: 600; 
+            display: block;
+            font-size: 1.1rem;
+        }
+        
+        .file-item a:hover { 
+            color: var(--primary);
+        }
+        
+        .file-type { 
+            font-size: 13px; 
+            color: var(--text-secondary);
+            margin-top: 8px; 
+            font-weight: 500;
+        }
+        
+        /* Code Blocks */
+        pre { 
+            background: var(--bg-code);
+            padding: 1.5rem; 
+            border-radius: 12px; 
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            margin: 1.5rem 0;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            position: relative;
+        }
+        
+        pre code { 
+            background: none;
+            padding: 0;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 0.9em;
+            line-height: 1.6;
+        }
+        
+        /* Copy Button */
+        .copy-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.2s;
+            opacity: 0.7;
+            z-index: 10;
+        }
+        
+        .copy-btn:hover {
+            opacity: 1;
+            background: var(--primary-dark);
+            transform: translateY(-1px);
+        }
+        
+        .copy-btn.copied {
+            background: var(--success);
+        }
+        
+        pre:hover .copy-btn {
+            opacity: 1;
+        }
+        
+        /* Inline Code */
+        code { 
+            background: var(--bg-code);
+            color: #8b5cf6;
+            padding: 3px 8px; 
+            border-radius: 6px; 
+            font-size: 1.1em;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            border: 1px solid var(--border);
+        }
+        
+        /* Headings */
+        h1, h2, h3, h4, h5, h6 { 
+            color: var(--text-primary);
+            margin: 2rem 0 1rem 0;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+        
+        h1 { 
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            border-bottom: 3px solid var(--primary);
+            padding-bottom: 12px;
+            margin-bottom: 1.5rem;
+        }
+        
+        h2 { 
+            font-size: 2rem;
+            color: var(--primary);
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 8px;
+        }
+        
+        h3 { 
+            font-size: 1.5rem;
+            color: var(--accent);
+        }
+        
+        /* Links */
+        a { 
+            color: var(--accent);
+            transition: color 0.2s;
+        }
+        
+        a:hover { 
+            color: var(--primary);
+        }
+        
+        /* Paragraphs */
+        p {
+            margin: 1rem 0;
+            color: var(--text-secondary);
+        }
+        
+        /* Lists */
+        ul, ol {
+            margin: 1rem 0;
+            padding-left: 2rem;
+            color: var(--text-secondary);
+        }
+        
+        li {
+            margin: 0.5rem 0;
+        }
+        
+        /* Tables */
+        table { 
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1.5rem 0;
+            background: var(--bg-main);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+        
+        th, td { 
+            border: 1px solid var(--border);
+            padding: 12px 16px;
+            text-align: left;
+        }
+        
+        th { 
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:hover {
+            background: var(--bg-card);
+        }
+        
+        /* Blockquotes */
+        blockquote {
+            border-left: 4px solid var(--primary);
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            background: var(--bg-main);
+            border-radius: 0 8px 8px 0;
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+        
+        /* Horizontal Rule */
+        hr {
+            border: none;
+            border-top: 2px solid var(--border);
+            margin: 2rem 0;
+        }
+        
+        .footer { 
+            text-align: center; 
+            padding: 2rem; 
+            color: var(--text-secondary);
+            border-top: 1px solid var(--border);
+            margin-top: 3rem; 
+            font-size: 14px;
+        }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 12px;
+            height: 12px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: var(--bg-main);
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 6px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--primary);
+        }
+        
+        @media (max-width: 768px) {
+            .container { padding: 10px; }
+            .file-list { grid-template-columns: 1fr; }
+            .content { padding: 1.5rem; }
+            h1 { font-size: 2rem; }
+            h2 { font-size: 1.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <a href="../index.html" class="home-btn">🏠</a>
+    <div class="container">
+        <div class="breadcrumb">
+            <div style="padding: 0 20px;">
+                <a href="../index.html">🏠 Home</a> <span style="color: #64748b;">/</span> <a href="index.html">01 Getting Started</a>
+            </div>
+        </div>
+        <div class="content">
+            <h1 id="chapter-1-your-first-test-in-15-minutes">Chapter 1: Your First Test in 15 Minutes</h1>
+<h2 id="why-we-test-the-quick-case">Why We Test (The Quick Case)</h2>
+<h2 id="why-we-test-the-quick-case_1">Why We Test (The Quick Case)</h2>
+<p>Before we write a single line of code, let's answer the most important question: why bother? You've probably written code that "just works" without tests. So why add this extra step?</p>
+<p>Imagine you've built a complex feature—a shopping cart, a data processing pipeline, a user authentication system. It works perfectly. A month later, you need to add a new feature or fix a bug elsewhere in the code. You make your changes, and everything seems fine. But unknowingly, you've broken the shopping cart. You won't find out until a customer complains, or worse, until you've lost sales.</p>
+<p><strong>Tests are your safety net.</strong></p>
+<p>They are small, automated scripts that verify your code behaves exactly as you expect. They run in seconds and give you immediate feedback.</p>
+<ul>
+<li><strong>Confidence to Change:</strong> With a good test suite, you can refactor, upgrade libraries, and add features without fear. If the tests pass, you know you haven't broken existing functionality.</li>
+<li><strong>A Living Document:</strong> Tests describe how your code is supposed to be used. A well-written test is better than outdated documentation.</li>
+<li><strong>Faster Development:</strong> This sounds counter-intuitive, but it's true. Instead of manually running your application and clicking through screens to check a change, you run a command that does it for you in milliseconds. This feedback loop is incredibly fast.</li>
+</ul>
+<p>In this chapter, we'll build that safety net, starting with a single knot. You'll write, run, and understand your first test in the next few minutes.</p>
+<h2 id="installing-pytest">Installing Pytest</h2>
+<h2 id="installing-pytest_1">Installing Pytest</h2>
+<p>Pytest is a third-party package, so we'll install it using <code>pip</code>, Python's package installer. It's highly recommended to do this inside a <strong>virtual environment</strong> to keep your project dependencies isolated. We'll cover virtual environments in detail in Chapter 3, but for now, let's just get pytest installed.</p>
+<p>Open your terminal or command prompt and run the following command:</p>
+<div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>pytest
+</code></pre></div>
+
+<p>You should see output indicating that <code>pytest</code> and its dependencies were successfully installed. To verify the installation, you can ask pytest for its version number:</p>
+<div class="codehilite"><pre><span></span><code>pytest<span class="w"> </span>--version
+</code></pre></div>
+
+<p>This should print the version of pytest you just installed, something like this (your version number may be different):</p>
+<div class="codehilite"><pre><span></span><code>pytest 7.4.2
+</code></pre></div>
+
+<p>That's it. Pytest is now ready to use.</p>
+<h2 id="writing-your-first-test-function">Writing Your First Test Function</h2>
+<h2 id="writing-your-first-test-function_1">Writing Your First Test Function</h2>
+<p>Let's create a simple project to test. We'll start with a single function that we want to verify.</p>
+<h3 id="the-code-to-test">### The Code to Test</h3>
+<p>First, create a new directory for our project. Let's call it <code>pytest_project</code>. Inside that directory, create a file named <code>main.py</code>.</p>
+<div class="codehilite"><pre><span></span><code>pytest_project/
+└── main.py
+</code></pre></div>
+
+<p>Now, add a simple function to <code>main.py</code>. This is the "production" code we want to test.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># main.py</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Adds two numbers together.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">subtract</span><span class="p">(</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Subtracts two numbers.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">x</span> <span class="o">-</span> <span class="n">y</span>
+</code></pre></div>
+
+<h3 id="the-test-file">### The Test File</h3>
+<p>Next, we need to create a file to hold our tests. Pytest has a simple but powerful way of discovering tests: it looks for files with names that start or end with <code>test_</code>.</p>
+<p>Create a new file in the same directory named <code>test_main.py</code>.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_main.py</span>
+
+<span class="c1"># We need to import the code we want to test</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">main</span><span class="w"> </span><span class="kn">import</span> <span class="n">add</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_add</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests the add function with positive integers.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># The core of a test is a simple &#39;assert&#39; statement.</span>
+    <span class="c1"># It checks if a condition is True.</span>
+    <span class="k">assert</span> <span class="n">add</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span> <span class="o">==</span> <span class="mi">5</span>
+    <span class="k">assert</span> <span class="n">add</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span> <span class="o">==</span> <span class="mi">15</span>
+</code></pre></div>
+
+<p>Let's break this down:</p>
+<ol>
+<li><strong><code>import from main</code></strong>: We import the <code>add</code> function from our <code>main.py</code> file so we can call it in our test.</li>
+<li><strong><code>def test_add():</code></strong>: This is our test function. Just like with filenames, pytest automatically discovers any function whose name starts with <code>test_</code>. This is the fundamental convention you need to know.</li>
+<li><strong><code>assert add(2, 3) == 5</code></strong>: This is the heart of the test. An <code>assert</code> statement is a built-in Python keyword that checks if a condition is true. If the condition is true, the test continues. If it's false, the test fails immediately and reports an <code>AssertionError</code>. Here, we are asserting that the result of calling <code>add(2, 3)</code> <em>is equal to</em> <code>5</code>.</li>
+</ol>
+<p>Our project structure now looks like this:</p>
+<div class="codehilite"><pre><span></span><code>pytest_project/
+├── main.py
+└── test_main.py
+</code></pre></div>
+
+<h2 id="running-your-first-test">Running Your First Test</h2>
+<h2 id="running-your-first-test_1">Running Your First Test</h2>
+<p>Now for the magic moment. Make sure your terminal is in the <code>pytest_project</code> directory. Then, simply run the <code>pytest</code> command with no arguments.</p>
+<div class="codehilite"><pre><span></span><code>pytest
+</code></pre></div>
+
+<p>Pytest will automatically scan your current directory and subdirectories for any files named <code>test_*.py</code> or <code>*_test.py</code>, and within those files, it will run any functions prefixed with <code>test_</code>.</p>
+<p>You should see output similar to this:</p>
+<div class="codehilite"><pre><span></span><code>============================= test session starts ==============================
+platform linux -- Python 3.11.4, pytest-7.4.2, pluggy-1.3.0
+rootdir: /path/to/pytest_project
+collected 1 item
+
+test_main.py .                                                         [100%]
+
+============================== 1 passed in 0.01s ===============================
+</code></pre></div>
+
+<p>The important parts are:</p>
+<ul>
+<li><strong><code>collected 1 item</code></strong>: Pytest found one test function (<code>test_add</code>).</li>
+<li><strong><code>test_main.py .</code></strong>: The <code>.</code> (dot) next to the filename means the test in that file passed.</li>
+<li><strong><code>1 passed in ...s</code></strong>: The final summary confirms that everything was successful.</li>
+</ul>
+<p>Congratulations! You've just written and run your first automated test.</p>
+<h2 id="understanding-test-results">Understanding Test Results</h2>
+<h2 id="understanding-test-results_1">Understanding Test Results</h2>
+<p>A passing test is great, but the real value of a testing framework is how it helps you when things go wrong. Let's intentionally make our test fail to see what happens.</p>
+<h3 id="a-failing-test">### A Failing Test</h3>
+<p>Modify <code>test_main.py</code> to check for an incorrect result.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_main.py</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">main</span><span class="w"> </span><span class="kn">import</span> <span class="n">add</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_add</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests the add function with positive integers.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">assert</span> <span class="n">add</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span> <span class="o">==</span> <span class="mi">5</span>
+    <span class="c1"># Let&#39;s add a failing assertion</span>
+    <span class="k">assert</span> <span class="n">add</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span> <span class="o">==</span> <span class="mi">10</span>  <span class="c1"># This is wrong! 10 + 5 is 15, not 10.</span>
+</code></pre></div>
+
+<p>Now, run <code>pytest</code> again from your terminal.</p>
+<div class="codehilite"><pre><span></span><code>pytest
+</code></pre></div>
+
+<p>This time, the output is very different. It's a detailed failure report, and learning to read it is one of the most important skills in testing.</p>
+<div class="codehilite"><pre><span></span><code>============================= test session starts ==============================
+platform linux -- Python 3.11.4, pytest-7.4.2, pluggy-1.3.0
+rootdir: /path/to/pytest_project
+collected 1 item
+
+test_main.py F                                                         [100%]
+
+=================================== FAILURES ===================================
+___________________________________ test_add ___________________________________
+
+    def test_add():
+        &quot;&quot;&quot;
+        Tests the add function with positive integers.
+        &quot;&quot;&quot;
+        assert add(2, 3) == 5
+        # Let&#39;s add a failing assertion
+&gt;       assert add(10, 5) == 10  # This is wrong! 10 + 5 is 15, not 10.
+E       assert 15 == 10
+E        +  where 15 = add(10, 5)
+
+test_main.py:9: AssertionError
+=========================== short test summary info ============================
+FAILED test_main.py::test_add - assert 15 == 10
+============================== 1 failed in 0.03s ===============================
+</code></pre></div>
+
+<h3 id="dissecting-the-failure-report">### Dissecting the Failure Report</h3>
+<p>This report is data, not just an error. It's a map telling you exactly where the problem is.</p>
+<ol>
+<li><strong><code>test_main.py F</code></strong>: The <code>.</code> has been replaced by an <code>F</code>, giving you an immediate visual cue that a test failed.</li>
+<li><strong><code>FAILURES</code> section</strong>: This is the detailed breakdown.</li>
+<li><strong><code>_________________ test_add _________________</code></strong>: It tells you the exact test function that failed.</li>
+<li><strong>The Code Traceback</strong>: It shows you the lines of code leading up to the failure. The line marked with <code>&gt;</code> is the exact line that failed: <code>assert add(10, 5) == 10</code>.</li>
+<li><strong>Assertion Introspection (The Magic)</strong>: This is the most powerful part. Pytest doesn't just say "assertion failed." It inspects the assertion and shows you the <em>actual values</em> involved.<ul>
+<li><code>E assert 15 == 10</code>: It shows the comparison it tried to make.</li>
+<li><code>E  +  where 15 = add(10, 5)</code>: It goes even further, showing you that the left side of the comparison, <code>add(10, 5)</code>, evaluated to <code>15</code>.</li>
+</ul>
+</li>
+</ol>
+<p>You don't have to guess or add <code>print()</code> statements to debug. Pytest tells you, "I expected <code>10</code>, but the function <code>add(10, 5)</code> actually returned <code>15</code>."</p>
+<p>Now, go back to <code>test_main.py</code>, fix the assertion, and run <code>pytest</code> one more time to see it pass.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_main.py (corrected)</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">main</span><span class="w"> </span><span class="kn">import</span> <span class="n">add</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_add</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests the add function with positive integers.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">assert</span> <span class="n">add</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span> <span class="o">==</span> <span class="mi">5</span>
+    <span class="k">assert</span> <span class="n">add</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span> <span class="o">==</span> <span class="mi">15</span> <span class="c1"># Corrected assertion</span>
+</code></pre></div>
+
+<p>Running <code>pytest</code> now will bring you back to the satisfying <code>1 passed</code> message.</p>
+<h2 id="what-youve-accomplished">What You've Accomplished</h2>
+<h2 id="what-youve-accomplished_1">What You've Accomplished</h2>
+<p>In just a few minutes, you have performed the fundamental workflow of testing that professionals use every day:</p>
+<ol>
+<li><strong>You wrote application code</strong> (<code>main.py</code>).</li>
+<li><strong>You wrote a test</strong> (<code>test_main.py</code>) that defines the correct behavior of that code.</li>
+<li><strong>You ran the test suite</strong> using the <code>pytest</code> command and saw it pass, giving you confidence that your code works.</li>
+<li><strong>You saw a test failure</strong> and learned how to read the detailed report to instantly diagnose the problem.</li>
+</ol>
+<p>This simple <code>write code -&gt; write test -&gt; run test</code> loop is the foundation upon which all modern software development is built. You've created a safety net for the <code>add</code> function. Now, no matter what other changes you make to your project, you can always run <code>pytest</code> to ensure this core piece of logic still works as intended.</p>
+<p>In the next chapter, we will build on these fundamentals, exploring assertions in more detail and learning more about how pytest's powerful test discovery really works.</p>
+        </div>
+        <div class="footer">
+            Generated on 2025-11-22 16:29:17 | Made with ❤️ by GitHub Pages Generator
+        </div>
+    </div>
+    <script>
+        // Syntax highlighting for code blocks
+        document.addEventListener('DOMContentLoaded', (event) => {
+            // Highlight code blocks
+            document.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+            
+            // Add copy buttons to code blocks
+            document.querySelectorAll('pre').forEach((pre) => {
+                const button = document.createElement('button');
+                button.className = 'copy-btn';
+                button.textContent = 'Copy';
+                
+                button.addEventListener('click', () => {
+                    const code = pre.querySelector('code').textContent;
+                    navigator.clipboard.writeText(code).then(() => {
+                        button.textContent = 'Copied!';
+                        button.classList.add('copied');
+                        setTimeout(() => {
+                            button.textContent = 'Copy';
+                            button.classList.remove('copied');
+                        }, 2000);
+                    }).catch(err => {
+                        console.error('Failed to copy:', err);
+                        button.textContent = 'Error';
+                        setTimeout(() => {
+                            button.textContent = 'Copy';
+                        }, 2000);
+                    });
+                });
+                
+                pre.appendChild(button);
+            });
+        });
+    </script>
+</body>
+</html>

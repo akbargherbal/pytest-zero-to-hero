@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>16 Continuous Integration and Automation</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #8b5cf6;
+            --bg-main: #0f172a;
+            --bg-card: #1e293b;
+            --bg-code: #0f172a;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --border: #334155;
+            --accent: #06b6d4;
+            --success: #10b981;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body { 
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.7; 
+            color: var(--text-primary); 
+            background: var(--bg-main);
+        }
+        
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            padding: 20px; 
+        }
+        
+        .home-btn { 
+            position: fixed; 
+            top: 20px; 
+            right: 20px; 
+            background: var(--accent);
+            color: white; 
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            text-decoration: none; 
+            z-index: 1000;
+            box-shadow: 0 4px 20px rgba(6, 182, 212, 0.4);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .home-btn:hover { 
+            background: #0891b2;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(6, 182, 212, 0.5);
+        }
+        
+        .breadcrumb { 
+            background: var(--bg-card);
+            padding: 12px 0; 
+            margin-bottom: 24px; 
+            font-size: 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        
+        .breadcrumb a { 
+            color: var(--accent);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        
+        .breadcrumb a:hover { 
+            color: var(--primary);
+            text-decoration: underline;
+        }
+        
+        .content { 
+            background: var(--bg-card);
+            padding: 3rem; 
+            border-radius: 16px; 
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border);
+        }
+        
+        .file-list { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); 
+            gap: 1.5rem; 
+            margin: 2rem 0; 
+        }
+        
+        .file-item { 
+            padding: 1.5rem; 
+            border: 1px solid var(--border);
+            border-radius: 12px; 
+            background: var(--bg-main);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .file-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .file-item:hover { 
+            transform: translateY(-4px); 
+            box-shadow: 0 8px 30px rgba(99, 102, 241, 0.3);
+            border-color: var(--primary);
+        }
+        
+        .file-item:hover::before {
+            opacity: 1;
+        }
+        
+        .file-item a { 
+            color: var(--text-primary);
+            text-decoration: none; 
+            font-weight: 600; 
+            display: block;
+            font-size: 1.1rem;
+        }
+        
+        .file-item a:hover { 
+            color: var(--primary);
+        }
+        
+        .file-type { 
+            font-size: 13px; 
+            color: var(--text-secondary);
+            margin-top: 8px; 
+            font-weight: 500;
+        }
+        
+        /* Code Blocks */
+        pre { 
+            background: var(--bg-code);
+            padding: 1.5rem; 
+            border-radius: 12px; 
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            margin: 1.5rem 0;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            position: relative;
+        }
+        
+        pre code { 
+            background: none;
+            padding: 0;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 0.9em;
+            line-height: 1.6;
+        }
+        
+        /* Copy Button */
+        .copy-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.2s;
+            opacity: 0.7;
+            z-index: 10;
+        }
+        
+        .copy-btn:hover {
+            opacity: 1;
+            background: var(--primary-dark);
+            transform: translateY(-1px);
+        }
+        
+        .copy-btn.copied {
+            background: var(--success);
+        }
+        
+        pre:hover .copy-btn {
+            opacity: 1;
+        }
+        
+        /* Inline Code */
+        code { 
+            background: var(--bg-code);
+            color: #8b5cf6;
+            padding: 3px 8px; 
+            border-radius: 6px; 
+            font-size: 1.1em;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            border: 1px solid var(--border);
+        }
+        
+        /* Headings */
+        h1, h2, h3, h4, h5, h6 { 
+            color: var(--text-primary);
+            margin: 2rem 0 1rem 0;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+        
+        h1 { 
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            border-bottom: 3px solid var(--primary);
+            padding-bottom: 12px;
+            margin-bottom: 1.5rem;
+        }
+        
+        h2 { 
+            font-size: 2rem;
+            color: var(--primary);
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 8px;
+        }
+        
+        h3 { 
+            font-size: 1.5rem;
+            color: var(--accent);
+        }
+        
+        /* Links */
+        a { 
+            color: var(--accent);
+            transition: color 0.2s;
+        }
+        
+        a:hover { 
+            color: var(--primary);
+        }
+        
+        /* Paragraphs */
+        p {
+            margin: 1rem 0;
+            color: var(--text-secondary);
+        }
+        
+        /* Lists */
+        ul, ol {
+            margin: 1rem 0;
+            padding-left: 2rem;
+            color: var(--text-secondary);
+        }
+        
+        li {
+            margin: 0.5rem 0;
+        }
+        
+        /* Tables */
+        table { 
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1.5rem 0;
+            background: var(--bg-main);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+        
+        th, td { 
+            border: 1px solid var(--border);
+            padding: 12px 16px;
+            text-align: left;
+        }
+        
+        th { 
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:hover {
+            background: var(--bg-card);
+        }
+        
+        /* Blockquotes */
+        blockquote {
+            border-left: 4px solid var(--primary);
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            background: var(--bg-main);
+            border-radius: 0 8px 8px 0;
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+        
+        /* Horizontal Rule */
+        hr {
+            border: none;
+            border-top: 2px solid var(--border);
+            margin: 2rem 0;
+        }
+        
+        .footer { 
+            text-align: center; 
+            padding: 2rem; 
+            color: var(--text-secondary);
+            border-top: 1px solid var(--border);
+            margin-top: 3rem; 
+            font-size: 14px;
+        }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 12px;
+            height: 12px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: var(--bg-main);
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 6px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--primary);
+        }
+        
+        @media (max-width: 768px) {
+            .container { padding: 10px; }
+            .file-list { grid-template-columns: 1fr; }
+            .content { padding: 1.5rem; }
+            h1 { font-size: 2rem; }
+            h2 { font-size: 1.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <a href="../index.html" class="home-btn">🏠</a>
+    <div class="container">
+        <div class="breadcrumb">
+            <div style="padding: 0 20px;">
+                <a href="../index.html">🏠 Home</a> <span style="color: #64748b;">/</span> <a href="index.html">05 Real-World Testing</a>
+            </div>
+        </div>
+        <div class="content">
+            <h1 id="chapter-16-continuous-integration-and-automation">Chapter 16: Continuous Integration and Automation</h1>
+<h2 id="running-tests-in-cicd-pipelines">Running Tests in CI/CD Pipelines</h2>
+<h2 id="the-automation-imperative">The Automation Imperative</h2>
+<p>So far, you've been running <code>pytest</code> on your local machine. This is essential for development, but it has a fundamental flaw: it relies on you, the developer, to remember to run the tests. What happens if you're in a hurry and forget? What if a colleague makes a change and doesn't run the full test suite?</p>
+<p>This is where Continuous Integration (CI) comes in.</p>
+<p><strong>Continuous Integration</strong> is the practice of automatically building and testing your code every time a change is pushed to a shared repository. A <strong>CI/CD Pipeline</strong> is the automated workflow that executes these steps.</p>
+<p>The core idea is simple but powerful:
+1.  A developer pushes a code change to a repository (e.g., on GitHub, GitLab).
+2.  This push automatically triggers a process on a server called a "runner" or "agent".
+3.  The runner creates a clean, temporary environment.
+4.  It checks out the latest code.
+5.  It installs the project's dependencies.
+6.  It runs the entire test suite using <code>pytest</code>.
+7.  It reports the result:
+    *   <strong>Success:</strong> All tests passed. The change is considered safe to merge.
+    *   <strong>Failure:</strong> At least one test failed. The change is flagged as problematic, preventing broken code from being integrated.</p>
+<p>This automated process acts as a safety net for your entire team. It ensures that no change can break the existing functionality without immediate detection. It's the foundation of modern, high-quality software development.</p>
+<p>In this chapter, we'll move pytest from your local machine into this automated world. We'll explore how to set up CI pipelines on popular platforms to run your tests automatically, providing constant feedback and protecting your codebase. The commands you've learned, like <code>pytest</code>, remain the same; we're just changing <em>who</em> (or what) runs them.</p>
+<h2 id="github-actions-for-python-testing">GitHub Actions for Python Testing</h2>
+<h2 id="github-actions-for-python-testing_1">GitHub Actions for Python Testing</h2>
+<p>GitHub Actions is a CI/CD system built directly into GitHub. If your code is hosted there, it's one of the easiest ways to get started with automation. Workflows are defined in YAML files placed in a special directory within your project.</p>
+<h3 id="the-wrong-way-manual-testing">The Wrong Way: Manual Testing</h3>
+<p>Imagine you have a simple project with a <code>requirements.txt</code> and a <code>tests/</code> directory. The manual process is:</p>
+<ol>
+<li><code>git pull</code> to get the latest code.</li>
+<li><code>pip install -r requirements.txt</code> to update dependencies.</li>
+<li><code>pytest</code> to run the tests.</li>
+</ol>
+<p>This is fine for one person, but it doesn't scale and is prone to human error. Let's automate it.</p>
+<h3 id="setting-up-your-first-workflow">Setting Up Your First Workflow</h3>
+<p>To create a GitHub Action, you need to create a YAML file in the <code>.github/workflows/</code> directory of your repository. Let's call our file <code>ci.yml</code>.</p>
+<p>First, let's create a simple project structure to test.</p>
+<p><strong>Project Structure:</strong></p>
+<div class="codehilite"><pre><span></span><code>my_project/
+├── .github/
+│   └── workflows/
+│       └── ci.yml
+├── src/
+│   └── calculator.py
+├── tests/
+│   └── test_calculator.py
+└── requirements.txt
+</code></pre></div>
+
+<p>Here's the code for our simple project.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/calculator.py</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Adds two numbers together.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">))</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">)):</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;Both arguments must be numbers&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
+</code></pre></div>
+
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_calculator.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.calculator</span><span class="w"> </span><span class="kn">import</span> <span class="n">add</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_add_integers</span><span class="p">():</span>
+    <span class="k">assert</span> <span class="n">add</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span> <span class="o">==</span> <span class="mi">5</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_add_floats</span><span class="p">():</span>
+    <span class="k">assert</span> <span class="n">add</span><span class="p">(</span><span class="mf">2.5</span><span class="p">,</span> <span class="mf">3.5</span><span class="p">)</span> <span class="o">==</span> <span class="mf">6.0</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_add_raises_type_error_for_strings</span><span class="p">():</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="ne">TypeError</span><span class="p">):</span>
+        <span class="n">add</span><span class="p">(</span><span class="s2">&quot;two&quot;</span><span class="p">,</span> <span class="s2">&quot;three&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<div class="codehilite"><pre><span></span><code># requirements.txt
+pytest
+</code></pre></div>
+
+<p>Now, let's create the GitHub Actions workflow file. This file tells GitHub what to do when code is pushed.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># .github/workflows/ci.yml</span>
+
+<span class="c1"># A name for the workflow, which will be displayed on GitHub</span>
+<span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Python CI</span>
+
+<span class="c1"># Trigger the workflow on pushes and pull requests to the &#39;main&#39; branch</span>
+<span class="nt">on</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">push</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">branches</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="s">&quot;main&quot;</span><span class="w"> </span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">pull_request</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">branches</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="s">&quot;main&quot;</span><span class="w"> </span><span class="p p-Indicator">]</span>
+
+<span class="c1"># Define the jobs to be run. We only have one job here: &#39;build&#39;.</span>
+<span class="nt">jobs</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">build</span><span class="p">:</span>
+<span class="w">    </span><span class="c1"># The type of runner that the job will run on.</span>
+<span class="w">    </span><span class="c1"># &#39;ubuntu-latest&#39; is a good default.</span>
+<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ubuntu-latest</span>
+
+<span class="w">    </span><span class="c1"># A job is a sequence of steps.</span>
+<span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
+<span class="w">      </span><span class="c1"># Step 1: Check out the repository code so the runner can access it.</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Check out repository</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/checkout@v4</span>
+
+<span class="w">      </span><span class="c1"># Step 2: Set up a specific version of Python.</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Set up Python 3.10</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/setup-python@v5</span>
+<span class="w">        </span><span class="nt">with</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">python-version</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;3.10&quot;</span>
+
+<span class="w">      </span><span class="c1"># Step 3: Install project dependencies.</span>
+<span class="w">      </span><span class="c1"># This is the same command you&#39;d run locally.</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Install dependencies</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">python -m pip install --upgrade pip</span>
+<span class="w">          </span><span class="no">pip install -r requirements.txt</span>
+
+<span class="w">      </span><span class="c1"># Step 4: Run pytest.</span>
+<span class="w">      </span><span class="c1"># The core of our CI pipeline!</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Run tests with pytest</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pytest</span>
+</code></pre></div>
+
+<h3 id="how-it-works">How It Works</h3>
+<p>Let's break down the YAML file:</p>
+<ul>
+<li><strong><code>name</code></strong>: The name of your workflow, shown in the "Actions" tab on GitHub.</li>
+<li><strong><code>on</code></strong>: Defines the events that trigger this workflow. Here, it runs on any <code>push</code> or <code>pull_request</code> to the <code>main</code> branch.</li>
+<li><strong><code>jobs</code></strong>: A workflow is made up of one or more jobs. Our job is named <code>build</code>.</li>
+<li><strong><code>runs-on</code></strong>: Specifies the virtual environment to run the job in. <code>ubuntu-latest</code> is a common and reliable choice.</li>
+<li><strong><code>steps</code></strong>: This is the sequence of tasks the job will execute.<ul>
+<li><code>uses: actions/checkout@v4</code>: This is a pre-built action that downloads your repository's code into the runner.</li>
+<li><code>uses: actions/setup-python@v5</code>: Another pre-built action that installs a specific Python version.</li>
+<li><code>run: ...</code>: This executes shell commands. We use it to install our dependencies from <code>requirements.txt</code> and then to run <code>pytest</code>.</li>
+</ul>
+</li>
+</ul>
+<p>Once you commit and push this file, go to the "Actions" tab of your repository on GitHub. You'll see your workflow running automatically!</p>
+<h3 id="testing-on-multiple-python-versions">Testing on Multiple Python Versions</h3>
+<p>What if your project needs to support Python 3.9, 3.10, and 3.11? Running tests on all versions manually is tedious. With CI, it's trivial. We can use a <code>strategy</code> matrix to run the same job multiple times with different Python versions.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># .github/workflows/ci.yml (updated with a matrix)</span>
+
+<span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Python CI</span>
+
+<span class="nt">on</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">push</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">branches</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="s">&quot;main&quot;</span><span class="w"> </span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">pull_request</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">branches</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="s">&quot;main&quot;</span><span class="w"> </span><span class="p p-Indicator">]</span>
+
+<span class="nt">jobs</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">build</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ubuntu-latest</span>
+
+<span class="w">    </span><span class="c1"># Define a matrix strategy</span>
+<span class="w">    </span><span class="nt">strategy</span><span class="p">:</span>
+<span class="w">      </span><span class="c1"># Don&#39;t cancel all jobs if one fails</span>
+<span class="w">      </span><span class="nt">fail-fast</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">      </span><span class="nt">matrix</span><span class="p">:</span>
+<span class="w">        </span><span class="c1"># List the Python versions to test against</span>
+<span class="w">        </span><span class="nt">python-version</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;3.9&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;3.10&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;3.11&quot;</span><span class="p p-Indicator">]</span>
+
+<span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Check out repository</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/checkout@v4</span>
+
+<span class="w">      </span><span class="c1"># Use the python-version from the matrix</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Set up Python ${{ matrix.python-version }}</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/setup-python@v5</span>
+<span class="w">        </span><span class="nt">with</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">python-version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ matrix.python-version }}</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Install dependencies</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">python -m pip install --upgrade pip</span>
+<span class="w">          </span><span class="no">pip install -r requirements.txt</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Run tests with pytest</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pytest</span>
+</code></pre></div>
+
+<p>With this change, GitHub will now automatically start three separate jobs in parallel, one for each Python version specified in the <code>matrix</code>. The <code>${{ matrix.python-version }}</code> syntax is how you access the current value from the matrix within your steps.</p>
+<p>This is a massive leap in testing robustness. You can be confident that your code works across all supported Python versions with every single change you make.</p>
+<h2 id="gitlab-ci-integration">GitLab CI Integration</h2>
+<h2 id="gitlab-ci-integration_1">GitLab CI Integration</h2>
+<p>GitLab has its own powerful, integrated CI/CD system. The concepts are identical to GitHub Actions—automating setup and test execution—but the syntax is different. Workflows are defined in a single file named <code>.gitlab-ci.yml</code> at the root of your repository.</p>
+<h3 id="the-gitlab-ciyml-file">The <code>.gitlab-ci.yml</code> File</h3>
+<p>GitLab CI is built around the concepts of <strong>stages</strong> and <strong>jobs</strong>. A typical pipeline might have stages like <code>build</code>, <code>test</code>, and <code>deploy</code>. Jobs are assigned to stages and run in order.</p>
+<p>Let's create a <code>.gitlab-ci.yml</code> for the same calculator project.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># .gitlab-ci.yml</span>
+
+<span class="c1"># Define the stages for the pipeline. Jobs will run in this order.</span>
+<span class="nt">stages</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test</span>
+
+<span class="c1"># Use a Docker image that comes with Python 3.10 pre-installed.</span>
+<span class="c1"># This is the environment where our commands will run.</span>
+<span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">python:3.10</span>
+
+<span class="c1"># This block of commands runs before each job.</span>
+<span class="c1"># It&#39;s a great place for setup tasks like installing dependencies.</span>
+<span class="nt">before_script</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">python -m pip install --upgrade pip</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pip install -r requirements.txt</span>
+
+<span class="c1"># Define a job named &#39;pytest_job&#39;. It belongs to the &#39;test&#39; stage.</span>
+<span class="nt">pytest_job</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">stage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test</span>
+<span class="w">  </span><span class="c1"># The actual commands to execute for this job.</span>
+<span class="w">  </span><span class="nt">script</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pytest</span>
+</code></pre></div>
+
+<h3 id="how-it-works_1">How It Works</h3>
+<ul>
+<li><strong><code>stages</code></strong>: We define a single stage named <code>test</code>.</li>
+<li><strong><code>image</code></strong>: This is a key concept in GitLab CI. It specifies a Docker image to use for the job's environment. By using <code>python:3.10</code>, we get a clean environment with Python 3.10 ready to go, saving us a setup step.</li>
+<li><strong><code>before_script</code></strong>: These commands are executed before the <code>script</code> section of any job. It's the perfect place to install dependencies, ensuring they are available for the test run.</li>
+<li><strong><code>pytest_job</code></strong>: This is the name of our job.<ul>
+<li><code>stage: test</code>: Assigns this job to the <code>test</code> stage.</li>
+<li><code>script</code>: The list of shell commands to execute. Here, we simply run <code>pytest</code>.</li>
+</ul>
+</li>
+</ul>
+<p>When you push this file to a GitLab repository, the pipeline will automatically start, create a Docker container from the <code>python:3.10</code> image, run the <code>before_script</code> commands, and finally execute the <code>pytest</code> command.</p>
+<h3 id="testing-on-multiple-python-versions-in-gitlab">Testing on Multiple Python Versions in GitLab</h3>
+<p>Just like with GitHub Actions, we can test against multiple Python versions using a matrix.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># .gitlab-ci.yml (updated with a matrix)</span>
+
+<span class="nt">stages</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test</span>
+
+<span class="c1"># We don&#39;t define a global image anymore, as each job will specify its own.</span>
+
+<span class="nt">pytest_job</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">stage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test</span>
+<span class="w">  </span><span class="c1"># The script is the same for all matrix jobs.</span>
+<span class="w">  </span><span class="nt">script</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">python -m pip install --upgrade pip</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pip install -r requirements.txt</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pytest</span>
+
+<span class="w">  </span><span class="c1"># Define the matrix strategy</span>
+<span class="w">  </span><span class="nt">parallel</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">matrix</span><span class="p">:</span>
+<span class="w">      </span><span class="c1"># Define a variable named PYTHON_VERSION with a list of values.</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">PYTHON_VERSION</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;3.9&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;3.10&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;3.11&quot;</span><span class="p p-Indicator">]</span>
+
+<span class="w">  </span><span class="c1"># Use the matrix variable to select the Docker image for each job.</span>
+<span class="w">  </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">python:${PYTHON_VERSION}</span>
+</code></pre></div>
+
+<p>Here's the updated logic:</p>
+<ul>
+<li>We removed the global <code>image</code> and <code>before_script</code>.</li>
+<li>The <code>pytest_job</code> now has a <code>parallel: matrix</code> section. This tells GitLab to create multiple parallel jobs based on the variables defined.</li>
+<li>We define a variable <code>PYTHON_VERSION</code> with our target versions.</li>
+<li>In the <code>image</code> key for the job, we use <code>python:${PYTHON_VERSION}</code>. GitLab substitutes this variable for each job, so it will use <code>image: python:3.9</code>, <code>image: python:3.10</code>, and so on.</li>
+<li>The setup commands are now moved inside the <code>script</code> block, as they need to run in each of the parallel jobs.</li>
+</ul>
+<p>The principle is the same as with GitHub Actions: define your variations in a matrix and use a variable to apply that variation to your job's configuration. The result is a robust test suite that runs automatically across all your supported environments.</p>
+<h2 id="jenkins-and-other-ci-systems">Jenkins and Other CI Systems</h2>
+<h2 id="jenkins-and-other-ci-systems_1">Jenkins and Other CI Systems</h2>
+<p>While GitHub Actions and GitLab CI are popular choices for projects hosted on their respective platforms, many other CI/CD systems exist, such as Jenkins, CircleCI, Travis CI, and Bitbucket Pipelines. Jenkins is one of the oldest and most powerful, often used for complex, self-hosted enterprise workflows.</p>
+<p>The good news is that the core principles are universal. No matter the system, you will always perform these steps:
+1.  Define a trigger (e.g., on commit).
+2.  Specify an execution environment (e.g., a Docker container, a specific virtual machine).
+3.  Check out the code.
+4.  Run shell commands to install dependencies.
+5.  Run shell commands to execute tests.</p>
+<p>The only thing that changes is the syntax of the configuration file.</p>
+<h3 id="jenkins-and-the-jenkinsfile">Jenkins and the <code>Jenkinsfile</code></h3>
+<p>Jenkins pipelines are typically defined in a file named <code>Jenkinsfile</code> in the root of the repository. This is called "pipeline-as-code."</p>
+<p>Here is a simple declarative <code>Jenkinsfile</code> that accomplishes the same task as our previous examples. This example assumes Jenkins is configured to run jobs inside a Docker container.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1">// Jenkinsfile</span>
+
+<span class="n">pipeline</span><span class="w"> </span><span class="o">{</span>
+<span class="w">    </span><span class="c1">// Define the agent (execution environment) for the entire pipeline.</span>
+<span class="w">    </span><span class="c1">// Here, we use a Docker container with Python 3.10.</span>
+<span class="w">    </span><span class="n">agent</span><span class="w"> </span><span class="o">{</span>
+<span class="w">        </span><span class="n">docker</span><span class="w"> </span><span class="o">{</span><span class="w"> </span><span class="n">image</span><span class="w"> </span><span class="s1">&#39;python:3.10&#39;</span><span class="w"> </span><span class="o">}</span>
+<span class="w">    </span><span class="o">}</span>
+
+<span class="w">    </span><span class="c1">// Define the stages of the pipeline.</span>
+<span class="w">    </span><span class="n">stages</span><span class="w"> </span><span class="o">{</span>
+<span class="w">        </span><span class="c1">// The &#39;Test&#39; stage</span>
+<span class="w">        </span><span class="n">stage</span><span class="o">(</span><span class="s1">&#39;Test&#39;</span><span class="o">)</span><span class="w"> </span><span class="o">{</span>
+<span class="w">            </span><span class="c1">// The steps to execute in this stage.</span>
+<span class="w">            </span><span class="n">steps</span><span class="w"> </span><span class="o">{</span>
+<span class="w">                </span><span class="c1">// The &#39;sh&#39; step executes a shell command.</span>
+<span class="w">                </span><span class="n">sh</span><span class="w"> </span><span class="s1">&#39;python -m pip install --upgrade pip&#39;</span>
+<span class="w">                </span><span class="n">sh</span><span class="w"> </span><span class="s1">&#39;pip install -r requirements.txt&#39;</span>
+<span class="w">                </span><span class="n">sh</span><span class="w"> </span><span class="s1">&#39;pytest&#39;</span>
+<span class="w">            </span><span class="o">}</span>
+<span class="w">        </span><span class="o">}</span>
+<span class="w">    </span><span class="o">}</span>
+<span class="o">}</span>
+</code></pre></div>
+
+<h3 id="how-it-works_2">How It Works</h3>
+<ul>
+<li><strong><code>pipeline</code></strong>: The top-level block that defines the entire workflow.</li>
+<li><strong><code>agent</code></strong>: Specifies where the pipeline will run. Using <code>agent { docker { ... } }</code> is a modern best practice, ensuring a clean, reproducible environment for every run, just like with GitLab CI.</li>
+<li><strong><code>stages</code></strong>: A container for one or more <code>stage</code> blocks.</li>
+<li><strong><code>stage('Test')</code></strong>: Defines a logical stage of the pipeline. In the Jenkins UI, you'll see the progress of each stage.</li>
+<li><strong><code>steps</code></strong>: The actual work happens here.</li>
+<li><strong><code>sh '...'</code></strong>: The command to execute a shell script. This is where we run our familiar <code>pip</code> and <code>pytest</code> commands.</li>
+</ul>
+<h3 id="the-universal-takeaway">The Universal Takeaway</h3>
+<p>Don't get bogged down in the specific syntax of each platform. Instead, focus on the pattern. Your <code>pytest</code> command is the heart of the operation. The CI system is just a wrapper—an automated shell—that prepares an environment and runs that command for you.</p>
+<p>If you need to use a new CI system, your task is to look up its documentation for the following:
+1.  How do I specify a Python environment (or Docker image)?
+2.  How do I check out code?
+3.  How do I run a shell command?</p>
+<p>Once you know those three things, you can run your pytest suite anywhere.</p>
+<h2 id="generating-test-reports">Generating Test Reports</h2>
+<h2 id="generating-test-reports_1">Generating Test Reports</h2>
+<p>When a CI pipeline fails, the log output tells you what went wrong. However, scrolling through hundreds of lines of text to find the error can be inefficient. Most CI systems can parse structured test reports to provide a much better user interface, showing a summary of test results, highlighting failures, and tracking test duration.</p>
+<p>The two most common report formats are <strong>JUnit XML</strong> and <strong>HTML</strong>.</p>
+<h3 id="junit-xml-reports-for-ci-integration">JUnit XML Reports for CI Integration</h3>
+<p>JUnit is a testing framework for Java, but its XML report format has become a de facto standard for CI/CD systems. Pytest can generate these reports easily.</p>
+<p>To generate a JUnit XML report, use the <code>--junitxml</code> command-line flag.</p>
+<p>Let's modify our CI scripts to generate and save this report.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># Command to run in your CI script</span>
+pytest<span class="w"> </span>--junitxml<span class="o">=</span>report.xml
+</code></pre></div>
+
+<p>This command runs your tests as usual, but it also creates a file named <code>report.xml</code> with the structured results.</p>
+<p>The next step is to tell the CI system that this file is an "artifact"—a file that should be saved and associated with the pipeline run.</p>
+<h4 id="github-actions-example-with-reports">GitHub Actions Example with Reports</h4>
+<div class="codehilite"><pre><span></span><code><span class="c1"># .github/workflows/ci.yml (with reporting)</span>
+
+<span class="c1"># ... (name, on, jobs, runs-on, strategy sections are the same) ...</span>
+
+<span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Check out repository</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/checkout@v4</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Set up Python ${{ matrix.python-version }}</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/setup-python@v5</span>
+<span class="w">        </span><span class="nt">with</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">python-version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ matrix.python-version }}</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Install dependencies</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">python -m pip install --upgrade pip</span>
+<span class="w">          </span><span class="no">pip install -r requirements.txt</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Run tests with pytest</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pytest --junitxml=report.xml</span>
+
+<span class="w">      </span><span class="c1"># New Step: Upload the test report as an artifact</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Upload test report</span>
+<span class="w">        </span><span class="c1"># This condition ensures the step runs even if previous steps fail</span>
+<span class="w">        </span><span class="nt">if</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">always()</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/upload-artifact@v4</span>
+<span class="w">        </span><span class="nt">with</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pytest-report-${{ matrix.python-version }}</span>
+<span class="w">          </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">report.xml</span>
+</code></pre></div>
+
+<p>The new <code>Upload test report</code> step uses the <code>actions/upload-artifact</code> action. After the workflow run is complete, you can download the <code>report.xml</code> file from the workflow summary page. Many GitHub Apps can also parse these reports to provide richer feedback directly in pull requests.</p>
+<h4 id="gitlab-ci-example-with-reports">GitLab CI Example with Reports</h4>
+<div class="codehilite"><pre><span></span><code><span class="c1"># .gitlab-ci.yml (with reporting)</span>
+
+<span class="c1"># ... (stages, etc. are the same) ...</span>
+
+<span class="nt">pytest_job</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">stage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test</span>
+<span class="w">  </span><span class="nt">script</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pip install -r requirements.txt</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pytest --junitxml=report.xml</span>
+
+<span class="w">  </span><span class="c1"># New Section: Define artifacts</span>
+<span class="w">  </span><span class="nt">artifacts</span><span class="p">:</span>
+<span class="w">    </span><span class="c1"># This condition ensures artifacts are saved even if the job fails</span>
+<span class="w">    </span><span class="nt">when</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">always</span>
+<span class="w">    </span><span class="nt">paths</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">report.xml</span>
+<span class="w">    </span><span class="c1"># Specify the report type for better UI integration</span>
+<span class="w">    </span><span class="nt">reports</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">junit</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">report.xml</span>
+</code></pre></div>
+
+<p>GitLab has first-class support for JUnit reports. By adding the <code>artifacts</code> section and specifying <code>reports: junit</code>, GitLab will automatically parse the <code>report.xml</code> file. In a merge request, it will show a summary of test changes, telling you which tests started failing, which were fixed, and which are new. This is incredibly valuable for code review.</p>
+<h3 id="html-reports-for-human-readable-output">HTML Reports for Human-Readable Output</h3>
+<p>While JUnit XML is great for machines, it's not easy for humans to read. For a visually appealing, shareable report, you can use the <code>pytest-html</code> plugin.</p>
+<p>First, add it to your <code>requirements.txt</code>.</p>
+<div class="codehilite"><pre><span></span><code># requirements.txt
+pytest
+pytest-html
+</code></pre></div>
+
+<p>Next, update your test command to generate an HTML report.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># Command to generate an HTML report</span>
+pytest<span class="w"> </span>--html<span class="o">=</span>report.html<span class="w"> </span>--self-contained-html
+</code></pre></div>
+
+<p>The <code>--self-contained-html</code> flag is useful for CI because it embeds the CSS into the HTML file, making it a single, portable file.</p>
+<p>You can then configure your CI pipeline to save this <code>report.html</code> as an artifact, just as we did with the XML file. This gives you a downloadable, browser-viewable report for every test run, which is excellent for manual inspection and archiving.</p>
+<h2 id="automated-testing-on-multiple-python-versions-tox">Automated Testing on Multiple Python Versions (tox)</h2>
+<h2 id="automated-testing-on-multiple-python-versions-tox_1">Automated Testing on Multiple Python Versions (tox)</h2>
+<p>We've seen how to configure CI platforms to run tests against a matrix of Python versions. This works, but it has a downside: the logic for installing dependencies and running tests is defined in the CI configuration file (e.g., <code>ci.yml</code>). If you want to run the same multi-version tests locally, you have to manually replicate those steps.</p>
+<p>This is the problem that <code>tox</code> solves. <strong>Tox is a command-line tool that automates and standardizes testing in Python.</strong> It allows you to define your test environments and commands in a single <code>tox.ini</code> file.</p>
+<h3 id="the-pain-before-tox">The Pain Before Tox</h3>
+<p>To test your project locally against Python 3.9 and 3.10, you would have to:
+1.  Make sure you have both Python 3.9 and 3.10 installed.
+2.  Create a virtual environment with Python 3.9.
+3.  Activate it and run <code>pip install -r requirements.txt</code>.
+4.  Run <code>pytest</code>.
+5.  Deactivate and delete the virtual environment.
+6.  Repeat steps 2-5 for Python 3.10.</p>
+<p>This is tedious and error-prone. <code>tox</code> automates this entire process.</p>
+<h3 id="setting-up-tox">Setting Up <code>tox</code></h3>
+<p>First, install <code>tox</code> and add it to your requirements (or a <code>requirements-dev.txt</code>).</p>
+<div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>tox
+</code></pre></div>
+
+<p>Next, create a <code>tox.ini</code> file in your project's root directory.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tox.ini</span>
+
+<span class="k">[tox]</span>
+<span class="c1"># Define the environments to run by default.</span>
+<span class="c1"># &#39;py39&#39; means &quot;run with Python 3.9&quot;.</span>
+<span class="na">envlist</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">py39, py310, py311</span>
+
+<span class="k">[testenv]</span>
+<span class="c1"># Define dependencies needed for testing.</span>
+<span class="c1"># This is separate from your main requirements.txt.</span>
+<span class="na">deps</span><span class="w"> </span><span class="o">=</span>
+<span class="w">    </span><span class="na">pytest</span>
+<span class="w">    </span><span class="na">pytest-html</span>
+
+<span class="c1"># Define the command(s) to run for testing.</span>
+<span class="na">commands</span><span class="w"> </span><span class="o">=</span>
+<span class="w">    </span><span class="na">pytest --junitxml</span><span class="o">=</span><span class="s">report.xml --html=report.html</span>
+</code></pre></div>
+
+<h3 id="how-it-works_3">How It Works</h3>
+<ul>
+<li><strong><code>[tox]</code> section</strong>:<ul>
+<li><code>envlist</code>: This is the list of environments <code>tox</code> will manage. When you run the <code>tox</code> command, it will execute the test suite for each environment in this list: <code>py39</code> (Python 3.9), <code>py310</code> (Python 3.10), and <code>py311</code> (Python 3.11).</li>
+</ul>
+</li>
+<li><strong><code>[testenv]</code> section</strong>:<ul>
+<li>This is a template for each environment defined in <code>envlist</code>.</li>
+<li><code>deps</code>: A list of dependencies to install into the temporary virtual environment that <code>tox</code> creates.</li>
+<li><code>commands</code>: The commands to execute within that environment.</li>
+</ul>
+</li>
+</ul>
+<p>Now, from your terminal, you can simply run:</p>
+<div class="codehilite"><pre><span></span><code>tox
+</code></pre></div>
+
+<p><code>tox</code> will perform the following actions automatically:
+1.  Look for <code>python3.9</code> on your system. If found, it creates a new virtual environment.
+2.  Installs <code>pytest</code> and <code>pytest-html</code> into that environment.
+3.  Runs the <code>pytest ...</code> command.
+4.  Repeats the process for <code>python3.10</code> and <code>python3.11</code>.
+5.  Reports a summary of which environments passed or failed.</p>
+<h3 id="integrating-tox-with-ci">Integrating <code>tox</code> with CI</h3>
+<p>The real power of <code>tox</code> comes from simplifying your CI configuration. Instead of telling your CI system <em>how</em> to test your code, you just tell it to run <code>tox</code>. The <code>tox.ini</code> file becomes the single source of truth for your testing procedure.</p>
+<p>Here is our GitHub Actions workflow, refactored to use <code>tox</code>.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># .github/workflows/ci.yml (refactored with tox)</span>
+
+<span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Python CI with tox</span>
+
+<span class="nt">on</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">push</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">branches</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="s">&quot;main&quot;</span><span class="w"> </span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">pull_request</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">branches</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="s">&quot;main&quot;</span><span class="w"> </span><span class="p p-Indicator">]</span>
+
+<span class="nt">jobs</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">build</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ubuntu-latest</span>
+<span class="w">    </span><span class="nt">strategy</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">fail-fast</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">      </span><span class="nt">matrix</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">python-version</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;3.9&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;3.10&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;3.11&quot;</span><span class="p p-Indicator">]</span>
+
+<span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Check out repository</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/checkout@v4</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Set up Python ${{ matrix.python-version }}</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/setup-python@v5</span>
+<span class="w">        </span><span class="nt">with</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">python-version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ matrix.python-version }}</span>
+
+<span class="w">      </span><span class="c1"># Install tox</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Install tox</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pip install tox</span>
+
+<span class="w">      </span><span class="c1"># Run tox. Tox will select the correct environment based on the Python version.</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Run tests with tox</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tox</span>
+</code></pre></div>
+
+<p>Look how much simpler the testing logic is!</p>
+<ul>
+<li>The <code>Install dependencies</code> step is gone.</li>
+<li>The <code>Run tests with pytest</code> step is replaced with a simple <code>run: tox</code>.</li>
+</ul>
+<p>The CI runner sets up a specific Python version (e.g., 3.9), and when <code>tox</code> runs, it intelligently detects that it's running in a Python 3.9 environment and therefore only executes the <code>py39</code> test environment from <code>tox.ini</code>.</p>
+<p>This pattern is a professional best practice:
+-   <strong>Single Source of Truth</strong>: The <code>tox.ini</code> file defines your test procedure for both local development and CI.
+-   <strong>Reproducibility</strong>: Any developer can clone the repository, run <code>tox</code>, and get the exact same test results as the CI server.
+-   <strong>Simplicity</strong>: Your CI configuration becomes minimal and declarative. It's only responsible for setting up environments, not for defining test logic.</p>
+        </div>
+        <div class="footer">
+            Generated on 2025-11-22 16:29:18 | Made with ❤️ by GitHub Pages Generator
+        </div>
+    </div>
+    <script>
+        // Syntax highlighting for code blocks
+        document.addEventListener('DOMContentLoaded', (event) => {
+            // Highlight code blocks
+            document.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+            
+            // Add copy buttons to code blocks
+            document.querySelectorAll('pre').forEach((pre) => {
+                const button = document.createElement('button');
+                button.className = 'copy-btn';
+                button.textContent = 'Copy';
+                
+                button.addEventListener('click', () => {
+                    const code = pre.querySelector('code').textContent;
+                    navigator.clipboard.writeText(code).then(() => {
+                        button.textContent = 'Copied!';
+                        button.classList.add('copied');
+                        setTimeout(() => {
+                            button.textContent = 'Copy';
+                            button.classList.remove('copied');
+                        }, 2000);
+                    }).catch(err => {
+                        console.error('Failed to copy:', err);
+                        button.textContent = 'Error';
+                        setTimeout(() => {
+                            button.textContent = 'Copy';
+                        }, 2000);
+                    });
+                });
+                
+                pre.appendChild(button);
+            });
+        });
+    </script>
+</body>
+</html>

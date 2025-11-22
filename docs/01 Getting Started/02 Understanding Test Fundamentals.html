@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>02 Understanding Test Fundamentals</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #8b5cf6;
+            --bg-main: #0f172a;
+            --bg-card: #1e293b;
+            --bg-code: #0f172a;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --border: #334155;
+            --accent: #06b6d4;
+            --success: #10b981;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body { 
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.7; 
+            color: var(--text-primary); 
+            background: var(--bg-main);
+        }
+        
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            padding: 20px; 
+        }
+        
+        .home-btn { 
+            position: fixed; 
+            top: 20px; 
+            right: 20px; 
+            background: var(--accent);
+            color: white; 
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            text-decoration: none; 
+            z-index: 1000;
+            box-shadow: 0 4px 20px rgba(6, 182, 212, 0.4);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .home-btn:hover { 
+            background: #0891b2;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(6, 182, 212, 0.5);
+        }
+        
+        .breadcrumb { 
+            background: var(--bg-card);
+            padding: 12px 0; 
+            margin-bottom: 24px; 
+            font-size: 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        
+        .breadcrumb a { 
+            color: var(--accent);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        
+        .breadcrumb a:hover { 
+            color: var(--primary);
+            text-decoration: underline;
+        }
+        
+        .content { 
+            background: var(--bg-card);
+            padding: 3rem; 
+            border-radius: 16px; 
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border);
+        }
+        
+        .file-list { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); 
+            gap: 1.5rem; 
+            margin: 2rem 0; 
+        }
+        
+        .file-item { 
+            padding: 1.5rem; 
+            border: 1px solid var(--border);
+            border-radius: 12px; 
+            background: var(--bg-main);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .file-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .file-item:hover { 
+            transform: translateY(-4px); 
+            box-shadow: 0 8px 30px rgba(99, 102, 241, 0.3);
+            border-color: var(--primary);
+        }
+        
+        .file-item:hover::before {
+            opacity: 1;
+        }
+        
+        .file-item a { 
+            color: var(--text-primary);
+            text-decoration: none; 
+            font-weight: 600; 
+            display: block;
+            font-size: 1.1rem;
+        }
+        
+        .file-item a:hover { 
+            color: var(--primary);
+        }
+        
+        .file-type { 
+            font-size: 13px; 
+            color: var(--text-secondary);
+            margin-top: 8px; 
+            font-weight: 500;
+        }
+        
+        /* Code Blocks */
+        pre { 
+            background: var(--bg-code);
+            padding: 1.5rem; 
+            border-radius: 12px; 
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            margin: 1.5rem 0;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            position: relative;
+        }
+        
+        pre code { 
+            background: none;
+            padding: 0;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 0.9em;
+            line-height: 1.6;
+        }
+        
+        /* Copy Button */
+        .copy-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.2s;
+            opacity: 0.7;
+            z-index: 10;
+        }
+        
+        .copy-btn:hover {
+            opacity: 1;
+            background: var(--primary-dark);
+            transform: translateY(-1px);
+        }
+        
+        .copy-btn.copied {
+            background: var(--success);
+        }
+        
+        pre:hover .copy-btn {
+            opacity: 1;
+        }
+        
+        /* Inline Code */
+        code { 
+            background: var(--bg-code);
+            color: #8b5cf6;
+            padding: 3px 8px; 
+            border-radius: 6px; 
+            font-size: 1.1em;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            border: 1px solid var(--border);
+        }
+        
+        /* Headings */
+        h1, h2, h3, h4, h5, h6 { 
+            color: var(--text-primary);
+            margin: 2rem 0 1rem 0;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+        
+        h1 { 
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            border-bottom: 3px solid var(--primary);
+            padding-bottom: 12px;
+            margin-bottom: 1.5rem;
+        }
+        
+        h2 { 
+            font-size: 2rem;
+            color: var(--primary);
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 8px;
+        }
+        
+        h3 { 
+            font-size: 1.5rem;
+            color: var(--accent);
+        }
+        
+        /* Links */
+        a { 
+            color: var(--accent);
+            transition: color 0.2s;
+        }
+        
+        a:hover { 
+            color: var(--primary);
+        }
+        
+        /* Paragraphs */
+        p {
+            margin: 1rem 0;
+            color: var(--text-secondary);
+        }
+        
+        /* Lists */
+        ul, ol {
+            margin: 1rem 0;
+            padding-left: 2rem;
+            color: var(--text-secondary);
+        }
+        
+        li {
+            margin: 0.5rem 0;
+        }
+        
+        /* Tables */
+        table { 
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1.5rem 0;
+            background: var(--bg-main);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+        
+        th, td { 
+            border: 1px solid var(--border);
+            padding: 12px 16px;
+            text-align: left;
+        }
+        
+        th { 
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:hover {
+            background: var(--bg-card);
+        }
+        
+        /* Blockquotes */
+        blockquote {
+            border-left: 4px solid var(--primary);
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            background: var(--bg-main);
+            border-radius: 0 8px 8px 0;
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+        
+        /* Horizontal Rule */
+        hr {
+            border: none;
+            border-top: 2px solid var(--border);
+            margin: 2rem 0;
+        }
+        
+        .footer { 
+            text-align: center; 
+            padding: 2rem; 
+            color: var(--text-secondary);
+            border-top: 1px solid var(--border);
+            margin-top: 3rem; 
+            font-size: 14px;
+        }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 12px;
+            height: 12px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: var(--bg-main);
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 6px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--primary);
+        }
+        
+        @media (max-width: 768px) {
+            .container { padding: 10px; }
+            .file-list { grid-template-columns: 1fr; }
+            .content { padding: 1.5rem; }
+            h1 { font-size: 2rem; }
+            h2 { font-size: 1.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <a href="../index.html" class="home-btn">🏠</a>
+    <div class="container">
+        <div class="breadcrumb">
+            <div style="padding: 0 20px;">
+                <a href="../index.html">🏠 Home</a> <span style="color: #64748b;">/</span> <a href="index.html">01 Getting Started</a>
+            </div>
+        </div>
+        <div class="content">
+            <h1 id="chapter-2-understanding-test-fundamentals">Chapter 2: Understanding Test Fundamentals</h1>
+<h2 id="assertions-the-heart-of-testing">Assertions: The Heart of Testing</h2>
+<h2 id="assertions-the-heart-of-testing_1">Assertions: The Heart of Testing</h2>
+<p>At its core, every test performs a simple, crucial action: it checks if something is true. This check is called an <strong>assertion</strong>. If the assertion is true, the test passes. If it's false, the test fails. Everything else in a testing framework is built to support this fundamental operation.</p>
+<p>A test without an assertion is like a detective who gathers clues but never identifies a suspect. It might run, but it doesn't prove anything.</p>
+<p>Pytest uses Python's built-in <code>assert</code> statement, making your tests clean, readable, and Pythonic. Let's see it in action with a simple function to test.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/wallet.py</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">InsufficientAmount</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="k">pass</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">Wallet</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">initial_amount</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">=</span> <span class="n">initial_amount</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">spend_cash</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">amount</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">&lt;</span> <span class="n">amount</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">InsufficientAmount</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Not enough available to spend </span><span class="si">{</span><span class="n">amount</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">-=</span> <span class="n">amount</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_cash</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">amount</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">+=</span> <span class="n">amount</span>
+</code></pre></div>
+
+<p>Now, let's write a test for the <code>add_cash</code> method using an <code>assert</code> statement.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_wallet.py</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.wallet</span><span class="w"> </span><span class="kn">import</span> <span class="n">Wallet</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_initial_amount</span><span class="p">():</span>
+    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">()</span>
+    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">0</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_wallet_add_cash</span><span class="p">():</span>
+    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+    <span class="n">wallet</span><span class="o">.</span><span class="n">add_cash</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">30</span>
+</code></pre></div>
+
+<p>Here, <code>assert wallet.balance == 30</code> is the heart of the test. It declares our expectation: "After adding 20 to a wallet with 10, the balance <em>must be</em> 30."</p>
+<h3 id="the-power-of-plain-assertions">The Power of Plain Assertions</h3>
+<p>If you've used other testing frameworks like Python's built-in <code>unittest</code>, you might be familiar with methods like <code>self.assertEqual()</code>, <code>self.assertTrue()</code>, or <code>self.assertIn()</code>.</p>
+<p>Pytest intentionally avoids these. Why? This is a core part of the pytest philosophy: <strong>keep tests simple and readable</strong>. Using the plain <code>assert</code> statement means you don't have to learn dozens of different assertion methods. You just use the same <code>assert</code> you might use for debugging or sanity checks in your application code.</p>
+<h3 id="what-happens-when-an-assertion-fails">What Happens When an Assertion Fails?</h3>
+<p>The real power of pytest's assertion system shines when a test fails. Pytest rewrites Python's <code>assert</code> statement to provide incredibly detailed and helpful output, a feature called <strong>assertion introspection</strong>.</p>
+<p>Let's introduce a bug into our <code>add_cash</code> method to see what happens.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/wallet.py (with a bug)</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">InsufficientAmount</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="k">pass</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">Wallet</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">initial_amount</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">=</span> <span class="n">initial_amount</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">spend_cash</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">amount</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">&lt;</span> <span class="n">amount</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">InsufficientAmount</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Not enough available to spend </span><span class="si">{</span><span class="n">amount</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">-=</span> <span class="n">amount</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_cash</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">amount</span><span class="p">):</span>
+        <span class="c1"># Oops! A bug is introduced here.</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">+=</span> <span class="n">amount</span> <span class="o">*</span> <span class="mi">2</span>
+</code></pre></div>
+
+<p>Now, let's run our test again.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span><span class="nv">pytest</span>
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
+
+tests/test_wallet.py<span class="w"> </span>.F<span class="w">                                                </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">=================================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">=================================</span>
+___________________________<span class="w"> </span>test_wallet_add_cash<span class="w"> </span>___________________________
+
+<span class="w">    </span>def<span class="w"> </span>test_wallet_add_cash<span class="o">()</span>:
+<span class="w">        </span><span class="nv">wallet</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>Wallet<span class="o">(</span><span class="m">10</span><span class="o">)</span>
+<span class="w">        </span>wallet.add_cash<span class="o">(</span><span class="m">20</span><span class="o">)</span>
+&gt;<span class="w">       </span>assert<span class="w"> </span>wallet.balance<span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">30</span>
+E<span class="w">       </span>assert<span class="w"> </span><span class="nv">50</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">30</span>
+E<span class="w">        </span>+<span class="w">  </span>where<span class="w"> </span><span class="nv">50</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">&amp;</span>lt<span class="p">;</span>Wallet<span class="w"> </span>object<span class="w"> </span>at<span class="w"> </span>0x...<span class="p">&amp;</span>gt<span class="p">;</span>.balance
+
+tests/test_wallet.py:12:<span class="w"> </span><span class="nv">AssertionError</span>
+<span class="o">=========================</span><span class="w"> </span>short<span class="w"> </span><span class="nb">test</span><span class="w"> </span>summary<span class="w"> </span><span class="nv">info</span><span class="w"> </span><span class="o">==========================</span>
+FAILED<span class="w"> </span>tests/test_wallet.py::test_wallet_add_cash<span class="w"> </span>-<span class="w"> </span>assert<span class="w"> </span><span class="nv">50</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nv">30</span>
+<span class="o">=======================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>failed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">=======================</span>
+</code></pre></div>
+
+<p>This failure report is a goldmine of information. Don't just see it as an error; see it as a detailed map to the problem.</p>
+<ol>
+<li><code>&gt; assert wallet.balance == 30</code>: Pytest shows you the exact line that failed.</li>
+<li><code>E assert 50 == 30</code>: It tells you what the values were at the moment of failure. The <code>E</code> stands for "Error line".</li>
+<li><code>E  +  where 50 = &lt;Wallet object ...&gt;.balance</code>: This is the magic of introspection. Pytest inspects the expression and tells you that the value <code>50</code> came from <code>wallet.balance</code>. You don't have to add <code>print()</code> statements or use a debugger to see what the value was.</li>
+</ol>
+<p>This rich feedback loop is a cornerstone of pytest's design. It helps you diagnose problems faster by giving you all the context you need directly in the test report.</p>
+<h2 id="test-functions-vs-other-functions">Test Functions vs. Other Functions</h2>
+<h2 id="test-functions-vs-other-functions_1">Test Functions vs. Other Functions</h2>
+<p>A pytest test function is, for the most part, a regular Python function. It can contain any valid Python code. However, a few key characteristics distinguish it from a non-test function.</p>
+<table>
+<thead>
+<tr>
+<th>Characteristic</th>
+<th>Test Function (<code>test_*</code>)</th>
+<th>Regular/Helper Function</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Purpose</strong></td>
+<td>To verify behavior with assertions.</td>
+<td>To perform a task, calculate a value, or cause an effect.</td>
+</tr>
+<tr>
+<td><strong>Naming</strong></td>
+<td>Must be prefixed with <code>test_</code>.</td>
+<td>Can have any name that doesn't start with <code>test_</code>.</td>
+</tr>
+<tr>
+<td><strong>Return Value</strong></td>
+<td>Almost never returns a value. Its success is its completion.</td>
+<td>Often returns a value.</td>
+</tr>
+<tr>
+<td><strong>Execution</strong></td>
+<td>Run automatically by the pytest test runner.</td>
+<td>Called explicitly by your code (or a test function).</td>
+</tr>
+</tbody>
+</table>
+<p>Let's look at an example. Imagine we need to create a wallet with a specific setup for multiple tests. We could write a helper function.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_wallet_helpers.py</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.wallet</span><span class="w"> </span><span class="kn">import</span> <span class="n">Wallet</span>
+
+<span class="c1"># This is a HELPER function, not a test.</span>
+<span class="c1"># Pytest will ignore it because its name doesn&#39;t start with `test_`.</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">create_wallet_with_transactions</span><span class="p">(</span><span class="n">initial_amount</span><span class="p">,</span> <span class="n">transactions</span><span class="p">):</span>
+    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="n">initial_amount</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">amount</span> <span class="ow">in</span> <span class="n">transactions</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">amount</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">wallet</span><span class="o">.</span><span class="n">add_cash</span><span class="p">(</span><span class="n">amount</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># spending is represented by negative numbers</span>
+            <span class="n">wallet</span><span class="o">.</span><span class="n">spend_cash</span><span class="p">(</span><span class="nb">abs</span><span class="p">(</span><span class="n">amount</span><span class="p">))</span>
+    <span class="k">return</span> <span class="n">wallet</span>
+
+<span class="c1"># This is a TEST function.</span>
+<span class="c1"># Pytest will discover and run it.</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_wallet_creation_with_transactions</span><span class="p">():</span>
+    <span class="c1"># It calls our helper function.</span>
+    <span class="n">my_wallet</span> <span class="o">=</span> <span class="n">create_wallet_with_transactions</span><span class="p">(</span><span class="mi">50</span><span class="p">,</span> <span class="p">[</span><span class="mi">10</span><span class="p">,</span> <span class="o">-</span><span class="mi">20</span><span class="p">,</span> <span class="mi">5</span><span class="p">])</span>
+
+    <span class="c1"># It contains the assertion.</span>
+    <span class="k">assert</span> <span class="n">my_wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">45</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_another_scenario</span><span class="p">():</span>
+    <span class="c1"># We can reuse the helper.</span>
+    <span class="n">my_wallet</span> <span class="o">=</span> <span class="n">create_wallet_with_transactions</span><span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="p">[</span><span class="o">-</span><span class="mi">30</span><span class="p">,</span> <span class="o">-</span><span class="mi">50</span><span class="p">])</span>
+    <span class="k">assert</span> <span class="n">my_wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">20</span>
+</code></pre></div>
+
+<p>In this example:
+- <code>create_wallet_with_transactions</code> is a standard Python function. It takes arguments and returns a value. Pytest does not run it directly because its name doesn't start with <code>test_</code>. It exists only to support our tests and reduce code duplication.
+- <code>test_wallet_creation_with_transactions</code> is a test function. It has no arguments (for now) and returns nothing. Its job is to set up a scenario (by calling the helper), execute the code under test, and make an assertion. Pytest will find and run this function.</p>
+<p>This separation is crucial. Helper functions make your tests cleaner and more maintainable, while test functions provide the entry points for the test runner. The naming convention is the simple, powerful rule that allows pytest to tell them apart.</p>
+<h2 id="test-discovery-how-pytest-finds-your-tests">Test Discovery: How Pytest Finds Your Tests</h2>
+<h2 id="test-discovery-how-pytest-finds-your-tests_1">Test Discovery: How Pytest Finds Your Tests</h2>
+<p>When you type <code>pytest</code> in your terminal, it seems like magic. Pytest scans your project, finds all the relevant files and functions, and runs them. But this isn't magic; it's a well-defined process called <strong>test discovery</strong>. Understanding this process is key to structuring your projects effectively.</p>
+<p>Pytest follows a simple set of rules by default:</p>
+<ol>
+<li><strong>File Discovery</strong>: It looks for files named <code>test_*.py</code> or <code>*_test.py</code>.</li>
+<li><strong>Function Discovery</strong>: Within those files, it looks for functions prefixed with <code>test_</code>.</li>
+<li><strong>Class Discovery</strong>: It also discovers methods prefixed with <code>test_</code> inside classes prefixed with <code>Test</code>. (We'll cover class-based testing in Chapter 10).</li>
+</ol>
+<h3 id="seeing-discovery-in-action">Seeing Discovery in Action</h3>
+<p>To demystify this process, you can ask pytest to show you what it finds without actually running the tests. This is done with the <code>--collect-only</code> flag. It's one of the most useful commands for debugging your test setup.</p>
+<p>Let's create a project structure with a few files, some of which should be ignored.</p>
+<p><strong>Project Structure:</strong></p>
+<div class="codehilite"><pre><span></span><code>project/
+├── src/
+│   └── wallet.py
+└── tests/
+    ├── test_wallet.py
+    ├── wallet_helpers.py
+    └── check_spending.py
+</code></pre></div>
+
+<p>Here's the content of the new files:</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_wallet.py</span>
+<span class="c1"># (This file contains our existing tests like test_wallet_add_cash)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.wallet</span><span class="w"> </span><span class="kn">import</span> <span class="n">Wallet</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_wallet_add_cash</span><span class="p">():</span>
+    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+    <span class="n">wallet</span><span class="o">.</span><span class="n">add_cash</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">30</span>
+</code></pre></div>
+
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/wallet_helpers.py</span>
+<span class="c1"># This file contains helper functions, but no tests.</span>
+<span class="c1"># Its name does not start with `test_`.</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">setup_test_user</span><span class="p">():</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;test_user&quot;</span><span class="p">,</span> <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="mi">123</span><span class="p">}</span>
+</code></pre></div>
+
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/check_spending.py</span>
+<span class="c1"># This file&#39;s name does NOT start with `test_`.</span>
+<span class="c1"># Even though the function inside does, the file will be skipped.</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.wallet</span><span class="w"> </span><span class="kn">import</span> <span class="n">Wallet</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_spending_is_correct</span><span class="p">():</span>
+    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
+    <span class="n">wallet</span><span class="o">.</span><span class="n">spend_cash</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">10</span>
+</code></pre></div>
+
+<p>Now, let's run the discovery process from the <code>project/</code> directory.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>--collect-only
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
+
+<span class="p">&amp;</span>lt<span class="p">;</span>Module<span class="w"> </span>tests/test_wallet.py<span class="p">&amp;</span>gt<span class="p">;</span>
+<span class="w">  </span><span class="p">&amp;</span>lt<span class="p">;</span>Function<span class="w"> </span>test_wallet_add_cash<span class="p">&amp;</span>gt<span class="p">;</span>
+
+<span class="o">========================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>item<span class="w"> </span>collected<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">========================</span>
+</code></pre></div>
+
+<p>The output clearly shows what pytest is thinking:
+- It found <code>tests/test_wallet.py</code> because the filename matches the <code>test_*.py</code> pattern.
+- Inside that file, it found the function <code>test_wallet_add_cash</code>.
+- It completely ignored <code>tests/wallet_helpers.py</code> because the filename doesn't match.
+- It also ignored <code>tests/check_spending.py</code> for the same reason, even though it contains a function named <code>test_spending_is_correct</code>.</p>
+<p>This demonstrates a critical lesson: <strong>both the file and the function must follow the naming convention.</strong> If you ever write a test and find that it's not running, the first thing to check is your naming and the output of <code>pytest --collect-only</code>.</p>
+<h2 id="naming-conventions-that-matter">Naming Conventions That Matter</h2>
+<h2 id="naming-conventions-that-matter_1">Naming Conventions That Matter</h2>
+<p>We've established that the <code>test_</code> prefix is a technical requirement for test discovery. But good naming goes far beyond that. A well-named test function is a form of documentation. It describes exactly what behavior is being verified.</p>
+<p>Consider these two test names for the same test:
+1.  <code>test_1()</code>
+2.  <code>test_spend_cash_raises_exception_on_insufficient_funds()</code></p>
+<p>When you run pytest, the test report becomes a readable list of your application's features and guarantees.</p>
+<h3 id="the-anatomy-of-a-good-test-name">The Anatomy of a Good Test Name</h3>
+<p>A great test name often follows a pattern: <code>test_UNITOFWORK_SCENARIO_EXPECTEDBEHAVIOR</code>.</p>
+<ul>
+<li><strong><code>test_</code></strong>: The required prefix.</li>
+<li><strong><code>UNITOFWORK</code></strong>: The function, method, or feature you are testing (e.g., <code>spend_cash</code>).</li>
+<li><strong><code>SCENARIO</code></strong>: The specific condition you are testing (e.g., <code>on_insufficient_funds</code>).</li>
+<li><strong><code>EXPECTEDBEHAVIOR</code></strong>: What you expect to happen (e.g., <code>raises_exception</code>).</li>
+</ul>
+<p>Let's write a few tests for our <code>Wallet</code> class using this convention.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_wallet_naming.py</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.wallet</span><span class="w"> </span><span class="kn">import</span> <span class="n">Wallet</span><span class="p">,</span> <span class="n">InsufficientAmount</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_initial_balance_is_zero_by_default</span><span class="p">():</span>
+    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">()</span>
+    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">0</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_setting_initial_balance</span><span class="p">():</span>
+    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">100</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_add_cash_increases_balance</span><span class="p">():</span>
+    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+    <span class="n">wallet</span><span class="o">.</span><span class="n">add_cash</span><span class="p">(</span><span class="mi">90</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">100</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_spend_cash_decreases_balance</span><span class="p">():</span>
+    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
+    <span class="n">wallet</span><span class="o">.</span><span class="n">spend_cash</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">10</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_spend_cash_raises_exception_on_insufficient_funds</span><span class="p">():</span>
+    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">InsufficientAmount</span><span class="p">):</span>
+        <span class="n">wallet</span><span class="o">.</span><span class="n">spend_cash</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+</code></pre></div>
+
+<p>Now, let's run these tests with the verbose (<code>-v</code>) flag to see how the names appear in the output.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>tests/test_wallet_naming.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">5</span><span class="w"> </span>items
+
+tests/test_wallet_naming.py::test_initial_balance_is_zero_by_default<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">20</span>%<span class="o">]</span>
+tests/test_wallet_naming.py::test_setting_initial_balance<span class="w"> </span>PASSED<span class="w">         </span><span class="o">[</span><span class="w"> </span><span class="m">40</span>%<span class="o">]</span>
+tests/test_wallet_naming.py::test_add_cash_increases_balance<span class="w"> </span>PASSED<span class="w">      </span><span class="o">[</span><span class="w"> </span><span class="m">60</span>%<span class="o">]</span>
+tests/test_wallet_naming.py::test_spend_cash_decreases_balance<span class="w"> </span>PASSED<span class="w">    </span><span class="o">[</span><span class="w"> </span><span class="m">80</span>%<span class="o">]</span>
+tests/test_wallet_naming.py::test_spend_cash_raises_exception_on_insufficient_funds<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">============================</span><span class="w"> </span><span class="m">5</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">============================</span>
+</code></pre></div>
+
+<p>Look at that output. It's not just a test report; it's a specification document. Anyone can read this list and understand what the <code>Wallet</code> class is supposed to do without ever looking at its source code.</p>
+<p>Investing a few extra seconds to name your tests descriptively will save you hours of debugging and documentation work in the future.</p>
+<h2 id="organizing-tests-in-your-project">Organizing Tests in Your Project</h2>
+<h2 id="organizing-tests-in-your-project_1">Organizing Tests in Your Project</h2>
+<p>As your project grows, the way you organize your test files becomes increasingly important. There are two primary approaches, and pytest supports both seamlessly.</p>
+<h3 id="approach-1-tests-in-a-dedicated-tests-directory-recommended">Approach 1: Tests in a Dedicated <code>tests/</code> Directory (Recommended)</h3>
+<p>This is the most common and scalable approach. You create a top-level <code>tests</code> directory, which mirrors the structure of your source code.</p>
+<div class="codehilite"><pre><span></span><code>my_project/
+├── pyproject.toml
+├── src/
+│   ├── __init__.py
+│   ├── app/
+│   │   ├── __init__.py
+│   │   └── models.py
+│   └── utils/
+│       ├── __init__.py
+│       └── helpers.py
+└── tests/
+    ├── __init__.py
+    ├── app/
+    │   ├── __init__.py
+    │   └── test_models.py
+    └── utils/
+        ├── __init__.py
+        └── test_helpers.py
+</code></pre></div>
+
+<p><strong>Pros:</strong>
+-   <strong>Clean Separation</strong>: Your application code and test code are completely separate. This makes it easy to package your application for distribution without including the tests.
+-   <strong>Scalability</strong>: This structure scales well for large projects with many modules.
+-   <strong>Clarity</strong>: It's immediately obvious where to find tests for any given part of the application.</p>
+<p><strong>Cons:</strong>
+-   <strong>Import Path Setup</strong>: You need to make sure your <code>src</code> directory is on the Python path so that your tests can import the code they are testing (e.g., <code>from src.app.models import User</code>). This is typically handled by your project's configuration (<code>pyproject.toml</code>) and installing your project in "editable" mode (<code>pip install -e .</code>).</p>
+<h3 id="approach-2-tests-alongside-application-code">Approach 2: Tests Alongside Application Code</h3>
+<p>In this approach, test files live inside your application's source directories.</p>
+<div class="codehilite"><pre><span></span><code>my_project/
+├── pyproject.toml
+└── src/
+    ├── __init__.py
+    ├── app/
+    │   ├── __init__.py
+    │   ├── models.py
+    │   └── test_models.py
+    └── utils/
+        ├── __init__.py
+        ├── helpers.py
+        └── test_helpers.py
+</code></pre></div>
+
+<p><strong>Pros:</strong>
+-   <strong>Proximity</strong>: Tests are located right next to the code they test, which some developers find convenient.
+-   <strong>Simpler Imports</strong>: Imports are typically simpler relative imports (e.g., <code>from .models import User</code>).</p>
+<p><strong>Cons:</strong>
+-   <strong>Code Bloat</strong>: Your source directories are cluttered with test files.
+-   <strong>Packaging Complexity</strong>: You need to configure your packaging tools to exclude <code>test_*.py</code> files when you build a distributable version of your library or application.</p>
+<p>For this book and for most real-world projects, we will use and recommend the dedicated <code>tests/</code> directory. It establishes a professional, maintainable structure from the start. We will cover project setup in detail in Chapter 3.</p>
+<h2 id="running-specific-tests">Running Specific Tests</h2>
+<h2 id="running-specific-tests_1">Running Specific Tests</h2>
+<p>Running your entire test suite is essential for CI/CD and releases, but during development, it's often slow and unnecessary. When you're working on a specific feature or fixing a single bug, you want to run only the relevant tests. Pytest provides powerful and flexible options for doing just that.</p>
+<p>Let's assume we have the following test file:</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_advanced_wallet.py</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.wallet</span><span class="w"> </span><span class="kn">import</span> <span class="n">Wallet</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_add_positive_amount</span><span class="p">():</span>
+    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+    <span class="n">wallet</span><span class="o">.</span><span class="n">add_cash</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">30</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_add_negative_amount</span><span class="p">():</span>
+    <span class="c1"># Let&#39;s assume this is a feature we want to prevent</span>
+    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+    <span class="n">wallet</span><span class="o">.</span><span class="n">add_cash</span><span class="p">(</span><span class="o">-</span><span class="mi">5</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">10</span> <span class="c1"># Balance should not change</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_spend_positive_amount</span><span class="p">():</span>
+    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
+    <span class="n">wallet</span><span class="o">.</span><span class="n">spend_cash</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">15</span>
+</code></pre></div>
+
+<h3 id="running-all-tests-in-a-file">Running All Tests in a File</h3>
+<p>To run only the tests in <code>test_advanced_wallet.py</code>, simply provide the path to the file.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>tests/test_advanced_wallet.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items
+
+tests/test_advanced_wallet.py<span class="w"> </span>...<span class="w">                                      </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">============================</span><span class="w"> </span><span class="m">3</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">============================</span>
+</code></pre></div>
+
+<h3 id="running-a-specific-test-function">Running a Specific Test Function</h3>
+<p>If you want to run just one test within a file, you can specify its name after the file path, separated by <code>::</code>.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>tests/test_advanced_wallet.py::test_add_negative_amount
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
+
+tests/test_advanced_wallet.py<span class="w"> </span>.<span class="w">                                        </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">============================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">============================</span>
+</code></pre></div>
+
+<p>This is incredibly useful when you are focused on fixing a single failing test.</p>
+<h3 id="running-tests-by-keyword-or-substring">Running Tests by Keyword or Substring</h3>
+<p>Perhaps the most powerful selection method is the <code>-k</code> flag, which runs tests whose names match a given keyword expression.</p>
+<p>Let's say we only want to run tests related to "adding" cash.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-k<span class="w"> </span><span class="s2">&quot;add&quot;</span>
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items<span class="w"> </span>/<span class="w"> </span><span class="m">1</span><span class="w"> </span>deselected
+
+tests/test_advanced_wallet.py<span class="w"> </span>..<span class="w">                                       </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">======================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>deselected<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">======================</span>
+</code></pre></div>
+
+<p>Pytest found all three tests but deselected <code>test_spend_positive_amount</code> because its name doesn't contain "add".</p>
+<p>The <code>-k</code> expression can be more complex. You can use <code>and</code>, <code>or</code>, and <code>not</code>. For example, to run tests that involve adding but are <em>not</em> about negative numbers:</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-k<span class="w"> </span><span class="s2">&quot;add and not negative&quot;</span>
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items<span class="w"> </span>/<span class="w"> </span><span class="m">2</span><span class="w"> </span>deselected
+
+tests/test_advanced_wallet.py<span class="w"> </span>.<span class="w">                                        </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">======================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">2</span><span class="w"> </span>deselected<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">======================</span>
+</code></pre></div>
+
+<p>This selected only <code>test_add_positive_amount</code>.</p>
+<p>Mastering these selection techniques will dramatically speed up your development workflow. You can iterate quickly on a small subset of tests, ensuring you get fast feedback as you code.</p>
+        </div>
+        <div class="footer">
+            Generated on 2025-11-22 16:29:18 | Made with ❤️ by GitHub Pages Generator
+        </div>
+    </div>
+    <script>
+        // Syntax highlighting for code blocks
+        document.addEventListener('DOMContentLoaded', (event) => {
+            // Highlight code blocks
+            document.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+            
+            // Add copy buttons to code blocks
+            document.querySelectorAll('pre').forEach((pre) => {
+                const button = document.createElement('button');
+                button.className = 'copy-btn';
+                button.textContent = 'Copy';
+                
+                button.addEventListener('click', () => {
+                    const code = pre.querySelector('code').textContent;
+                    navigator.clipboard.writeText(code).then(() => {
+                        button.textContent = 'Copied!';
+                        button.classList.add('copied');
+                        setTimeout(() => {
+                            button.textContent = 'Copy';
+                            button.classList.remove('copied');
+                        }, 2000);
+                    }).catch(err => {
+                        console.error('Failed to copy:', err);
+                        button.textContent = 'Error';
+                        setTimeout(() => {
+                            button.textContent = 'Copy';
+                        }, 2000);
+                    });
+                });
+                
+                pre.appendChild(button);
+            });
+        });
+    </script>
+</body>
+</html>

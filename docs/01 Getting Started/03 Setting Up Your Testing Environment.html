@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>03 Setting Up Your Testing Environment</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #8b5cf6;
+            --bg-main: #0f172a;
+            --bg-card: #1e293b;
+            --bg-code: #0f172a;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --border: #334155;
+            --accent: #06b6d4;
+            --success: #10b981;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body { 
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.7; 
+            color: var(--text-primary); 
+            background: var(--bg-main);
+        }
+        
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            padding: 20px; 
+        }
+        
+        .home-btn { 
+            position: fixed; 
+            top: 20px; 
+            right: 20px; 
+            background: var(--accent);
+            color: white; 
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            text-decoration: none; 
+            z-index: 1000;
+            box-shadow: 0 4px 20px rgba(6, 182, 212, 0.4);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .home-btn:hover { 
+            background: #0891b2;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(6, 182, 212, 0.5);
+        }
+        
+        .breadcrumb { 
+            background: var(--bg-card);
+            padding: 12px 0; 
+            margin-bottom: 24px; 
+            font-size: 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        
+        .breadcrumb a { 
+            color: var(--accent);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        
+        .breadcrumb a:hover { 
+            color: var(--primary);
+            text-decoration: underline;
+        }
+        
+        .content { 
+            background: var(--bg-card);
+            padding: 3rem; 
+            border-radius: 16px; 
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border);
+        }
+        
+        .file-list { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); 
+            gap: 1.5rem; 
+            margin: 2rem 0; 
+        }
+        
+        .file-item { 
+            padding: 1.5rem; 
+            border: 1px solid var(--border);
+            border-radius: 12px; 
+            background: var(--bg-main);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .file-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .file-item:hover { 
+            transform: translateY(-4px); 
+            box-shadow: 0 8px 30px rgba(99, 102, 241, 0.3);
+            border-color: var(--primary);
+        }
+        
+        .file-item:hover::before {
+            opacity: 1;
+        }
+        
+        .file-item a { 
+            color: var(--text-primary);
+            text-decoration: none; 
+            font-weight: 600; 
+            display: block;
+            font-size: 1.1rem;
+        }
+        
+        .file-item a:hover { 
+            color: var(--primary);
+        }
+        
+        .file-type { 
+            font-size: 13px; 
+            color: var(--text-secondary);
+            margin-top: 8px; 
+            font-weight: 500;
+        }
+        
+        /* Code Blocks */
+        pre { 
+            background: var(--bg-code);
+            padding: 1.5rem; 
+            border-radius: 12px; 
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            margin: 1.5rem 0;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            position: relative;
+        }
+        
+        pre code { 
+            background: none;
+            padding: 0;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 0.9em;
+            line-height: 1.6;
+        }
+        
+        /* Copy Button */
+        .copy-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.2s;
+            opacity: 0.7;
+            z-index: 10;
+        }
+        
+        .copy-btn:hover {
+            opacity: 1;
+            background: var(--primary-dark);
+            transform: translateY(-1px);
+        }
+        
+        .copy-btn.copied {
+            background: var(--success);
+        }
+        
+        pre:hover .copy-btn {
+            opacity: 1;
+        }
+        
+        /* Inline Code */
+        code { 
+            background: var(--bg-code);
+            color: #8b5cf6;
+            padding: 3px 8px; 
+            border-radius: 6px; 
+            font-size: 1.1em;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            border: 1px solid var(--border);
+        }
+        
+        /* Headings */
+        h1, h2, h3, h4, h5, h6 { 
+            color: var(--text-primary);
+            margin: 2rem 0 1rem 0;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+        
+        h1 { 
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            border-bottom: 3px solid var(--primary);
+            padding-bottom: 12px;
+            margin-bottom: 1.5rem;
+        }
+        
+        h2 { 
+            font-size: 2rem;
+            color: var(--primary);
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 8px;
+        }
+        
+        h3 { 
+            font-size: 1.5rem;
+            color: var(--accent);
+        }
+        
+        /* Links */
+        a { 
+            color: var(--accent);
+            transition: color 0.2s;
+        }
+        
+        a:hover { 
+            color: var(--primary);
+        }
+        
+        /* Paragraphs */
+        p {
+            margin: 1rem 0;
+            color: var(--text-secondary);
+        }
+        
+        /* Lists */
+        ul, ol {
+            margin: 1rem 0;
+            padding-left: 2rem;
+            color: var(--text-secondary);
+        }
+        
+        li {
+            margin: 0.5rem 0;
+        }
+        
+        /* Tables */
+        table { 
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1.5rem 0;
+            background: var(--bg-main);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+        
+        th, td { 
+            border: 1px solid var(--border);
+            padding: 12px 16px;
+            text-align: left;
+        }
+        
+        th { 
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:hover {
+            background: var(--bg-card);
+        }
+        
+        /* Blockquotes */
+        blockquote {
+            border-left: 4px solid var(--primary);
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            background: var(--bg-main);
+            border-radius: 0 8px 8px 0;
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+        
+        /* Horizontal Rule */
+        hr {
+            border: none;
+            border-top: 2px solid var(--border);
+            margin: 2rem 0;
+        }
+        
+        .footer { 
+            text-align: center; 
+            padding: 2rem; 
+            color: var(--text-secondary);
+            border-top: 1px solid var(--border);
+            margin-top: 3rem; 
+            font-size: 14px;
+        }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 12px;
+            height: 12px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: var(--bg-main);
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 6px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--primary);
+        }
+        
+        @media (max-width: 768px) {
+            .container { padding: 10px; }
+            .file-list { grid-template-columns: 1fr; }
+            .content { padding: 1.5rem; }
+            h1 { font-size: 2rem; }
+            h2 { font-size: 1.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <a href="../index.html" class="home-btn">🏠</a>
+    <div class="container">
+        <div class="breadcrumb">
+            <div style="padding: 0 20px;">
+                <a href="../index.html">🏠 Home</a> <span style="color: #64748b;">/</span> <a href="index.html">01 Getting Started</a>
+            </div>
+        </div>
+        <div class="content">
+            <h1 id="chapter-3-setting-up-your-testing-environment">Chapter 3: Setting Up Your Testing Environment</h1>
+<h2 id="project-structure-best-practices">Project Structure Best Practices</h2>
+<h2 id="the-blueprint-for-a-testable-project">The Blueprint for a Testable Project</h2>
+<p>Before writing a single line of test code, the structure of your project can either set you up for success or for future headaches. A well-organized project is easy to navigate, easy to test, and easy for others to understand. An unorganized one becomes a tangled mess where application code and test code are indistinguishable.</p>
+<p>Let's illuminate this by showing the pits. Imagine a project folder that looks like this:</p>
+<div class="codehilite"><pre><span></span><code>messy_project/
+├── my_app.py
+├── test_my_app.py
+├── utils.py
+├── test_utils.py
+├── data.json
+└── README.md
+</code></pre></div>
+
+<p>While this might work for a tiny script, it quickly becomes unmanageable. Which files are part of the application? Which are tests? Where do new tests go? This flat structure creates confusion.</p>
+<p>Now, let's look at a clean, standard, and scalable structure.</p>
+<h3 id="the-src-layout">The <code>src</code> Layout</h3>
+<p>The most robust and recommended structure for modern Python projects is the "src layout." It creates a clear separation between your actual application code and everything else (like tests, documentation, and configuration).</p>
+<p>Here is the blueprint we will use for our examples:</p>
+<div class="codehilite"><pre><span></span><code>wallet_project/
+├── src/
+│   └── wallet/
+│       ├── __init__.py
+│       ├── wallet.py
+│       └── exceptions.py
+├── tests/
+│   ├── __init__.py
+│   └── test_wallet.py
+├── .gitignore
+├── pyproject.toml
+└── README.md
+</code></pre></div>
+
+<p>Let's break down why this is so effective:</p>
+<ol>
+<li><strong><code>src/</code> directory</strong>: This contains your <em>installable</em> Python package. Everything inside <code>src</code> is what you would distribute if you were publishing your project. This clear boundary prevents many common packaging and import path issues.</li>
+<li><strong><code>wallet/</code></strong>: This is the actual Python package. The name you choose here is what users will <code>import</code> (e.g., <code>from wallet import Wallet</code>).</li>
+<li><strong><code>tests/</code> directory</strong>: This is the home for all your tests. It lives at the root of the project, parallel to <code>src</code>, making it clear that tests are not part of the installable application code but are a critical part of the development process.</li>
+<li><strong>Configuration Files</strong>: Files like <code>pyproject.toml</code> (which we'll cover shortly) and <code>.gitignore</code> live at the root level.</li>
+</ol>
+<p>This structure isn't just a suggestion; it's a convention that solves real-world problems. It ensures your tests are run against the <em>installed</em> version of your code, just as a user would experience it, preventing tests that pass locally but fail in production because of tricky import paths.</p>
+<h2 id="creating-a-tests-directory">Creating a tests/ Directory</h2>
+<h2 id="a-dedicated-home-for-your-tests">A Dedicated Home for Your Tests</h2>
+<p>As we saw in the best-practice layout, tests should live in their own top-level directory, almost always named <code>tests/</code>. Why not just put <code>test_wallet.py</code> next to <code>wallet.py</code>?</p>
+<p><strong>The Principle of Separation:</strong> Your tests are for developers, not for end-users. When you package your <code>wallet</code> application for distribution, you don't want to include the hundreds of test files. Placing them in a separate <code>tests/</code> directory makes it trivial to exclude them from the final package, keeping it lean.</p>
+<p>Let's create this structure. Assume you are in your main project directory (<code>wallet_project/</code>).</p>
+<p>First, create the source directory and the package within it. The <code>-p</code> flag creates parent directories as needed.</p>
+<div class="codehilite"><pre><span></span><code>mkdir<span class="w"> </span>-p<span class="w"> </span>src/wallet
+</code></pre></div>
+
+<p>Next, create the <code>tests/</code> directory at the same level as <code>src/</code>.</p>
+<div class="codehilite"><pre><span></span><code>mkdir<span class="w"> </span>tests
+</code></pre></div>
+
+<p>Now, let's create some placeholder files to make our project tangible. We'll use <code>touch</code> to create empty files.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># Create empty __init__.py files to mark them as Python packages</span>
+touch<span class="w"> </span>src/wallet/__init__.py
+touch<span class="w"> </span>tests/__init__.py
+
+<span class="c1"># Create our main application and test files</span>
+touch<span class="w"> </span>src/wallet/wallet.py
+touch<span class="w"> </span>tests/test_wallet.py
+</code></pre></div>
+
+<p>Your project structure should now match the blueprint from the previous section.</p>
+<h3 id="how-pytest-finds-the-tests-directory">How Pytest Finds the <code>tests</code> Directory</h3>
+<p>In Chapter 2, we discussed test discovery. By default, pytest looks for tests in the current directory and its subdirectories. When you run <code>pytest</code> from your project root (<code>wallet_project/</code>), it will automatically find and explore the <code>tests/</code> directory, discovering <code>test_wallet.py</code> and any other files that follow the <code>test_*.py</code> or <code>*_test.py</code> naming convention.</p>
+<p>This convention is powerful because it requires zero configuration to get started. Pytest just <em>knows</em> where to look. Later in this chapter, we'll see how to explicitly tell pytest where your tests are, which is a best practice for larger projects.</p>
+<h2 id="using-virtual-environments">Using Virtual Environments</h2>
+<h2 id="isolating-your-projects-world">Isolating Your Project's World</h2>
+<p>Imagine you are working on two projects. Project A needs version 1.0 of a library called <code>requests</code>, while Project B needs the brand-new version 2.0. If you install these libraries globally on your computer, you have a conflict. Upgrading for Project B will break Project A, and downgrading for Project A will break Project B. This is often called "dependency hell."</p>
+<p><strong>A virtual environment is a self-contained directory that holds a specific version of Python and all the specific libraries your project needs.</strong> It's a private workspace for each project, preventing any conflicts.</p>
+<h3 id="the-wrong-way-global-installation">The Wrong Way: Global Installation</h3>
+<p>You might be tempted to just run <code>pip install pytest</code> in your main system terminal. <strong>Don't do this.</strong> This installs pytest globally. While it might seem to work at first, it will inevitably lead to the dependency conflicts described above. It's a classic pitfall that seems easier initially but creates significant problems down the road.</p>
+<h3 id="the-right-way-venv">The Right Way: <code>venv</code></h3>
+<p>Python comes with a built-in module called <code>venv</code> for creating virtual environments. Let's create one for our <code>wallet_project</code>.</p>
+<p>Navigate to your project's root directory (<code>wallet_project/</code>).</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># Create a virtual environment in a directory named .venv</span>
+<span class="c1"># Using .venv is a common convention</span>
+python3<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv
+</code></pre></div>
+
+<p>You will now see a new <code>.venv/</code> directory in your project. This folder contains a copy of the Python interpreter and is ready to hold your project's dependencies. You should add <code>.venv</code> to your <code>.gitignore</code> file to keep it out of version control.</p>
+<h3 id="activating-the-virtual-environment">Activating the Virtual Environment</h3>
+<p>Creating the environment isn't enough; you need to "activate" it to tell your shell session to use it.</p>
+<p><strong>On macOS and Linux:</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="nb">source</span><span class="w"> </span>.venv/bin/activate
+</code></pre></div>
+
+<p><strong>On Windows (Command Prompt):</strong></p>
+<div class="codehilite"><pre><span></span><code>.venv<span class="se">\S</span>cripts<span class="se">\a</span>ctivate.bat
+</code></pre></div>
+
+<p><strong>On Windows (PowerShell):</strong></p>
+<div class="codehilite"><pre><span></span><code>.venv<span class="se">\S</span>cripts<span class="se">\A</span>ctivate.ps1
+</code></pre></div>
+
+<p>Once activated, you'll typically see the name of the environment in your shell prompt, like <code>(.venv) $</code>. This confirms that any Python or pip commands you run will now operate <em>inside</em> this isolated environment.</p>
+<h3 id="installing-dependencies">Installing Dependencies</h3>
+<p>With your environment active, you can now safely install pytest and any other libraries.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># This pip is the one inside .venv/bin/</span>
+pip<span class="w"> </span>install<span class="w"> </span>pytest
+
+<span class="c1"># Let&#39;s say our wallet needs an external library</span>
+pip<span class="w"> </span>install<span class="w"> </span>requests
+</code></pre></div>
+
+<p>To prove the isolation, you can deactivate the environment.</p>
+<div class="codehilite"><pre><span></span><code>deactivate
+</code></pre></div>
+
+<p>Now, if you try to run <code>pytest</code>, the command will likely fail (unless you made the mistake of installing it globally). This confirms your project's dependencies are neatly contained within <code>.venv</code>. Always remember to activate your virtual environment before working on your project.</p>
+<h2 id="pytest-configuration-files-pytestini-setupcfg-pyprojecttoml">Pytest Configuration Files (pytest.ini, setup.cfg, pyproject.toml)</h2>
+<h2 id="telling-pytest-how-to-behave">Telling Pytest How to Behave</h2>
+<p>While pytest works brilliantly out of the box, you'll soon want to customize its behavior. You can pass options on the command line (like <code>pytest -v</code>), but typing these every time is tedious.</p>
+<p>Pytest configuration files allow you to set default options and configure project-specific settings. Pytest looks for one of these files in your project root, in order of preference:</p>
+<ol>
+<li><code>pyproject.toml</code></li>
+<li><code>pytest.ini</code></li>
+<li><code>tox.ini</code></li>
+<li><code>setup.cfg</code></li>
+</ol>
+<p>Let's explore the three most common choices, showing multiple paths to the same destination. We'll configure a simple option: always add <code>-v</code> (verbose) to every <code>pytest</code> run.</p>
+<h3 id="pytestini"><code>pytest.ini</code></h3>
+<p>This is the simplest, most direct way to configure pytest. It's an INI-formatted file dedicated solely to pytest settings.</p>
+<p>Create a file named <code>pytest.ini</code> in your project root.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># pytest.ini</span>
+<span class="k">[pytest]</span>
+<span class="na">addopts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">-v</span>
+</code></pre></div>
+
+<p>Now, when you run <code>pytest</code>, it will automatically behave as if you had typed <code>pytest -v</code>.</p>
+<ul>
+<li><strong>Pros</strong>: Simple, clear, and focused only on pytest.</li>
+<li><strong>Cons</strong>: Adds another configuration file to your project root.</li>
+</ul>
+<h3 id="setupcfg"><code>setup.cfg</code></h3>
+<p>This file is a holdover from the <code>setuptools</code> packaging system. If your project already has one for packaging metadata, you can add a <code>[tool:pytest]</code> section to it.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># setup.cfg</span>
+<span class="k">[tool:pytest]</span>
+<span class="na">addopts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">-v</span>
+</code></pre></div>
+
+<ul>
+<li><strong>Pros</strong>: Consolidates configuration if you're already using <code>setup.cfg</code>.</li>
+<li><strong>Cons</strong>: <code>setuptools</code> is being superseded by newer standards. This is now considered a legacy approach.</li>
+</ul>
+<h3 id="pyprojecttoml-recommended"><code>pyproject.toml</code> (Recommended)</h3>
+<p>This is the modern, standardized way to configure Python tools. It's defined in PEP 518 and is designed to be the single configuration file for your entire project, from build systems to linters to test runners.</p>
+<p>Create a file named <code>pyproject.toml</code> in your project root.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># pyproject.toml</span>
+<span class="k">[tool.pytest.ini_options]</span>
+<span class="n">addopts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;-v&quot;</span>
+</code></pre></div>
+
+<ul>
+<li><strong>Pros</strong>: The official, future-proof standard. Consolidates all tool configuration into one file, reducing clutter.</li>
+<li><strong>Cons</strong>: The nested structure (<code>[tool.pytest.ini_options]</code>) is slightly more verbose.</li>
+</ul>
+<p><strong>Our Recommendation:</strong> For any new project, use <code>pyproject.toml</code>. It is the clear direction the Python ecosystem is heading, and most modern tools support it. We will use <code>pyproject.toml</code> for all examples going forward.</p>
+<h2 id="common-configuration-options">Common Configuration Options</h2>
+<h2 id="fine-tuning-your-test-suite">Fine-Tuning Your Test Suite</h2>
+<p>Let's build on our <code>pyproject.toml</code> file and add some of the most useful configuration options. We'll introduce them one at a time, explaining the problem each one solves.</p>
+<p>Our starting <code>pyproject.toml</code>:</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># pyproject.toml</span>
+<span class="k">[tool.pytest.ini_options]</span>
+<span class="n">addopts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;-v&quot;</span>
+</code></pre></div>
+
+<h3 id="testpaths-specifying-where-to-find-tests"><code>testpaths</code>: Specifying Where to Find Tests</h3>
+<p>By default, pytest searches everywhere. In a large project, this can be slow. It might also accidentally pick up tests from a virtual environment directory or other places you don't intend. It's better to be explicit.</p>
+<p>The <code>testpaths</code> option tells pytest exactly where to look.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># pyproject.toml</span>
+<span class="k">[tool.pytest.ini_options]</span>
+<span class="n">addopts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;-v&quot;</span>
+<span class="n">testpaths</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">&quot;tests&quot;</span><span class="p">,</span>
+<span class="p">]</span>
+</code></pre></div>
+
+<p>Now, pytest will <em>only</em> look for tests inside the <code>tests/</code> directory, making discovery faster and more predictable.</p>
+<h3 id="python_files-python_classes-python_functions-customizing-discovery"><code>python_files</code>, <code>python_classes</code>, <code>python_functions</code>: Customizing Discovery</h3>
+<p>Pytest's default discovery (looking for <code>test_*</code> and <code>*_test</code>) is excellent, but sometimes you need to change it. For example, a project might have a convention of naming test files <code>check_*.py</code>.</p>
+<p>You can override the default patterns:</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># pyproject.toml</span>
+<span class="k">[tool.pytest.ini_options]</span>
+<span class="n">addopts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;-v&quot;</span>
+<span class="n">testpaths</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">&quot;tests&quot;</span><span class="p">,</span>
+<span class="p">]</span>
+<span class="c1"># Look for tests in files named test_*.py or check_*.py</span>
+<span class="n">python_files</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;test_*.py&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;check_*.py&quot;</span><span class="p">]</span>
+<span class="c1"># Look for test methods inside classes prefixed with &quot;Test&quot; or &quot;Check&quot;</span>
+<span class="n">python_classes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;Test*&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Check*&quot;</span><span class="p">]</span>
+<span class="c1"># Look for test functions prefixed with &quot;test_&quot; or &quot;check_&quot;</span>
+<span class="n">python_functions</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;test_*&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;check_*&quot;</span><span class="p">]</span>
+</code></pre></div>
+
+<p>This gives you complete control over what pytest considers a test.</p>
+<h3 id="addopts-adding-more-default-options"><code>addopts</code>: Adding More Default Options</h3>
+<p>The <code>addopts</code> key is a space-separated string of command-line arguments you want to run every time. This is perfect for ensuring consistency across all test runs, especially in a team or a CI/CD environment.</p>
+<p>Let's add a few more common options:
+- <code>--strict-markers</code>: Fails the test suite if you use a marker that isn't registered. This prevents typos and keeps your markers clean (more in Chapter 6).
+- <code>-ra</code>: Shows a short summary for all test outcomes except passes (<code>r</code> for report, <code>a</code> for all-but-passing). This is great for seeing skips and xfails at a glance.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># pyproject.toml</span>
+<span class="k">[tool.pytest.ini_options]</span>
+<span class="c1"># Options are space-separated</span>
+<span class="n">addopts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;-v -ra --strict-markers&quot;</span>
+<span class="n">testpaths</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">&quot;tests&quot;</span><span class="p">,</span>
+<span class="p">]</span>
+</code></pre></div>
+
+<h3 id="markers-registering-custom-markers"><code>markers</code>: Registering Custom Markers</h3>
+<p>As we'll see in Chapter 6, markers are a powerful way to categorize tests. The <code>--strict-markers</code> option requires you to register them here. Even if you don't use strict mode, registering markers is a best practice as it provides a single source of truth for what each marker means.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># pyproject.toml</span>
+<span class="k">[tool.pytest.ini_options]</span>
+<span class="n">addopts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;-v -ra --strict-markers&quot;</span>
+<span class="n">testpaths</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">&quot;tests&quot;</span><span class="p">,</span>
+<span class="p">]</span>
+<span class="n">markers</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">&quot;slow: marks tests as slow (deselect with &#39;-m </span><span class="se">\&quot;</span><span class="s2">not slow</span><span class="se">\&quot;</span><span class="s2">&#39;)&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;api: marks tests that hit a live API endpoint&quot;</span><span class="p">,</span>
+<span class="p">]</span>
+</code></pre></div>
+
+<p>This configuration now serves as both a functional setting for pytest and documentation for your project's test categories.</p>
+<h2 id="setting-up-your-ide-for-testing">Setting Up Your IDE for Testing</h2>
+<h2 id="bringing-pytest-into-your-workflow">Bringing Pytest into Your Workflow</h2>
+<p>Running <code>pytest</code> from the command line is the fundamental way to execute your test suite. However, modern Integrated Development Environments (IDEs) like VS Code and PyCharm offer powerful integrations that can make you far more productive. These integrations allow you to run tests, view results, and debug failures directly within your editor.</p>
+<p>We'll use Visual Studio Code as our primary example, as it's a popular and free choice. The principles are nearly identical for other IDEs like PyCharm.</p>
+<h3 id="step-1-open-the-project-and-select-the-interpreter">Step 1: Open the Project and Select the Interpreter</h3>
+<p>First, open your <code>wallet_project/</code> folder in VS Code. The IDE needs to know which Python interpreter to use, and it's crucial that it uses the one from your virtual environment.</p>
+<ul>
+<li>Open the Command Palette (<code>Ctrl+Shift+P</code> or <code>Cmd+Shift+P</code>).</li>
+<li>Type "Python: Select Interpreter".</li>
+<li>Choose the interpreter that includes <code>.venv</code> in its path. It will often be labeled with <code>('.venv')</code>.</li>
+</ul>
+<p>This tells VS Code to use the isolated environment where you installed pytest.</p>
+<h3 id="step-2-configure-the-test-runner">Step 2: Configure the Test Runner</h3>
+<p>Next, you need to tell VS Code that you're using pytest.</p>
+<ul>
+<li>Open the Command Palette again.</li>
+<li>Type "Python: Configure Tests".</li>
+<li>Select <code>pytest</code> from the list of frameworks.</li>
+<li>When prompted, select the <code>tests</code> directory as the location of your tests.</li>
+</ul>
+<p>VS Code will create a <code>.vscode/settings.json</code> file in your project to store this configuration. It will look something like this:</p>
+<div class="codehilite"><pre><span></span><code><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;python.testing.pytestArgs&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="s2">&quot;tests&quot;</span>
+<span class="w">    </span><span class="p">],</span>
+<span class="w">    </span><span class="nt">&quot;python.testing.unittestEnabled&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;python.testing.pytestEnabled&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="step-3-discover-and-run-tests">Step 3: Discover and Run Tests</h3>
+<p>Once configured, VS Code will automatically discover your tests.</p>
+<ul>
+<li>Click on the <strong>Testing</strong> icon (a beaker) in the activity bar on the left.</li>
+<li>You should see a Test Explorer panel appear, showing a tree view of all your test files, classes, and functions.</li>
+<li>You can now run tests with a single click:<ul>
+<li>Click the main "play" button at the top of the Test Explorer to run the entire suite.</li>
+<li>Hover over a specific file or function to see a "play" button next to it, allowing you to run just that test or file.</li>
+</ul>
+</li>
+</ul>
+<p>You will also see small "Run Test | Debug Test" links appear directly above your test functions in the code editor. This is called a "CodeLens" and is an incredibly fast way to run a single test you are working on.</p>
+<p><img alt="VS Code Test Integration" src="https://code.visualstudio.com/assets/docs/python/testing/images/test-results-in-test-explorer.png" /></p>
+<h3 id="the-power-of-ide-integration">The Power of IDE Integration</h3>
+<p>Why is this so powerful?</p>
+<ul>
+<li><strong>Speed:</strong> Running a single test you're focused on is much faster than running the whole suite.</li>
+<li><strong>Debugging:</strong> You can click "Debug Test" to run a test with the debugger attached, allowing you to set breakpoints and inspect variables at the exact moment of failure. This transforms debugging from guesswork to a systematic process.</li>
+<li><strong>Visual Feedback:</strong> Seeing green checks and red crosses in the UI provides immediate, clear feedback on the health of your code.</li>
+</ul>
+<p>Setting up your IDE correctly is a one-time investment that pays off every single time you run a test. It closes the loop between writing code, testing it, and fixing it, making you a faster, more effective developer.</p>
+        </div>
+        <div class="footer">
+            Generated on 2025-11-22 16:29:18 | Made with ❤️ by GitHub Pages Generator
+        </div>
+    </div>
+    <script>
+        // Syntax highlighting for code blocks
+        document.addEventListener('DOMContentLoaded', (event) => {
+            // Highlight code blocks
+            document.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+            
+            // Add copy buttons to code blocks
+            document.querySelectorAll('pre').forEach((pre) => {
+                const button = document.createElement('button');
+                button.className = 'copy-btn';
+                button.textContent = 'Copy';
+                
+                button.addEventListener('click', () => {
+                    const code = pre.querySelector('code').textContent;
+                    navigator.clipboard.writeText(code).then(() => {
+                        button.textContent = 'Copied!';
+                        button.classList.add('copied');
+                        setTimeout(() => {
+                            button.textContent = 'Copy';
+                            button.classList.remove('copied');
+                        }, 2000);
+                    }).catch(err => {
+                        console.error('Failed to copy:', err);
+                        button.textContent = 'Error';
+                        setTimeout(() => {
+                            button.textContent = 'Copy';
+                        }, 2000);
+                    });
+                });
+                
+                pre.appendChild(button);
+            });
+        });
+    </script>
+</body>
+</html>

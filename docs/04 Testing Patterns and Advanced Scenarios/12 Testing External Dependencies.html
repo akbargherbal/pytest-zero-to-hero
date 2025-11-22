@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>12 Testing External Dependencies</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #8b5cf6;
+            --bg-main: #0f172a;
+            --bg-card: #1e293b;
+            --bg-code: #0f172a;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --border: #334155;
+            --accent: #06b6d4;
+            --success: #10b981;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body { 
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.7; 
+            color: var(--text-primary); 
+            background: var(--bg-main);
+        }
+        
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            padding: 20px; 
+        }
+        
+        .home-btn { 
+            position: fixed; 
+            top: 20px; 
+            right: 20px; 
+            background: var(--accent);
+            color: white; 
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            text-decoration: none; 
+            z-index: 1000;
+            box-shadow: 0 4px 20px rgba(6, 182, 212, 0.4);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .home-btn:hover { 
+            background: #0891b2;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(6, 182, 212, 0.5);
+        }
+        
+        .breadcrumb { 
+            background: var(--bg-card);
+            padding: 12px 0; 
+            margin-bottom: 24px; 
+            font-size: 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        
+        .breadcrumb a { 
+            color: var(--accent);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        
+        .breadcrumb a:hover { 
+            color: var(--primary);
+            text-decoration: underline;
+        }
+        
+        .content { 
+            background: var(--bg-card);
+            padding: 3rem; 
+            border-radius: 16px; 
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border);
+        }
+        
+        .file-list { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); 
+            gap: 1.5rem; 
+            margin: 2rem 0; 
+        }
+        
+        .file-item { 
+            padding: 1.5rem; 
+            border: 1px solid var(--border);
+            border-radius: 12px; 
+            background: var(--bg-main);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .file-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .file-item:hover { 
+            transform: translateY(-4px); 
+            box-shadow: 0 8px 30px rgba(99, 102, 241, 0.3);
+            border-color: var(--primary);
+        }
+        
+        .file-item:hover::before {
+            opacity: 1;
+        }
+        
+        .file-item a { 
+            color: var(--text-primary);
+            text-decoration: none; 
+            font-weight: 600; 
+            display: block;
+            font-size: 1.1rem;
+        }
+        
+        .file-item a:hover { 
+            color: var(--primary);
+        }
+        
+        .file-type { 
+            font-size: 13px; 
+            color: var(--text-secondary);
+            margin-top: 8px; 
+            font-weight: 500;
+        }
+        
+        /* Code Blocks */
+        pre { 
+            background: var(--bg-code);
+            padding: 1.5rem; 
+            border-radius: 12px; 
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            margin: 1.5rem 0;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            position: relative;
+        }
+        
+        pre code { 
+            background: none;
+            padding: 0;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 0.9em;
+            line-height: 1.6;
+        }
+        
+        /* Copy Button */
+        .copy-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.2s;
+            opacity: 0.7;
+            z-index: 10;
+        }
+        
+        .copy-btn:hover {
+            opacity: 1;
+            background: var(--primary-dark);
+            transform: translateY(-1px);
+        }
+        
+        .copy-btn.copied {
+            background: var(--success);
+        }
+        
+        pre:hover .copy-btn {
+            opacity: 1;
+        }
+        
+        /* Inline Code */
+        code { 
+            background: var(--bg-code);
+            color: #8b5cf6;
+            padding: 3px 8px; 
+            border-radius: 6px; 
+            font-size: 1.1em;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            border: 1px solid var(--border);
+        }
+        
+        /* Headings */
+        h1, h2, h3, h4, h5, h6 { 
+            color: var(--text-primary);
+            margin: 2rem 0 1rem 0;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+        
+        h1 { 
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            border-bottom: 3px solid var(--primary);
+            padding-bottom: 12px;
+            margin-bottom: 1.5rem;
+        }
+        
+        h2 { 
+            font-size: 2rem;
+            color: var(--primary);
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 8px;
+        }
+        
+        h3 { 
+            font-size: 1.5rem;
+            color: var(--accent);
+        }
+        
+        /* Links */
+        a { 
+            color: var(--accent);
+            transition: color 0.2s;
+        }
+        
+        a:hover { 
+            color: var(--primary);
+        }
+        
+        /* Paragraphs */
+        p {
+            margin: 1rem 0;
+            color: var(--text-secondary);
+        }
+        
+        /* Lists */
+        ul, ol {
+            margin: 1rem 0;
+            padding-left: 2rem;
+            color: var(--text-secondary);
+        }
+        
+        li {
+            margin: 0.5rem 0;
+        }
+        
+        /* Tables */
+        table { 
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1.5rem 0;
+            background: var(--bg-main);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+        
+        th, td { 
+            border: 1px solid var(--border);
+            padding: 12px 16px;
+            text-align: left;
+        }
+        
+        th { 
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:hover {
+            background: var(--bg-card);
+        }
+        
+        /* Blockquotes */
+        blockquote {
+            border-left: 4px solid var(--primary);
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            background: var(--bg-main);
+            border-radius: 0 8px 8px 0;
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+        
+        /* Horizontal Rule */
+        hr {
+            border: none;
+            border-top: 2px solid var(--border);
+            margin: 2rem 0;
+        }
+        
+        .footer { 
+            text-align: center; 
+            padding: 2rem; 
+            color: var(--text-secondary);
+            border-top: 1px solid var(--border);
+            margin-top: 3rem; 
+            font-size: 14px;
+        }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 12px;
+            height: 12px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: var(--bg-main);
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 6px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--primary);
+        }
+        
+        @media (max-width: 768px) {
+            .container { padding: 10px; }
+            .file-list { grid-template-columns: 1fr; }
+            .content { padding: 1.5rem; }
+            h1 { font-size: 2rem; }
+            h2 { font-size: 1.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <a href="../index.html" class="home-btn">🏠</a>
+    <div class="container">
+        <div class="breadcrumb">
+            <div style="padding: 0 20px;">
+                <a href="../index.html">🏠 Home</a> <span style="color: #64748b;">/</span> <a href="index.html">04 Testing Patterns and Advanced Scenarios</a>
+            </div>
+        </div>
+        <div class="content">
+            <h1 id="chapter-12-testing-external-dependencies">Chapter 12: Testing External Dependencies</h1>
+<h2 id="database-testing-strategies">Database Testing Strategies</h2>
+<h2 id="why-testing-with-databases-is-hard">Why Testing with Databases is Hard</h2>
+<p>Your application code rarely lives in isolation. It interacts with the outside world: databases, APIs, file systems, and more. These interactions, or "external dependencies," introduce significant challenges for testing. Unlike pure functions that always produce the same output for the same input, external systems have <em>state</em>. A database's content changes, an API might be down, or a file might not exist.</p>
+<p>Testing code that interacts with a database is particularly tricky for several reasons:</p>
+<ol>
+<li><strong>Statefulness</strong>: A test that writes data to a database can affect the outcome of the next test that reads from it. This leads to flaky, order-dependent tests, which are a nightmare to maintain.</li>
+<li><strong>Slowness</strong>: Establishing a database connection, creating tables, and running queries is slow. A test suite with hundreds of database interactions can take minutes to run, discouraging developers from running it frequently.</li>
+<li><strong>Complex Setup</strong>: To run tests, you need a database server running, configured with the correct schema, and accessible to the test runner. This complicates both local development and Continuous Integration (CI) environments.</li>
+</ol>
+<p>To manage this complexity, developers have adopted several strategies, each with its own set of trade-offs between speed and fidelity.</p>
+<h2 id="three-core-strategies">Three Core Strategies</h2>
+<p>There are three primary approaches to testing database-dependent code. The right choice depends on what you are trying to prove with your test.</p>
+<h3 id="strategy-1-mocking-the-database-layer-unit-testing">Strategy 1: Mocking the Database Layer (Unit Testing)</h3>
+<p>In this approach, you don't use a database at all. You replace the part of your code that talks to the database (like a repository or a data access object) with a "mock" object.</p>
+<ul>
+<li><strong>How it works</strong>: You use a library like <code>unittest.mock</code> to create a fake object that mimics the behavior of your database access layer. Your test then configures this mock to return predefined data (e.g., "when <code>get_user(id=1)</code> is called, return this fake User object").</li>
+<li><strong>Pros</strong>:<ul>
+<li><strong>Extremely Fast</strong>: No database connection, no network latency. Tests run in milliseconds.</li>
+<li><strong>Total Isolation</strong>: The test is completely isolated from the database, focusing solely on the business logic of the code under test.</li>
+</ul>
+</li>
+<li><strong>Cons</strong>:<ul>
+<li><strong>Low Fidelity</strong>: You are not testing the actual database interaction. Your test will pass even if your SQL query is invalid, if you violate a database constraint, or if your object-relational mapper (ORM) is misconfigured.</li>
+<li><strong>Brittle</strong>: If you change your database schema, you have to remember to update all your mocks, or your tests will become misleading.</li>
+</ul>
+</li>
+</ul>
+<p>This strategy is best for pure <strong>unit tests</strong> where you want to verify business logic without touching the database. We covered mocking in detail in Chapters 8 and 9.</p>
+<h3 id="strategy-2-using-an-in-memory-database-integration-testing">Strategy 2: Using an In-Memory Database (Integration Testing)</h3>
+<p>This is a popular middle ground. Instead of connecting to a full-fledged database server like PostgreSQL or MySQL, you use a lightweight, in-memory database like SQLite.</p>
+<ul>
+<li><strong>How it works</strong>: For each test run, you create a brand new SQLite database directly in memory. It's incredibly fast to set up and tear down.</li>
+<li><strong>Pros</strong>:<ul>
+<li><strong>Fast</strong>: Much faster than a real disk-based database. Setup and teardown are nearly instantaneous.</li>
+<li><strong>Good Isolation</strong>: Each test can get its own pristine, empty database, ensuring tests don't interfere with each other.</li>
+<li><strong>High Fidelity for ORMs</strong>: You can test that your ORM (like SQLAlchemy or Django's ORM) correctly generates queries and maps objects.</li>
+</ul>
+</li>
+<li><strong>Cons</strong>:<ul>
+<li><strong>Dialect Differences</strong>: In-memory databases like SQLite don't always behave identically to production databases like PostgreSQL. They might have different data types, support different SQL features, or have looser constraint checking. A query that works on SQLite might fail on PostgreSQL.</li>
+</ul>
+</li>
+</ul>
+<p>This strategy is excellent for <strong>integration tests</strong> of your application's data layer, where you want to test your code's interaction with a database-like system without the overhead of a real one.</p>
+<h3 id="strategy-3-using-a-real-test-database-end-to-end-testing">Strategy 3: Using a Real Test Database (End-to-End Testing)</h3>
+<p>This approach offers the highest fidelity. You run your tests against a dedicated instance of the same database software you use in production (e.g., PostgreSQL), but with a separate, temporary database created just for the test suite.</p>
+<ul>
+<li><strong>How it works</strong>: Your test setup script (often managed with tools like Docker) spins up a real database instance. Your test suite connects to it, creates the schema, runs the tests, and then tears it all down.</li>
+<li><strong>Pros</strong>:<ul>
+<li><strong>Maximum Fidelity</strong>: You are testing against the real thing. If it works in the test suite, it will almost certainly work in production. You can test native database features, stored procedures, and complex constraints.</li>
+</ul>
+</li>
+<li><strong>Cons</strong>:<ul>
+<li><strong>Slow</strong>: This is the slowest approach by far. Starting a Docker container and setting up a database can take several seconds.</li>
+<li><strong>Complex Setup</strong>: Requires managing a separate database service for testing, which can be complex to configure locally and in CI.</li>
+</ul>
+</li>
+</ul>
+<p>This strategy is best for a smaller set of <strong>end-to-end tests</strong> that verify critical paths of your application against a production-like environment.</p>
+<p>In the next section, we'll focus on Strategy 2, using an in-memory SQLite database with pytest fixtures, as it provides a fantastic balance of speed and realism for most development workflows.</p>
+<h2 id="using-fixtures-for-database-setup">Using Fixtures for Database Setup</h2>
+<h2 id="the-problem-manual-setup-and-teardown">The Problem: Manual Setup and Teardown</h2>
+<p>Let's imagine we have a simple application that uses SQLAlchemy to manage a <code>User</code> model.</p>
+<p>First, let's define our application code. We'll need to install SQLAlchemy to run this.</p>
+<div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>SQLAlchemy
+</code></pre></div>
+
+<p>Here is our simple model and a function to create a user.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/database.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">create_engine</span><span class="p">,</span>
+    <span class="n">Column</span><span class="p">,</span>
+    <span class="n">Integer</span><span class="p">,</span>
+    <span class="n">String</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy.orm</span><span class="w"> </span><span class="kn">import</span> <span class="n">sessionmaker</span><span class="p">,</span> <span class="n">declarative_base</span>
+
+<span class="n">Base</span> <span class="o">=</span> <span class="n">declarative_base</span><span class="p">()</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">User</span><span class="p">(</span><span class="n">Base</span><span class="p">):</span>
+    <span class="n">__tablename__</span> <span class="o">=</span> <span class="s2">&quot;users&quot;</span>
+    <span class="nb">id</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">Integer</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">String</span><span class="p">,</span> <span class="n">nullable</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">email</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">String</span><span class="p">,</span> <span class="n">unique</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;&lt;User(id=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s2">, name=&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39;)&gt;&quot;</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">create_user</span><span class="p">(</span><span class="n">session</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">email</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Adds a new user to the database.&quot;&quot;&quot;</span>
+    <span class="n">new_user</span> <span class="o">=</span> <span class="n">User</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="n">email</span><span class="p">)</span>
+    <span class="n">session</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">new_user</span><span class="p">)</span>
+    <span class="n">session</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">new_user</span>
+</code></pre></div>
+
+<p>Now, how would we test <code>create_user</code>? Without fixtures, we might be tempted to write setup and teardown code directly in our test function. This is the "wrong way" that illuminates the need for a better approach.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_database_manual.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_engine</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy.orm</span><span class="w"> </span><span class="kn">import</span> <span class="n">sessionmaker</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.database</span><span class="w"> </span><span class="kn">import</span> <span class="n">Base</span><span class="p">,</span> <span class="n">create_user</span><span class="p">,</span> <span class="n">User</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_create_user_manual_setup</span><span class="p">():</span>
+    <span class="c1"># 1. Setup: Create an in-memory SQLite database</span>
+    <span class="n">engine</span> <span class="o">=</span> <span class="n">create_engine</span><span class="p">(</span><span class="s2">&quot;sqlite:///:memory:&quot;</span><span class="p">)</span>
+    <span class="n">Base</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">create_all</span><span class="p">(</span><span class="n">engine</span><span class="p">)</span>
+    <span class="n">Session</span> <span class="o">=</span> <span class="n">sessionmaker</span><span class="p">(</span><span class="n">bind</span><span class="o">=</span><span class="n">engine</span><span class="p">)</span>
+    <span class="n">session</span> <span class="o">=</span> <span class="n">Session</span><span class="p">()</span>
+
+    <span class="c1"># 2. The actual test</span>
+    <span class="n">user</span> <span class="o">=</span> <span class="n">create_user</span><span class="p">(</span><span class="n">session</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;Alice&quot;</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="s2">&quot;alice@example.com&quot;</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">user</span><span class="o">.</span><span class="n">id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+
+    <span class="n">retrieved_user</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">User</span><span class="p">)</span><span class="o">.</span><span class="n">filter_by</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;Alice&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">first</span><span class="p">()</span>
+    <span class="k">assert</span> <span class="n">retrieved_user</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;Alice&quot;</span>
+    <span class="k">assert</span> <span class="n">retrieved_user</span><span class="o">.</span><span class="n">email</span> <span class="o">==</span> <span class="s2">&quot;alice@example.com&quot;</span>
+
+    <span class="c1"># 3. Teardown: Close the session</span>
+    <span class="n">session</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+    <span class="c1"># The in-memory database is automatically discarded</span>
+</code></pre></div>
+
+<p>This works, but imagine having ten tests like this. You would be copying and pasting the entire setup and teardown block every single time. This violates the DRY (Don't Repeat Yourself) principle and makes the tests harder to read and maintain.</p>
+<p>Worse, if we were using a file-based database, a failing test might skip the cleanup step, leaving artifacts that could cause other tests to fail mysteriously. This is where fixtures become essential.</p>
+<h3 id="the-solution-a-fixture-for-database-sessions">The Solution: A Fixture for Database Sessions</h3>
+<p>Let's refactor this using a fixture. A fixture can handle the setup (creating the engine and tables) and the teardown (cleaning up) in one place. We'll place this in <code>tests/conftest.py</code> so it's available to all our tests.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/conftest.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_engine</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy.orm</span><span class="w"> </span><span class="kn">import</span> <span class="n">sessionmaker</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.database</span><span class="w"> </span><span class="kn">import</span> <span class="n">Base</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">&quot;function&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">db_session</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Fixture to create a new in-memory database session for each test function.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Setup: create an in-memory SQLite database</span>
+    <span class="n">engine</span> <span class="o">=</span> <span class="n">create_engine</span><span class="p">(</span><span class="s2">&quot;sqlite:///:memory:&quot;</span><span class="p">)</span>
+    <span class="n">Base</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">create_all</span><span class="p">(</span><span class="n">engine</span><span class="p">)</span>
+    <span class="n">Session</span> <span class="o">=</span> <span class="n">sessionmaker</span><span class="p">(</span><span class="n">bind</span><span class="o">=</span><span class="n">engine</span><span class="p">)</span>
+    <span class="n">session</span> <span class="o">=</span> <span class="n">Session</span><span class="p">()</span>
+
+    <span class="k">yield</span> <span class="n">session</span>  <span class="c1"># This is where the testing happens</span>
+
+    <span class="c1"># Teardown: close the session and drop tables</span>
+    <span class="n">session</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+    <span class="n">Base</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">drop_all</span><span class="p">(</span><span class="n">engine</span><span class="p">)</span>
+</code></pre></div>
+
+<p>Let's break down this fixture:</p>
+<ol>
+<li><strong><code>@pytest.fixture(scope="function")</code></strong>: We define a fixture named <code>db_session</code>. The <code>scope="function"</code> (the default) is crucial here. It means pytest will run this fixture's setup and teardown code <em>for each test function that uses it</em>. This guarantees a clean, empty database for every single test, providing perfect test isolation.</li>
+<li><strong>Setup</strong>: The code before the <code>yield</code> is the setup phase. It creates the in-memory engine, creates all tables defined by our <code>Base</code> metadata, and creates a session.</li>
+<li><strong><code>yield session</code></strong>: The <code>yield</code> keyword passes control to the test function. The value yielded (<code>session</code>) is what gets injected into our test function's argument.</li>
+<li><strong>Teardown</strong>: The code after the <code>yield</code> is the teardown phase. It runs after the test function completes, whether it passed, failed, or raised an error. Here, we close the session and drop all tables to be extra clean.</li>
+</ol>
+<p>Now, our test becomes beautifully simple and declarative.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_database_fixture.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.database</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_user</span><span class="p">,</span> <span class="n">User</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_create_user</span><span class="p">(</span><span class="n">db_session</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Given a database session,</span>
+<span class="sd">    When create_user is called,</span>
+<span class="sd">    Then a new User should be created in the database.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># The db_session is provided by our fixture in conftest.py</span>
+    <span class="n">user</span> <span class="o">=</span> <span class="n">create_user</span><span class="p">(</span><span class="n">db_session</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;Bob&quot;</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="s2">&quot;bob@example.com&quot;</span><span class="p">)</span>
+
+    <span class="k">assert</span> <span class="n">user</span><span class="o">.</span><span class="n">id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+
+    <span class="n">retrieved_user</span> <span class="o">=</span> <span class="n">db_session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">User</span><span class="p">)</span><span class="o">.</span><span class="n">filter_by</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;Bob&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">first</span><span class="p">()</span>
+    <span class="k">assert</span> <span class="n">retrieved_user</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+    <span class="k">assert</span> <span class="n">retrieved_user</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;Bob&quot;</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_user_email_uniqueness</span><span class="p">(</span><span class="n">db_session</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Given a user in the database,</span>
+<span class="sd">    When another user with the same email is created,</span>
+<span class="sd">    Then an IntegrityError should be raised.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="kn">import</span><span class="w"> </span><span class="nn">sqlalchemy.exc</span>
+
+    <span class="c1"># Create an initial user</span>
+    <span class="n">create_user</span><span class="p">(</span><span class="n">db_session</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;Charlie&quot;</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="s2">&quot;charlie@example.com&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Try to create another user with the same email</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">sqlalchemy</span><span class="o">.</span><span class="n">exc</span><span class="o">.</span><span class="n">IntegrityError</span><span class="p">):</span>
+        <span class="n">create_user</span><span class="p">(</span><span class="n">db_session</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;Charles&quot;</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="s2">&quot;charlie@example.com&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>Look at the difference!</p>
+<ul>
+<li>The tests are focused purely on the behavior being tested.</li>
+<li>There is no repetitive setup/teardown code.</li>
+<li>We can be certain that <code>test_create_user</code> and <code>test_user_email_uniqueness</code> run with completely separate, clean databases, thanks to the <code>function</code> scope of our fixture.</li>
+</ul>
+<h3 id="fixture-scopes-and-trade-offs">Fixture Scopes and Trade-offs</h3>
+<p>While <code>scope="function"</code> provides the best isolation, it can be slow if your schema is large, as it rebuilds the database for every test. You can change the scope to speed things up, but you must manage the trade-offs.</p>
+<ul>
+<li><strong><code>scope="module"</code></strong>: The fixture runs once per test module (file). All tests in that file share the same database connection and data. Faster, but you must manually clean up data created by each test to avoid interference.</li>
+<li><strong><code>scope="session"</code></strong>: The fixture runs once for the entire test session. Extremely fast, but carries a high risk of test interdependency. This is often used for setting up a connection to a real test database (Strategy 3) that persists for the whole run.</li>
+</ul>
+<p>For most cases, starting with <code>scope="function"</code> is the safest and most reliable choice. Only optimize to a larger scope if database setup becomes a significant bottleneck in your test suite.</p>
+<h2 id="testing-api-calls">Testing API Calls</h2>
+<h2 id="the-challenge-of-network-bound-code">The Challenge of Network-Bound Code</h2>
+<p>Many applications rely on external APIs. Your code might fetch user data from a third-party service, process a payment through a gateway, or post a message to a chat service. Testing this code presents a major challenge.</p>
+<p>Let's consider a simple function that fetches a user's public repositories from the GitHub API using the popular <code>requests</code> library.</p>
+<p>First, install <code>requests</code>:</p>
+<div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>requests
+</code></pre></div>
+
+<p>Now, here's our function:</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/api_client.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">requests</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">GitHubAPIClient</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_user_repos</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">username</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Fetches the names of public repositories for a given GitHub user.</span>
+<span class="sd">        Returns a list of repo names or None if the user is not found.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">username</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">username</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Username must be a non-empty string&quot;</span><span class="p">)</span>
+
+        <span class="n">url</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;https://api.github.com/users/</span><span class="si">{</span><span class="n">username</span><span class="si">}</span><span class="s2">/repos&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">url</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">response</span><span class="o">.</span><span class="n">status_code</span> <span class="o">==</span> <span class="mi">200</span><span class="p">:</span>
+            <span class="n">repos</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+            <span class="k">return</span> <span class="p">[</span><span class="n">repo</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span> <span class="k">for</span> <span class="n">repo</span> <span class="ow">in</span> <span class="n">repos</span><span class="p">]</span>
+        <span class="k">elif</span> <span class="n">response</span><span class="o">.</span><span class="n">status_code</span> <span class="o">==</span> <span class="mi">404</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">response</span><span class="o">.</span><span class="n">raise_for_status</span><span class="p">()</span> <span class="c1"># Raise an exception for other errors</span>
+</code></pre></div>
+
+<p>How would we test this? We could write a test that calls the real GitHub API.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_api_client_wrong.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.api_client</span><span class="w"> </span><span class="kn">import</span> <span class="n">GitHubAPIClient</span>
+
+<span class="c1"># DO NOT DO THIS IN A REAL TEST SUITE!</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_get_user_repos_real_call</span><span class="p">():</span>
+    <span class="n">client</span> <span class="o">=</span> <span class="n">GitHubAPIClient</span><span class="p">()</span>
+    <span class="c1"># This test depends on the real state of the &#39;pytest-dev&#39; user on GitHub</span>
+    <span class="n">repos</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">get_user_repos</span><span class="p">(</span><span class="s2">&quot;pytest-dev&quot;</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="s2">&quot;pytest&quot;</span> <span class="ow">in</span> <span class="n">repos</span>
+</code></pre></div>
+
+<p>This is a terrible idea for an automated test suite. Why?</p>
+<ol>
+<li><strong>Unreliable</strong>: If you have no internet connection, or if GitHub's API is temporarily down, your test will fail. This is a false negative—your code is correct, but the external dependency failed.</li>
+<li><strong>Slow</strong>: The test has to make a real network request across the internet, which can take hundreds of milliseconds or even seconds. A suite of such tests would be painfully slow.</li>
+<li><strong>Brittle</strong>: The test depends on the state of the real world. If the <code>pytest-dev</code> organization renames its <code>pytest</code> repository, this test will break.</li>
+<li><strong>Rate Limiting</strong>: Many APIs, including GitHub's, have rate limits. Running your test suite frequently could get your IP address temporarily blocked.</li>
+</ol>
+<p>The solution is to <strong>mock the HTTP request</strong>. We need to intercept the outgoing call from the <code>requests</code> library and feed it a fake, controlled response. This way, our test verifies our code's logic (how it handles a 200 OK, a 404 Not Found, etc.) without ever actually touching the network.</p>
+<h2 id="mocking-http-requests-with-responses">Mocking HTTP Requests with responses</h2>
+<h2 id="a-better-way-the-responses-library">A Better Way: The <code>responses</code> Library</h2>
+<p>While you can mock network calls with <code>unittest.mock.patch</code>, it can be cumbersome. A far more elegant and powerful tool for this specific job is the <code>responses</code> library, which integrates beautifully with pytest via <code>pytest-responses</code>.</p>
+<p>First, let's install it:</p>
+<div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>pytest-responses
+</code></pre></div>
+
+<p>The <code>pytest-responses</code> plugin provides a <code>responses</code> fixture that acts as a request-response manager. You tell it which URLs to watch for and what fake responses to return.</p>
+<h3 id="testing-the-success-path">Testing the Success Path</h3>
+<p>Let's write a proper test for the <code>get_user_repos</code> method. We will simulate a successful API call that returns two repositories.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_api_client.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.api_client</span><span class="w"> </span><span class="kn">import</span> <span class="n">GitHubAPIClient</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_get_user_repos_success</span><span class="p">(</span><span class="n">responses</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Test fetching user repos successfully.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># 1. Define the fake response data</span>
+    <span class="n">username</span> <span class="o">=</span> <span class="s2">&quot;testuser&quot;</span>
+    <span class="n">expected_repos</span> <span class="o">=</span> <span class="p">[{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;repo1&quot;</span><span class="p">},</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;repo2&quot;</span><span class="p">}]</span>
+
+    <span class="c1"># 2. Register the mock URL with the &#39;responses&#39; fixture</span>
+    <span class="n">responses</span><span class="o">.</span><span class="n">add</span><span class="p">(</span>
+        <span class="n">responses</span><span class="o">.</span><span class="n">GET</span><span class="p">,</span>
+        <span class="sa">f</span><span class="s2">&quot;https://api.github.com/users/</span><span class="si">{</span><span class="n">username</span><span class="si">}</span><span class="s2">/repos&quot;</span><span class="p">,</span>
+        <span class="n">json</span><span class="o">=</span><span class="n">expected_repos</span><span class="p">,</span>
+        <span class="n">status</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="c1"># 3. Call our code</span>
+    <span class="n">client</span> <span class="o">=</span> <span class="n">GitHubAPIClient</span><span class="p">()</span>
+    <span class="n">repos</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">get_user_repos</span><span class="p">(</span><span class="n">username</span><span class="p">)</span>
+
+    <span class="c1"># 4. Assert the results</span>
+    <span class="k">assert</span> <span class="n">repos</span> <span class="o">==</span> <span class="p">[</span><span class="s2">&quot;repo1&quot;</span><span class="p">,</span> <span class="s2">&quot;repo2&quot;</span><span class="p">]</span>
+    <span class="c1"># Optional: Assert that the mock was called exactly once</span>
+    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">responses</span><span class="o">.</span><span class="n">calls</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
+    <span class="k">assert</span> <span class="n">responses</span><span class="o">.</span><span class="n">calls</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">request</span><span class="o">.</span><span class="n">url</span> <span class="o">==</span> <span class="sa">f</span><span class="s2">&quot;https://api.github.com/users/</span><span class="si">{</span><span class="n">username</span><span class="si">}</span><span class="s2">/repos&quot;</span>
+</code></pre></div>
+
+<p>Let's break down this test:</p>
+<ol>
+<li><strong><code>test_get_user_repos_success(responses)</code></strong>: We request the <code>responses</code> fixture, which activates the mocking mechanism for this test.</li>
+<li><strong><code>responses.add(...)</code></strong>: This is the core of the mock. We are telling the <code>responses</code> library: "If you see an HTTP <code>GET</code> request to <code>https://api.github.com/users/testuser/repos</code>, intercept it. Do not let it go to the internet. Instead, pretend you received a response with a <code>200</code> status code and this JSON body."</li>
+<li><strong><code>client.get_user_repos(username)</code></strong>: When this line executes, <code>requests.get()</code> is called internally. The <code>responses</code> library intercepts this call because the URL matches our rule. It returns a fake <code>Response</code> object with the data we specified.</li>
+<li><strong>Assertions</strong>: We can now assert that our function correctly parsed the fake JSON and returned the list of repository names. We can also inspect <code>responses.calls</code> to verify that the expected network call was made.</li>
+</ol>
+<p>If our code tried to access any other URL, the <code>responses</code> library would raise an error, preventing unexpected network access.</p>
+<h3 id="testing-failure-paths">Testing Failure Paths</h3>
+<p>Mocking is even more valuable for testing how your code handles errors. It's difficult to reliably trigger a 404 or 500 error from a real API, but with <code>responses</code>, it's trivial.</p>
+<p>Let's test the "user not found" case.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_api_client.py (continued)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_get_user_repos_not_found</span><span class="p">(</span><span class="n">responses</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Test handling of a 404 Not Found error.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">username</span> <span class="o">=</span> <span class="s2">&quot;nonexistentuser&quot;</span>
+    <span class="n">responses</span><span class="o">.</span><span class="n">add</span><span class="p">(</span>
+        <span class="n">responses</span><span class="o">.</span><span class="n">GET</span><span class="p">,</span>
+        <span class="sa">f</span><span class="s2">&quot;https://api.github.com/users/</span><span class="si">{</span><span class="n">username</span><span class="si">}</span><span class="s2">/repos&quot;</span><span class="p">,</span>
+        <span class="n">json</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;error&quot;</span><span class="p">:</span> <span class="s2">&quot;Not Found&quot;</span><span class="p">},</span>
+        <span class="n">status</span><span class="o">=</span><span class="mi">404</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">client</span> <span class="o">=</span> <span class="n">GitHubAPIClient</span><span class="p">()</span>
+    <span class="n">repos</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">get_user_repos</span><span class="p">(</span><span class="n">username</span><span class="p">)</span>
+
+    <span class="k">assert</span> <span class="n">repos</span> <span class="ow">is</span> <span class="kc">None</span>
+</code></pre></div>
+
+<p>Here, we configured the mock to return a <code>404</code> status code. Our test verifies that <code>get_user_repos</code> correctly handles this by returning <code>None</code>, just as we designed it to.</p>
+<p>We can also test how our code handles unexpected server errors.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_api_client.py (continued)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">requests</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_get_user_repos_server_error</span><span class="p">(</span><span class="n">responses</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Test handling of a 500 Internal Server Error.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">username</span> <span class="o">=</span> <span class="s2">&quot;anyuser&quot;</span>
+    <span class="n">responses</span><span class="o">.</span><span class="n">add</span><span class="p">(</span>
+        <span class="n">responses</span><span class="o">.</span><span class="n">GET</span><span class="p">,</span>
+        <span class="sa">f</span><span class="s2">&quot;https://api.github.com/users/</span><span class="si">{</span><span class="n">username</span><span class="si">}</span><span class="s2">/repos&quot;</span><span class="p">,</span>
+        <span class="n">status</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">client</span> <span class="o">=</span> <span class="n">GitHubAPIClient</span><span class="p">()</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">requests</span><span class="o">.</span><span class="n">exceptions</span><span class="o">.</span><span class="n">HTTPError</span><span class="p">):</span>
+        <span class="n">client</span><span class="o">.</span><span class="n">get_user_repos</span><span class="p">(</span><span class="n">username</span><span class="p">)</span>
+</code></pre></div>
+
+<p>In this test, we simulate a <code>500</code> error. Our code is designed to call <code>response.raise_for_status()</code> in this case, which should raise an <code>HTTPError</code>. Using <code>pytest.raises</code>, we can elegantly assert that this expected exception was indeed raised.</p>
+<p>By using <code>responses</code>, we have created a fast, reliable, and comprehensive test suite for our API client without ever making a single real network request.</p>
+<h2 id="testing-file-io">Testing File I/O</h2>
+<h2 id="the-perils-of-a-persistent-file-system">The Perils of a Persistent File System</h2>
+<p>Just like databases, the file system is a form of external state. Tests that read or write files can interfere with each other and leave a mess on your machine if not handled carefully.</p>
+<p>Consider a function that processes a text file, counting the number of lines that contain a specific keyword.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/file_processor.py</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">analyze_log_file</span><span class="p">(</span><span class="n">file_path</span><span class="p">,</span> <span class="n">keyword</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Counts the number of lines containing a keyword in a file.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">file_path</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">lines</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">readlines</span><span class="p">()</span>
+        <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">lines</span> <span class="k">if</span> <span class="n">keyword</span> <span class="ow">in</span> <span class="n">line</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">FileNotFoundError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="o">-</span><span class="mi">1</span>
+</code></pre></div>
+
+<h3 id="the-wrong-way-using-real-files">The Wrong Way: Using Real Files</h3>
+<p>A naive approach to testing this would be to create a real file on disk.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_file_processor_wrong.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+
+<span class="c1"># DO NOT DO THIS!</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_analyze_log_file_with_real_file</span><span class="p">():</span>
+    <span class="n">file_path</span> <span class="o">=</span> <span class="s2">&quot;test_log.txt&quot;</span>
+    <span class="n">content</span> <span class="o">=</span> <span class="s2">&quot;INFO: Starting process</span><span class="se">\n</span><span class="s2">WARNING: Low disk space</span><span class="se">\n</span><span class="s2">INFO: Process finished</span><span class="se">\n</span><span class="s2">&quot;</span>
+
+    <span class="c1"># Setup: Create the file</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">file_path</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">content</span><span class="p">)</span>
+
+    <span class="c1"># The actual test</span>
+    <span class="n">count</span> <span class="o">=</span> <span class="n">analyze_log_file</span><span class="p">(</span><span class="n">file_path</span><span class="p">,</span> <span class="s2">&quot;INFO&quot;</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">count</span> <span class="o">==</span> <span class="mi">2</span>
+
+    <span class="c1"># Teardown: Clean up the file</span>
+    <span class="n">os</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">file_path</span><span class="p">)</span>
+</code></pre></div>
+
+<p>This approach is fraught with problems:</p>
+<ol>
+<li><strong>Cleanup is Not Guaranteed</strong>: If the assertion fails, <code>os.remove(file_path)</code> is never called. The <code>test_log.txt</code> file will be left behind, cluttering your project directory.</li>
+<li><strong>Race Conditions</strong>: If you run tests in parallel (e.g., with <code>pytest-xdist</code>), multiple processes might try to write to and delete <code>test_log.txt</code> at the same time, causing unpredictable failures.</li>
+<li><strong>Pathing Issues</strong>: Where should <code>test_log.txt</code> be created? In the project root? In the <code>tests/</code> directory? This can become messy and non-portable.</li>
+</ol>
+<p>We need a way to create files and directories in a temporary, isolated location that is automatically and reliably cleaned up after the test finishes.</p>
+<h2 id="working-with-temporary-files-and-directories">Working with Temporary Files and Directories</h2>
+<h2 id="pytests-built-in-tmp_path-fixture">Pytest's Built-in <code>tmp_path</code> Fixture</h2>
+<p>Pytest provides a brilliant solution to this problem with its built-in <code>tmp_path</code> fixture.</p>
+<p>When you add <code>tmp_path</code> as an argument to your test function, pytest does the following:</p>
+<ol>
+<li>Before the test runs, it creates a unique new temporary directory (e.g., <code>/tmp/pytest-of-user/pytest-1/test_my_function0/</code>).</li>
+<li>It passes a <code>pathlib.Path</code> object pointing to this directory into your test function.</li>
+<li>After the test finishes (pass or fail), it recursively removes the entire directory and all its contents.</li>
+</ol>
+<p>This gives you a pristine, private sandbox for each test to work with files, guaranteeing isolation and cleanup.</p>
+<h3 id="refactoring-with-tmp_path">Refactoring with <code>tmp_path</code></h3>
+<p>Let's rewrite our test for <code>analyze_log_file</code> using <code>tmp_path</code>.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_file_processor.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.file_processor</span><span class="w"> </span><span class="kn">import</span> <span class="n">analyze_log_file</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_analyze_log_file_with_tmp_path</span><span class="p">(</span><span class="n">tmp_path</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Given a temporary file created via tmp_path,</span>
+<span class="sd">    When analyze_log_file is called,</span>
+<span class="sd">    Then it should return the correct count of lines with the keyword.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># tmp_path is a pathlib.Path object to a temporary directory</span>
+    <span class="c1"># 1. Setup: Create a file inside the temporary directory</span>
+    <span class="n">log_file</span> <span class="o">=</span> <span class="n">tmp_path</span> <span class="o">/</span> <span class="s2">&quot;my_log.txt&quot;</span>
+    <span class="n">log_file</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="s2">&quot;INFO: Starting process</span><span class="se">\n</span><span class="s2">WARNING: Low disk space</span><span class="se">\n</span><span class="s2">INFO: Process finished</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># 2. Run the test</span>
+    <span class="n">count</span> <span class="o">=</span> <span class="n">analyze_log_file</span><span class="p">(</span><span class="n">log_file</span><span class="p">,</span> <span class="s2">&quot;INFO&quot;</span><span class="p">)</span>
+
+    <span class="c1"># 3. Assert the result</span>
+    <span class="k">assert</span> <span class="n">count</span> <span class="o">==</span> <span class="mi">2</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_analyze_log_file_not_found</span><span class="p">(</span><span class="n">tmp_path</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Given a path that does not exist,</span>
+<span class="sd">    When analyze_log_file is called,</span>
+<span class="sd">    Then it should return -1.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">non_existent_file</span> <span class="o">=</span> <span class="n">tmp_path</span> <span class="o">/</span> <span class="s2">&quot;ghost.txt&quot;</span>
+
+    <span class="n">count</span> <span class="o">=</span> <span class="n">analyze_log_file</span><span class="p">(</span><span class="n">non_existent_file</span><span class="p">,</span> <span class="s2">&quot;ERROR&quot;</span><span class="p">)</span>
+
+    <span class="k">assert</span> <span class="n">count</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span>
+</code></pre></div>
+
+<p>This is a massive improvement:</p>
+<ul>
+<li><strong>Clean and Declarative</strong>: The test clearly shows its intent. It creates a file, calls the function, and checks the result.</li>
+<li><strong>No Manual Cleanup</strong>: We don't need any <code>try...finally</code> blocks or <code>os.remove()</code> calls. Pytest handles it all.</li>
+<li><strong><code>pathlib</code> Power</strong>: <code>tmp_path</code> is a <code>pathlib.Path</code> object, which provides a modern, object-oriented API for file system operations (<code>/</code> for joining paths, <code>.write_text()</code>, <code>.read_text()</code>, etc.).</li>
+<li><strong>Complete Isolation</strong>: Each test function gets its own unique <code>tmp_path</code>, so there is zero chance of interference.</li>
+</ul>
+<h3 id="testing-functions-that-write-files">Testing Functions That Write Files</h3>
+<p>The <code>tmp_path</code> fixture is also perfect for testing functions that <em>create</em> files. Let's imagine a function that generates a report.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/file_processor.py (continued)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_report</span><span class="p">(</span><span class="n">output_path</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Writes a simple report to the given output path.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">output_path</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s2">&quot;--- REPORT ---</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">value</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s2">&quot;--- END ---</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>Our test can use <code>tmp_path</code> to provide a safe output location and then verify the contents of the created file.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_file_processor.py (continued)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.file_processor</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_report</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_generate_report</span><span class="p">(</span><span class="n">tmp_path</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Given a temporary output path,</span>
+<span class="sd">    When generate_report is called,</span>
+<span class="sd">    Then it should create a file with the correct content.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">report_file</span> <span class="o">=</span> <span class="n">tmp_path</span> <span class="o">/</span> <span class="s2">&quot;report.txt&quot;</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;user_count&quot;</span><span class="p">:</span> <span class="mi">150</span><span class="p">,</span> <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;OK&quot;</span><span class="p">}</span>
+
+    <span class="n">generate_report</span><span class="p">(</span><span class="n">report_file</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
+
+    <span class="c1"># Assert that the file was created and has the correct content</span>
+    <span class="k">assert</span> <span class="n">report_file</span><span class="o">.</span><span class="n">exists</span><span class="p">()</span>
+
+    <span class="n">content</span> <span class="o">=</span> <span class="n">report_file</span><span class="o">.</span><span class="n">read_text</span><span class="p">()</span>
+    <span class="k">assert</span> <span class="s2">&quot;--- REPORT ---&quot;</span> <span class="ow">in</span> <span class="n">content</span>
+    <span class="k">assert</span> <span class="s2">&quot;user_count: 150&quot;</span> <span class="ow">in</span> <span class="n">content</span>
+    <span class="k">assert</span> <span class="s2">&quot;status: OK&quot;</span> <span class="ow">in</span> <span class="n">content</span>
+    <span class="k">assert</span> <span class="s2">&quot;--- END ---&quot;</span> <span class="ow">in</span> <span class="n">content</span>
+</code></pre></div>
+
+<p>By using fixtures like <code>db_session</code> for databases, <code>responses</code> for APIs, and <code>tmp_path</code> for files, you can tame the complexity of external dependencies. These tools allow you to write tests that are fast, reliable, and isolated, forming the bedrock of a robust and maintainable test suite.</p>
+        </div>
+        <div class="footer">
+            Generated on 2025-11-22 16:29:18 | Made with ❤️ by GitHub Pages Generator
+        </div>
+    </div>
+    <script>
+        // Syntax highlighting for code blocks
+        document.addEventListener('DOMContentLoaded', (event) => {
+            // Highlight code blocks
+            document.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+            
+            // Add copy buttons to code blocks
+            document.querySelectorAll('pre').forEach((pre) => {
+                const button = document.createElement('button');
+                button.className = 'copy-btn';
+                button.textContent = 'Copy';
+                
+                button.addEventListener('click', () => {
+                    const code = pre.querySelector('code').textContent;
+                    navigator.clipboard.writeText(code).then(() => {
+                        button.textContent = 'Copied!';
+                        button.classList.add('copied');
+                        setTimeout(() => {
+                            button.textContent = 'Copy';
+                            button.classList.remove('copied');
+                        }, 2000);
+                    }).catch(err => {
+                        console.error('Failed to copy:', err);
+                        button.textContent = 'Error';
+                        setTimeout(() => {
+                            button.textContent = 'Copy';
+                        }, 2000);
+                    });
+                });
+                
+                pre.appendChild(button);
+            });
+        });
+    </script>
+</body>
+</html>

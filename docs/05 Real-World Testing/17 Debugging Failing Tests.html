@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>17 Debugging Failing Tests</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #8b5cf6;
+            --bg-main: #0f172a;
+            --bg-card: #1e293b;
+            --bg-code: #0f172a;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --border: #334155;
+            --accent: #06b6d4;
+            --success: #10b981;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body { 
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.7; 
+            color: var(--text-primary); 
+            background: var(--bg-main);
+        }
+        
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            padding: 20px; 
+        }
+        
+        .home-btn { 
+            position: fixed; 
+            top: 20px; 
+            right: 20px; 
+            background: var(--accent);
+            color: white; 
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            text-decoration: none; 
+            z-index: 1000;
+            box-shadow: 0 4px 20px rgba(6, 182, 212, 0.4);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .home-btn:hover { 
+            background: #0891b2;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(6, 182, 212, 0.5);
+        }
+        
+        .breadcrumb { 
+            background: var(--bg-card);
+            padding: 12px 0; 
+            margin-bottom: 24px; 
+            font-size: 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        
+        .breadcrumb a { 
+            color: var(--accent);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        
+        .breadcrumb a:hover { 
+            color: var(--primary);
+            text-decoration: underline;
+        }
+        
+        .content { 
+            background: var(--bg-card);
+            padding: 3rem; 
+            border-radius: 16px; 
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border);
+        }
+        
+        .file-list { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); 
+            gap: 1.5rem; 
+            margin: 2rem 0; 
+        }
+        
+        .file-item { 
+            padding: 1.5rem; 
+            border: 1px solid var(--border);
+            border-radius: 12px; 
+            background: var(--bg-main);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .file-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .file-item:hover { 
+            transform: translateY(-4px); 
+            box-shadow: 0 8px 30px rgba(99, 102, 241, 0.3);
+            border-color: var(--primary);
+        }
+        
+        .file-item:hover::before {
+            opacity: 1;
+        }
+        
+        .file-item a { 
+            color: var(--text-primary);
+            text-decoration: none; 
+            font-weight: 600; 
+            display: block;
+            font-size: 1.1rem;
+        }
+        
+        .file-item a:hover { 
+            color: var(--primary);
+        }
+        
+        .file-type { 
+            font-size: 13px; 
+            color: var(--text-secondary);
+            margin-top: 8px; 
+            font-weight: 500;
+        }
+        
+        /* Code Blocks */
+        pre { 
+            background: var(--bg-code);
+            padding: 1.5rem; 
+            border-radius: 12px; 
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            margin: 1.5rem 0;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            position: relative;
+        }
+        
+        pre code { 
+            background: none;
+            padding: 0;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 0.9em;
+            line-height: 1.6;
+        }
+        
+        /* Copy Button */
+        .copy-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.2s;
+            opacity: 0.7;
+            z-index: 10;
+        }
+        
+        .copy-btn:hover {
+            opacity: 1;
+            background: var(--primary-dark);
+            transform: translateY(-1px);
+        }
+        
+        .copy-btn.copied {
+            background: var(--success);
+        }
+        
+        pre:hover .copy-btn {
+            opacity: 1;
+        }
+        
+        /* Inline Code */
+        code { 
+            background: var(--bg-code);
+            color: #8b5cf6;
+            padding: 3px 8px; 
+            border-radius: 6px; 
+            font-size: 1.1em;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            border: 1px solid var(--border);
+        }
+        
+        /* Headings */
+        h1, h2, h3, h4, h5, h6 { 
+            color: var(--text-primary);
+            margin: 2rem 0 1rem 0;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+        
+        h1 { 
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            border-bottom: 3px solid var(--primary);
+            padding-bottom: 12px;
+            margin-bottom: 1.5rem;
+        }
+        
+        h2 { 
+            font-size: 2rem;
+            color: var(--primary);
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 8px;
+        }
+        
+        h3 { 
+            font-size: 1.5rem;
+            color: var(--accent);
+        }
+        
+        /* Links */
+        a { 
+            color: var(--accent);
+            transition: color 0.2s;
+        }
+        
+        a:hover { 
+            color: var(--primary);
+        }
+        
+        /* Paragraphs */
+        p {
+            margin: 1rem 0;
+            color: var(--text-secondary);
+        }
+        
+        /* Lists */
+        ul, ol {
+            margin: 1rem 0;
+            padding-left: 2rem;
+            color: var(--text-secondary);
+        }
+        
+        li {
+            margin: 0.5rem 0;
+        }
+        
+        /* Tables */
+        table { 
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1.5rem 0;
+            background: var(--bg-main);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+        
+        th, td { 
+            border: 1px solid var(--border);
+            padding: 12px 16px;
+            text-align: left;
+        }
+        
+        th { 
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:hover {
+            background: var(--bg-card);
+        }
+        
+        /* Blockquotes */
+        blockquote {
+            border-left: 4px solid var(--primary);
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            background: var(--bg-main);
+            border-radius: 0 8px 8px 0;
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+        
+        /* Horizontal Rule */
+        hr {
+            border: none;
+            border-top: 2px solid var(--border);
+            margin: 2rem 0;
+        }
+        
+        .footer { 
+            text-align: center; 
+            padding: 2rem; 
+            color: var(--text-secondary);
+            border-top: 1px solid var(--border);
+            margin-top: 3rem; 
+            font-size: 14px;
+        }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 12px;
+            height: 12px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: var(--bg-main);
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 6px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--primary);
+        }
+        
+        @media (max-width: 768px) {
+            .container { padding: 10px; }
+            .file-list { grid-template-columns: 1fr; }
+            .content { padding: 1.5rem; }
+            h1 { font-size: 2rem; }
+            h2 { font-size: 1.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <a href="../index.html" class="home-btn">🏠</a>
+    <div class="container">
+        <div class="breadcrumb">
+            <div style="padding: 0 20px;">
+                <a href="../index.html">🏠 Home</a> <span style="color: #64748b;">/</span> <a href="index.html">05 Real-World Testing</a>
+            </div>
+        </div>
+        <div class="content">
+            <h1 id="chapter-17-debugging-failing-tests">Chapter 17: Debugging Failing Tests</h1>
+<h2 id="reading-test-output">Reading Test Output</h2>
+<h2 id="reading-test-output_1">Reading Test Output</h2>
+<p>A failing test is not a failure; it's a success. It has successfully found a bug. The output from a failing test is not an error message to be feared, but a detailed map leading you directly to the problem. Learning to read this map is the most critical debugging skill you can develop.</p>
+<p>Let's start with a simple, broken function and a test that exposes the bug.</p>
+<h3 id="the-scenario-a-buggy-function">The Scenario: A Buggy Function</h3>
+<p>Imagine a function that's supposed to format a user's full name but has a subtle bug: it adds an extra space before the last name.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/user_profile.py</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">format_full_name</span><span class="p">(</span><span class="n">first_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">last_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Joins first and last names into a full name.&quot;&quot;&quot;</span>
+    <span class="c1"># Intentional bug: an extra space is added before the last name.</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">first_name</span><span class="si">}</span><span class="s2">  </span><span class="si">{</span><span class="n">last_name</span><span class="si">}</span><span class="s2">&quot;</span>
+</code></pre></div>
+
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_user_profile.py</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.user_profile</span><span class="w"> </span><span class="kn">import</span> <span class="n">format_full_name</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_format_full_name</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests the full name formatting.&quot;&quot;&quot;</span>
+    <span class="n">first</span> <span class="o">=</span> <span class="s2">&quot;Ada&quot;</span>
+    <span class="n">last</span> <span class="o">=</span> <span class="s2">&quot;Lovelace&quot;</span>
+
+    <span class="n">expected</span> <span class="o">=</span> <span class="s2">&quot;Ada Lovelace&quot;</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">format_full_name</span><span class="p">(</span><span class="n">first</span><span class="p">,</span> <span class="n">last</span><span class="p">)</span>
+
+    <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="n">expected</span>
+</code></pre></div>
+
+<p>When we run this test, it will fail. Let's run pytest and dissect the output piece by piece.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span><span class="nv">pytest</span>
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+platform<span class="w"> </span>linux<span class="w"> </span>--<span class="w"> </span>Python<span class="w"> </span><span class="m">3</span>.10.6,<span class="w"> </span>pytest-7.1.2,<span class="w"> </span>pluggy-1.0.0
+rootdir:<span class="w"> </span>/path/to/project
+collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
+
+tests/test_user_profile.py<span class="w"> </span>F<span class="w">                                         </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">=================================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">=================================</span>
+___________________________<span class="w"> </span>test_format_full_name<span class="w"> </span>____________________________
+
+<span class="w">    </span>def<span class="w"> </span>test_format_full_name<span class="o">()</span>:
+<span class="w">        </span><span class="s2">&quot;&quot;&quot;Tests the full name formatting.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="nv">first</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;Ada&quot;</span>
+<span class="w">        </span><span class="nv">last</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;Lovelace&quot;</span>
+
+<span class="w">        </span><span class="nv">expected</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;Ada Lovelace&quot;</span>
+<span class="w">        </span><span class="nv">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>format_full_name<span class="o">(</span>first,<span class="w"> </span>last<span class="o">)</span>
+
+&gt;<span class="w">       </span>assert<span class="w"> </span><span class="nv">result</span><span class="w"> </span><span class="o">==</span><span class="w"> </span>expected
+E<span class="w">       </span>AssertionError:<span class="w"> </span>assert<span class="w"> </span><span class="s1">&#39;Ada  Lovelace&#39;</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="s1">&#39;Ada Lovelace&#39;</span>
+E<span class="w">         </span>-<span class="w"> </span>Ada<span class="w"> </span>Lovelace
+E<span class="w">         </span>?<span class="w">    </span>^
+E<span class="w">         </span>+<span class="w"> </span>Ada<span class="w">  </span>Lovelace
+E<span class="w">         </span>?<span class="w">    </span>^
+
+tests/test_user_profile.py:11:<span class="w"> </span><span class="nv">AssertionError</span>
+<span class="o">=========================</span><span class="w"> </span>short<span class="w"> </span><span class="nb">test</span><span class="w"> </span>summary<span class="w"> </span><span class="nv">info</span><span class="w"> </span><span class="o">==========================</span>
+FAILED<span class="w"> </span>tests/test_user_profile.py::test_format_full_name<span class="w"> </span>-<span class="w"> </span>AssertionError...
+<span class="o">============================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>failed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.02s<span class="w"> </span><span class="o">=============================</span>
+</code></pre></div>
+
+<p>This output is dense with information. Let's break it down.</p>
+<h3 id="anatomy-of-a-failure-report">Anatomy of a Failure Report</h3>
+<ol>
+<li>
+<p><strong>Header</strong>:
+    <code>=========================== test session starts ============================
+    platform linux -- Python 3.10.6, pytest-7.1.2, pluggy-1.0.0
+    rootdir: /path/to/project
+    collected 1 item</code>
+    This section gives you context: your environment, Python version, pytest version, and the project's root directory. It also tells you how many tests it found (<code>collected 1 item</code>).</p>
+</li>
+<li>
+<p><strong>Progress Bar</strong>:
+    <code>tests/test_user_profile.py F                                         [100%]</code>
+    Each character represents a test result. <code>.</code> is a pass, <code>F</code> is a failure, <code>E</code> is an error (an unexpected exception), <code>s</code> is a skip, and <code>x</code> is an expected failure. Here, we see our single test failed.</p>
+</li>
+<li>
+<p><strong>Failures Section</strong>:
+    <code>================================= FAILURES =================================
+    ___________________________ test_format_full_name ____________________________</code>
+    This is the start of the detailed report for each failing test.</p>
+</li>
+<li>
+<p><strong>Traceback and Source Code</strong>:
+    ```python
+        def test_format_full_name():
+            ...
+            result = format_full_name(first, last)</p>
+<blockquote>
+<div class="codehilite"><pre><span></span><code>  assert result == expected
+</code></pre></div>
+
+<p><code>``
+Pytest shows you the exact line in your test file where the failure occurred, marked with a</code>&gt;`. It also provides a few lines of context. If the failure happened deep inside another function call, you would see the full call stack here.</p>
+</blockquote>
+</li>
+<li>
+<p><strong>Assertion Introspection (The Magic)</strong>:
+    <code>E       AssertionError: assert 'Ada  Lovelace' == 'Ada Lovelace'
+    E         - Ada Lovelace
+    E         ?    ^
+    E         + Ada  Lovelace
+    E         ?    ^</code>
+    This is where pytest shines. Instead of just telling you <code>False is not True</code>, it inspects the values involved in the failed assertion.</p>
+<ul>
+<li>The line starting with <code>E</code> (for Error/Explanation) shows the exact assertion that failed.</li>
+<li>It then provides a "diff" of the two strings. The <code>-</code> line is the expected value, the <code>+</code> line is the actual value (<code>result</code>), and the <code>?</code> lines highlight the exact character where they differ. We can immediately see the extra space in the actual result.</li>
+</ul>
+</li>
+<li>
+<p><strong>Failure Location</strong>:
+    <code>tests/test_user_profile.py:11: AssertionError</code>
+    This line explicitly states the file, line number, and exception type for the failure.</p>
+</li>
+<li>
+<p><strong>Short Test Summary</strong>:
+    <code>========================= short test summary info ==========================
+    FAILED tests/test_user_profile.py::test_format_full_name - AssertionError...
+    ============================ 1 failed in 0.02s =============================</code>
+    Finally, a summary tells you how many tests failed, passed, etc., and the total time taken.</p>
+</li>
+</ol>
+<p>Treating this output as a structured report rather than a monolithic error message transforms debugging from a guessing game into a methodical process of analysis.</p>
+<h2 id="using-pytests-verbose-and-extra-verbose-modes">Using pytest's Verbose and Extra-Verbose Modes</h2>
+<h2 id="using-pytests-verbose-and-extra-verbose-modes_1">Using pytest's Verbose and Extra-Verbose Modes</h2>
+<p>The default pytest output is concise, which is great for large test suites where you just want a quick overview. However, when debugging, you often need more detail. Pytest provides verbosity flags to control the level of output.</p>
+<p>Let's create a slightly larger test file to see the difference.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_calculations.py</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
+    <span class="k">return</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">subtract</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
+    <span class="c1"># Intentional bug</span>
+    <span class="k">return</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_add_positive_numbers</span><span class="p">():</span>
+    <span class="k">assert</span> <span class="n">add</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span> <span class="o">==</span> <span class="mi">5</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_add_negative_numbers</span><span class="p">():</span>
+    <span class="k">assert</span> <span class="n">add</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">3</span><span class="p">)</span> <span class="o">==</span> <span class="o">-</span><span class="mi">5</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_subtract_numbers</span><span class="p">():</span>
+    <span class="k">assert</span> <span class="n">subtract</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span>
+</code></pre></div>
+
+<h3 id="default-output-pytest">Default Output (<code>pytest</code>)</h3>
+<p>Running <code>pytest</code> with no flags gives us the compact progress bar.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>tests/test_calculations.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items
+
+tests/test_calculations.py<span class="w"> </span>..F<span class="w">                                        </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">=================================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">=================================</span>
+__________________________<span class="w"> </span>test_subtract_numbers<span class="w"> </span>___________________________
+
+<span class="w">    </span>def<span class="w"> </span>test_subtract_numbers<span class="o">()</span>:
+&gt;<span class="w">       </span>assert<span class="w"> </span>subtract<span class="o">(</span><span class="m">5</span>,<span class="w"> </span><span class="m">3</span><span class="o">)</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">2</span>
+E<span class="w">       </span>assert<span class="w"> </span><span class="nv">8</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">2</span>
+E<span class="w">        </span>+<span class="w">  </span>where<span class="w"> </span><span class="nv">8</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>subtract<span class="o">(</span><span class="m">5</span>,<span class="w"> </span><span class="m">3</span><span class="o">)</span>
+
+tests/test_calculations.py:15:<span class="w"> </span><span class="nv">AssertionError</span>
+<span class="o">=========================</span><span class="w"> </span>short<span class="w"> </span><span class="nb">test</span><span class="w"> </span>summary<span class="w"> </span><span class="nv">info</span><span class="w"> </span><span class="o">==========================</span>
+FAILED<span class="w"> </span>tests/test_calculations.py::test_subtract_numbers<span class="w"> </span>-<span class="w"> </span>assert<span class="w"> </span><span class="nv">8</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nv">2</span>
+<span class="o">=======================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>failed,<span class="w"> </span><span class="m">2</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.02s<span class="w"> </span><span class="o">========================</span>
+</code></pre></div>
+
+<p>Notice the <code>..F</code> in the progress bar. Two passed, one failed. This is efficient but doesn't tell you <em>which</em> tests passed.</p>
+<h3 id="verbose-mode-v">Verbose Mode (<code>-v</code>)</h3>
+<p>The <code>-v</code> or <code>--verbose</code> flag changes the output to list each test individually with its result.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>tests/test_calculations.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items
+
+tests/test_calculations.py::test_add_positive_numbers<span class="w"> </span>PASSED<span class="w">           </span><span class="o">[</span><span class="w"> </span><span class="m">33</span>%<span class="o">]</span>
+tests/test_calculations.py::test_add_negative_numbers<span class="w"> </span>PASSED<span class="w">           </span><span class="o">[</span><span class="w"> </span><span class="m">66</span>%<span class="o">]</span>
+tests/test_calculations.py::test_subtract_numbers<span class="w"> </span>FAILED<span class="w">               </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">=================================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">=================================</span>
+__________________________<span class="w"> </span>test_subtract_numbers<span class="w"> </span>___________________________
+...<span class="w"> </span><span class="o">(</span>failure<span class="w"> </span>details<span class="w"> </span>are<span class="w"> </span>the<span class="w"> </span>same<span class="o">)</span><span class="w"> </span>...
+<span class="o">=========================</span><span class="w"> </span>short<span class="w"> </span><span class="nb">test</span><span class="w"> </span>summary<span class="w"> </span><span class="nv">info</span><span class="w"> </span><span class="o">==========================</span>
+FAILED<span class="w"> </span>tests/test_calculations.py::test_subtract_numbers<span class="w"> </span>-<span class="w"> </span>assert<span class="w"> </span><span class="nv">8</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nv">2</span>
+<span class="o">=======================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>failed,<span class="w"> </span><span class="m">2</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.02s<span class="w"> </span><span class="o">========================</span>
+</code></pre></div>
+
+<p>This is much clearer. We see the full node ID (<code>file::function</code>) for every test and its status (<code>PASSED</code> or <code>FAILED</code>). This is my personal default for running tests during development.</p>
+<h3 id="extra-verbose-mode-vv">Extra-Verbose Mode (<code>-vv</code>)</h3>
+<p>The <code>-vv</code> flag adds even more detail, primarily by showing more information during the setup and teardown phases of tests. For simple assertion failures like this, the output is often identical to <code>-v</code>. Its real power becomes apparent when you have complex fixtures or are debugging issues with the test runner itself.</p>
+<h3 id="the-report-flag-r">The Report Flag (<code>-r</code>)</h3>
+<p>The <code>-r</code> flag is a powerful companion to <code>-v</code>. It controls which information is shown in the "short test summary info" section. It takes a character argument to specify what to show. A common and highly useful combination is <code>-ra</code>.</p>
+<ul>
+<li><code>r</code>: report</li>
+<li><code>a</code>: all (except passes)</li>
+</ul>
+<p>Let's run it on our file.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-ra<span class="w"> </span>tests/test_calculations.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items
+
+tests/test_calculations.py<span class="w"> </span>..F<span class="w">                                        </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">=================================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">=================================</span>
+...<span class="w"> </span><span class="o">(</span>full<span class="w"> </span>failure<span class="w"> </span>report<span class="o">)</span><span class="w"> </span>...
+<span class="o">=========================</span><span class="w"> </span>short<span class="w"> </span><span class="nb">test</span><span class="w"> </span>summary<span class="w"> </span><span class="nv">info</span><span class="w"> </span><span class="o">==========================</span>
+FAILED<span class="w"> </span>tests/test_calculations.py::test_subtract_numbers<span class="w"> </span>-<span class="w"> </span>assert<span class="w"> </span><span class="nv">8</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nv">2</span>
+<span class="o">=======================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>failed,<span class="w"> </span><span class="m">2</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.02s<span class="w"> </span><span class="o">========================</span>
+</code></pre></div>
+
+<p>In this case, <code>-ra</code> doesn't add much because the default is to show failures. But if we had skipped tests or xfailed tests, they would also appear in this summary, giving a complete picture of the test run without the verbosity of <code>-v</code>.</p>
+<p><strong>Common <code>-r</code> options:</strong>
+- <code>f</code>: failed
+- <code>E</code>: error
+- <code>s</code>: skipped
+- <code>x</code>: xfailed
+- <code>p</code>: passed
+- <code>P</code>: passed with output
+- <code>a</code>: all (except <code>p</code> and <code>P</code>)
+- <code>A</code>: all</p>
+<p>For daily debugging, <code>pytest -v</code> is your best friend. For CI systems or generating reports, combining <code>-r</code> with other flags can give you the exact summary you need.</p>
+<h2 id="the-x-flag-stop-on-first-failure">The -x Flag (Stop on First Failure)</h2>
+<h2 id="the-x-flag-stop-on-first-failure_1">The -x Flag (Stop on First Failure)</h2>
+<p>When you run a large test suite, one single failure in a critical setup function (like connecting to a test database) can cause a cascade of hundreds of subsequent failures. This creates a huge amount of noise in your test report, burying the original, root-cause failure.</p>
+<p>Pytest provides a simple and powerful solution: the <code>-x</code> (or <code>--exitfirst</code>) flag. It tells pytest to stop the entire test session immediately after the first test fails.</p>
+<h3 id="the-problem-a-cascade-of-failures">The Problem: A Cascade of Failures</h3>
+<p>Let's create a scenario where an early test failure makes later tests irrelevant.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_workflow.py</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_step_1_data_preparation</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;This step prepares data, but it fails.&quot;&quot;&quot;</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Running Step 1: Data Preparation&quot;</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="kc">False</span><span class="p">,</span> <span class="s2">&quot;Data source is unavailable&quot;</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_step_2_data_processing</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;This step depends on the data from step 1.&quot;&quot;&quot;</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Running Step 2: Data Processing&quot;</span><span class="p">)</span>
+    <span class="c1"># This test would do something with the prepared data</span>
+    <span class="k">assert</span> <span class="kc">True</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_step_3_generate_report</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;This step generates a report from processed data.&quot;&quot;&quot;</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Running Step 3: Generate Report&quot;</span><span class="p">)</span>
+    <span class="c1"># This test would use the processed data</span>
+    <span class="k">assert</span> <span class="kc">True</span>
+</code></pre></div>
+
+<p>If <code>test_step_1</code> fails, the other two tests are meaningless. Let's see what happens when we run pytest normally. We'll use <code>-v</code> to see the individual tests and <code>-s</code> to see our <code>print</code> statements.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>-s<span class="w"> </span>tests/test_workflow.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items
+
+tests/test_workflow.py::test_step_1_data_preparation<span class="w"> </span>
+Running<span class="w"> </span>Step<span class="w"> </span><span class="m">1</span>:<span class="w"> </span>Data<span class="w"> </span>Preparation
+FAILED<span class="w">               </span><span class="o">[</span><span class="w"> </span><span class="m">33</span>%<span class="o">]</span>
+tests/test_workflow.py::test_step_2_data_processing<span class="w"> </span>
+Running<span class="w"> </span>Step<span class="w"> </span><span class="m">2</span>:<span class="w"> </span>Data<span class="w"> </span>Processing
+PASSED<span class="w">               </span><span class="o">[</span><span class="w"> </span><span class="m">66</span>%<span class="o">]</span>
+tests/test_workflow.py::test_step_3_generate_report<span class="w"> </span>
+Running<span class="w"> </span>Step<span class="w"> </span><span class="m">3</span>:<span class="w"> </span>Generate<span class="w"> </span>Report
+PASSED<span class="w">               </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">=================================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">=================================</span>
+______________________<span class="w"> </span>test_step_1_data_preparation<span class="w"> </span>______________________
+
+<span class="w">    </span>def<span class="w"> </span>test_step_1_data_preparation<span class="o">()</span>:
+<span class="w">        </span><span class="s2">&quot;&quot;&quot;This step prepares data, but it fails.&quot;&quot;&quot;</span>
+<span class="w">        </span>print<span class="o">(</span><span class="s2">&quot;\nRunning Step 1: Data Preparation&quot;</span><span class="o">)</span>
+&gt;<span class="w">       </span>assert<span class="w"> </span>False,<span class="w"> </span><span class="s2">&quot;Data source is unavailable&quot;</span>
+E<span class="w">       </span>AssertionError:<span class="w"> </span>Data<span class="w"> </span><span class="nb">source</span><span class="w"> </span>is<span class="w"> </span>unavailable
+E<span class="w">       </span>assert<span class="w"> </span>False
+
+tests/test_workflow.py:5:<span class="w"> </span><span class="nv">AssertionError</span>
+<span class="o">=========================</span><span class="w"> </span>short<span class="w"> </span><span class="nb">test</span><span class="w"> </span>summary<span class="w"> </span><span class="nv">info</span><span class="w"> </span><span class="o">==========================</span>
+FAILED<span class="w"> </span>tests/test_workflow.py::test_step_1_data_preparation<span class="w"> </span>-<span class="w"> </span>Assertio...
+<span class="o">=======================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>failed,<span class="w"> </span><span class="m">2</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.03s<span class="w"> </span><span class="o">========================</span>
+</code></pre></div>
+
+<p>Pytest ran all three tests, even though the failure in <code>test_step_1</code> implies the others are running on invalid assumptions. This is just a small example; imagine this with 300 tests.</p>
+<h3 id="the-solution-pytest-x">The Solution: <code>pytest -x</code></h3>
+<p>Now, let's run the same command but add the <code>-x</code> flag.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>-s<span class="w"> </span>-x<span class="w"> </span>tests/test_workflow.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items
+
+tests/test_workflow.py::test_step_1_data_preparation<span class="w"> </span>
+Running<span class="w"> </span>Step<span class="w"> </span><span class="m">1</span>:<span class="w"> </span>Data<span class="w"> </span>Preparation
+FAILED<span class="w">               </span><span class="o">[</span><span class="w"> </span><span class="m">33</span>%<span class="o">]</span>
+
+<span class="o">=================================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">=================================</span>
+______________________<span class="w"> </span>test_step_1_data_preparation<span class="w"> </span>______________________
+
+<span class="w">    </span>def<span class="w"> </span>test_step_1_data_preparation<span class="o">()</span>:
+<span class="w">        </span><span class="s2">&quot;&quot;&quot;This step prepares data, but it fails.&quot;&quot;&quot;</span>
+<span class="w">        </span>print<span class="o">(</span><span class="s2">&quot;\nRunning Step 1: Data Preparation&quot;</span><span class="o">)</span>
+&gt;<span class="w">       </span>assert<span class="w"> </span>False,<span class="w"> </span><span class="s2">&quot;Data source is unavailable&quot;</span>
+E<span class="w">       </span>AssertionError:<span class="w"> </span>Data<span class="w"> </span><span class="nb">source</span><span class="w"> </span>is<span class="w"> </span>unavailable
+E<span class="w">       </span>assert<span class="w"> </span>False
+
+tests/test_workflow.py:5:<span class="w"> </span><span class="nv">AssertionError</span>
+<span class="o">===========================</span><span class="w"> </span>short<span class="w"> </span><span class="nb">test</span><span class="w"> </span>summary<span class="w"> </span><span class="nv">info</span><span class="w"> </span><span class="o">============================</span>
+FAILED<span class="w"> </span>tests/test_workflow.py::test_step_1_data_preparation<span class="w"> </span>-<span class="w"> </span>Assertio...
+!!!!!!!!!!!!!!!!!!!!!!!!!!<span class="w"> </span>stopping<span class="w"> </span>after<span class="w"> </span><span class="m">1</span><span class="w"> </span>failures<span class="w"> </span>!!!!!!!!!!!!!!!!!!!!!!!!!!!
+<span class="o">============================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>failed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.02s<span class="w"> </span><span class="o">=============================</span>
+</code></pre></div>
+
+<p>The result is much cleaner.
+- Pytest ran <code>test_step_1_data_preparation</code>.
+- It failed.
+- Pytest immediately stopped the session, printing <code>stopping after 1 failures</code>.
+- <code>test_step_2</code> and <code>test_step_3</code> were never executed.</p>
+<p>This allows you to focus your attention entirely on the first point of failure, which is almost always the root cause. The <code>-x</code> flag is an indispensable tool for efficient debugging in large codebases.</p>
+<h2 id="the-pdb-flag-drop-into-debugger">The --pdb Flag (Drop into Debugger)</h2>
+<h2 id="the-pdb-flag-drop-into-debugger_1">The --pdb Flag (Drop into Debugger)</h2>
+<p>Sometimes, a failure message isn't enough. You need to inspect the state of your program—the values of variables, the call stack—at the exact moment of failure. This is called post-mortem debugging. Pytest integrates seamlessly with Python's built-in debugger, <code>pdb</code>, via the <code>--pdb</code> flag.</p>
+<p>When you run tests with <code>pytest --pdb</code>, if a test fails or raises an uncaught exception, pytest will automatically drop you into an interactive <code>pdb</code> session at the point of failure.</p>
+<h3 id="a-scenario-for-debugging">A Scenario for Debugging</h3>
+<p>Let's consider a function that processes a dictionary of user data. The bug is subtle and depends on the input data.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/data_processor.py</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">process_user_data</span><span class="p">(</span><span class="n">data</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Processes user data, calculating an age-based score.&quot;&quot;&quot;</span>
+    <span class="n">processed</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+    <span class="c1"># Bug: This assumes &#39;age&#39; is always present and is an integer.</span>
+    <span class="c1"># It will fail if &#39;age&#39; is missing or a string.</span>
+    <span class="k">if</span> <span class="n">processed</span><span class="p">[</span><span class="s1">&#39;age&#39;</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">30</span><span class="p">:</span>
+        <span class="n">processed</span><span class="p">[</span><span class="s1">&#39;score&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">100</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">processed</span><span class="p">[</span><span class="s1">&#39;score&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="mi">50</span>
+
+    <span class="n">processed</span><span class="p">[</span><span class="s1">&#39;status&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="s1">&#39;processed&#39;</span>
+    <span class="k">return</span> <span class="n">processed</span>
+</code></pre></div>
+
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_data_processor.py</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.data_processor</span><span class="w"> </span><span class="kn">import</span> <span class="n">process_user_data</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_user_with_string_age</span><span class="p">():</span>
+    <span class="n">user_data</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Charlie&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;age&quot;</span><span class="p">:</span> <span class="s2">&quot;35&quot;</span><span class="p">,</span>  <span class="c1"># Age is a string, not an integer!</span>
+        <span class="s2">&quot;city&quot;</span><span class="p">:</span> <span class="s2">&quot;New York&quot;</span>
+    <span class="p">}</span>
+
+    <span class="n">processed</span> <span class="o">=</span> <span class="n">process_user_data</span><span class="p">(</span><span class="n">user_data</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">processed</span><span class="p">[</span><span class="s1">&#39;score&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="mi">100</span>
+</code></pre></div>
+
+<p>Running this test will result in a <code>TypeError</code> because you can't compare a string (<code>"35"</code>) with an integer (<code>30</code>). Let's use <code>--pdb</code> to investigate.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>--pdb<span class="w"> </span>tests/test_data_processor.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
+
+tests/test_data_processor.py<span class="w"> </span>E<span class="w">                                        </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">==================================</span><span class="w"> </span><span class="nv">ERRORS</span><span class="w"> </span><span class="o">==================================</span>
+_<span class="w"> </span>ERROR<span class="w"> </span>at<span class="w"> </span>setup<span class="w"> </span>of<span class="w"> </span>test_process_user_with_string_age<span class="w"> </span>_
+
+&gt;<span class="w">   </span>???
+
+/path/to/project/src/data_processor.py:6:<span class="w"> </span><span class="k">in</span><span class="w"> </span>process_user_data
+<span class="w">    </span><span class="k">if</span><span class="w"> </span>processed<span class="o">[</span><span class="s1">&#39;age&#39;</span><span class="o">]</span><span class="w"> </span>&gt;<span class="w"> </span><span class="m">30</span>:
+E<span class="w">   </span>TypeError:<span class="w"> </span><span class="s1">&#39;&gt;&#39;</span><span class="w"> </span>not<span class="w"> </span>supported<span class="w"> </span>between<span class="w"> </span>instances<span class="w"> </span>of<span class="w"> </span><span class="s1">&#39;str&#39;</span><span class="w"> </span>and<span class="w"> </span><span class="s1">&#39;int&#39;</span>
+
+During<span class="w"> </span>handling<span class="w"> </span>of<span class="w"> </span>the<span class="w"> </span>above<span class="w"> </span>exception,<span class="w"> </span>another<span class="w"> </span>exception<span class="w"> </span>occurred:
+...
+tests/test_data_processor.py:12:<span class="w"> </span>TypeError
+&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;<span class="w"> </span>entering<span class="w"> </span>PDB<span class="w"> </span>&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;
+&gt;<span class="w"> </span>/path/to/project/src/data_processor.py<span class="o">(</span><span class="m">6</span><span class="o">)</span>process_user_data<span class="o">()</span>
+-&gt;<span class="w"> </span><span class="k">if</span><span class="w"> </span>processed<span class="o">[</span><span class="s1">&#39;age&#39;</span><span class="o">]</span><span class="w"> </span>&gt;<span class="w"> </span><span class="m">30</span>:
+<span class="o">(</span>Pdb<span class="o">)</span>
+</code></pre></div>
+
+<p>Pytest has paused execution and dropped us into the <code>pdb</code> shell right at the line that caused the error. The <code>(Pdb)</code> prompt indicates we are in the debugger.</p>
+<h3 id="essential-pdb-commands">Essential PDB Commands</h3>
+<p>Here are the most common commands you'll use:</p>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Alias</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>p &lt;expr&gt;</code></td>
+<td><code>p</code></td>
+<td>Print the value of an expression.</td>
+</tr>
+<tr>
+<td><code>pp &lt;expr&gt;</code></td>
+<td><code>pp</code></td>
+<td>Pretty-print the value of an expression.</td>
+</tr>
+<tr>
+<td><code>l</code></td>
+<td><code>l</code></td>
+<td>List source code around the current line.</td>
+</tr>
+<tr>
+<td><code>n</code></td>
+<td><code>n</code></td>
+<td>Execute the next line.</td>
+</tr>
+<tr>
+<td><code>c</code></td>
+<td><code>c</code></td>
+<td>Continue execution until the next breakpoint or the end.</td>
+</tr>
+<tr>
+<td><code>q</code></td>
+<td><code>q</code></td>
+<td>Quit the debugger and exit.</td>
+</tr>
+<tr>
+<td><code>args</code></td>
+<td><code>a</code></td>
+<td>Print the arguments of the current function.</td>
+</tr>
+<tr>
+<td><code>where</code></td>
+<td><code>w</code></td>
+<td>Print the current call stack.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="an-interactive-debugging-session">An Interactive Debugging Session</h3>
+<p>Let's use these commands to figure out our bug.</p>
+<ol>
+<li>
+<p><strong>Check the code context</strong> with <code>l</code> (list):
+    <code>(Pdb) l
+      1     def process_user_data(data: dict) -&gt; dict:
+      2         """Processes user data, calculating an age-based score."""
+      3         processed = data.copy()
+      4     
+      5         # Bug: This assumes 'age' is always present and is an integer.
+      6  -&gt;     if processed['age'] &gt; 30:
+      7             processed['score'] = 100
+      8         else:
+      9             processed['score'] = 50
+     10     
+     11         processed['status'] = 'processed'</code>
+    The <code>-&gt;</code> arrow shows our exact location.</p>
+</li>
+<li>
+<p><strong>Inspect the variables</strong> with <code>p</code> (print). Let's check the <code>processed</code> dictionary.
+    <code>(Pdb) p processed
+    {'name': 'Charlie', 'age': '35', 'city': 'New York'}</code></p>
+</li>
+<li>
+<p><strong>Isolate the problem</strong>. Let's inspect the specific value causing the <code>TypeError</code>.
+    <code>(Pdb) p processed['age']
+    '35'
+    (Pdb) p type(processed['age'])
+    &lt;class 'str'&gt;</code>
+    Aha! The <code>TypeError</code> message told us we were comparing a <code>str</code> and an <code>int</code>, and now we've confirmed it. The value of <code>age</code> is the string <code>'35'</code>, not the integer <code>35</code>.</p>
+</li>
+<li>
+<p><strong>Quit the debugger</strong> with <code>q</code> (quit).
+    <code>(Pdb) q</code></p>
+</li>
+</ol>
+<p>The <code>--pdb</code> flag gives you an interactive x-ray of your code at the moment of failure, making it one of the most powerful debugging tools in your arsenal.</p>
+<h2 id="using-breakpoints-in-tests">Using Breakpoints in Tests</h2>
+<h2 id="using-breakpoints-in-tests_1">Using Breakpoints in Tests</h2>
+<p>The <code>--pdb</code> flag is fantastic for post-mortem debugging—analyzing the state <em>after</em> an error has occurred. But what if you want to pause execution <em>before</em> an error happens to inspect the state? For this, you can set a breakpoint directly in your code.</p>
+<p>A breakpoint is a signal in your code that tells the debugger to pause execution at that specific line.</p>
+<h3 id="setting-a-breakpoint">Setting a Breakpoint</h3>
+<p>Since Python 3.7, the recommended way to set a breakpoint is with the built-in <code>breakpoint()</code> function. For older Python versions, you would use <code>import pdb; pdb.set_trace()</code>.</p>
+<p>Let's modify our previous test to use a breakpoint. We'll place it right before the function call to inspect the data we're about to pass in.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_data_processor_breakpoint.py</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.data_processor</span><span class="w"> </span><span class="kn">import</span> <span class="n">process_user_data</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_user_with_breakpoint</span><span class="p">():</span>
+    <span class="n">user_data</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Charlie&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;age&quot;</span><span class="p">:</span> <span class="s2">&quot;35&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;city&quot;</span><span class="p">:</span> <span class="s2">&quot;New York&quot;</span>
+    <span class="p">}</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;About to call process_user_data...&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Set a breakpoint here</span>
+    <span class="nb">breakpoint</span><span class="p">()</span>
+
+    <span class="c1"># The code will pause here before this next line is executed</span>
+    <span class="n">processed</span> <span class="o">=</span> <span class="n">process_user_data</span><span class="p">(</span><span class="n">user_data</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">processed</span><span class="p">[</span><span class="s1">&#39;score&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="mi">100</span>
+</code></pre></div>
+
+<p>Now, run pytest <em>without</em> the <code>--pdb</code> flag. Pytest's output capturing mechanism needs to be disabled for the interactive debugger to work correctly, so we use the <code>-s</code> flag.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-s<span class="w"> </span>tests/test_data_processor_breakpoint.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
+
+tests/test_data_processor_breakpoint.py::test_process_user_with_breakpoint<span class="w"> </span>
+About<span class="w"> </span>to<span class="w"> </span>call<span class="w"> </span>process_user_data...
+&gt;<span class="w"> </span>/path/to/project/tests/test_data_processor_breakpoint.py<span class="o">(</span><span class="m">16</span><span class="o">)</span>test_process_user_with_breakpoint<span class="o">()</span>
+-&gt;<span class="w"> </span><span class="nv">processed</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>process_user_data<span class="o">(</span>user_data<span class="o">)</span>
+<span class="o">(</span>Pdb<span class="o">)</span>
+</code></pre></div>
+
+<p>As you can see, the test execution paused exactly where we put <code>breakpoint()</code>, and we are now in a <code>pdb</code> session. We can inspect local variables just like before.</p>
+<div class="codehilite"><pre><span></span><code><span class="o">(</span>Pdb<span class="o">)</span><span class="w"> </span>p<span class="w"> </span>user_data
+<span class="o">{</span><span class="s1">&#39;name&#39;</span>:<span class="w"> </span><span class="s1">&#39;Charlie&#39;</span>,<span class="w"> </span><span class="s1">&#39;age&#39;</span>:<span class="w"> </span><span class="s1">&#39;35&#39;</span>,<span class="w"> </span><span class="s1">&#39;city&#39;</span>:<span class="w"> </span><span class="s1">&#39;New York&#39;</span><span class="o">}</span>
+<span class="o">(</span>Pdb<span class="o">)</span><span class="w"> </span>c
+</code></pre></div>
+
+<p>After inspecting, we type <code>c</code> (continue) to resume execution. The test will then continue, call <code>process_user_data</code>, and fail with the <code>TypeError</code> as before.</p>
+<h3 id="breakpoint-vs-pytest-pdb"><code>breakpoint()</code> vs. <code>pytest --pdb</code></h3>
+<p>It's crucial to understand the difference between these two powerful tools:</p>
+<ul>
+<li><strong><code>pytest --pdb</code></strong>: <strong>Reactive</strong>. Automatically starts a debugger session <em>on failure</em>. You don't need to modify your code. It's for investigating <em>why</em> something failed.</li>
+<li><strong><code>breakpoint()</code></strong>: <strong>Proactive</strong>. You modify your code to explicitly tell the debugger <em>where</em> to pause. It's for inspecting the state at a specific point in your logic, regardless of whether an error has occurred yet.</li>
+</ul>
+<h3 id="using-a-different-debugger">Using a Different Debugger</h3>
+<p>Pytest allows you to use alternative, more powerful debuggers like <code>ipdb</code> (from IPython) or <code>pudb</code> (a visual debugger). If you have <code>pytest-ipdb</code> installed, for example, you can use it by setting a configuration option or a command-line flag.</p>
+<p>To use <code>ipdb</code> for the <code>--pdb</code> flag, you can run:</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># First, install the plugin</span>
+pip<span class="w"> </span>install<span class="w"> </span>pytest-ipdb
+
+<span class="c1"># Run pytest with the custom debugger class</span>
+pytest<span class="w"> </span>--pdbcls<span class="o">=</span>IPython.terminal.debugger:Pdb
+</code></pre></div>
+
+<p>Using <code>breakpoint()</code> will also respect the <code>PYTHONBREAKPOINT</code> environment variable, allowing you to switch debuggers without changing your code. For example:</p>
+<div class="codehilite"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">PYTHONBREAKPOINT</span><span class="o">=</span>ipdb.set_trace
+pytest<span class="w"> </span>-s<span class="w"> </span>tests/test_data_processor_breakpoint.py
+</code></pre></div>
+
+<p>This will launch <code>ipdb</code> instead of <code>pdb</code> when <code>breakpoint()</code> is called.</p>
+<h2 id="logging-and-debugging-information">Logging and Debugging Information</h2>
+<h2 id="logging-and-debugging-information_1">Logging and Debugging Information</h2>
+<p>In complex applications, <code>print()</code> statements and debuggers aren't always enough. A robust logging setup is essential for understanding program flow. By default, pytest cleverly captures all output (including <code>stdout</code>, <code>stderr</code>, and log messages) to keep your test results clean. It only displays this captured output for failing tests.</p>
+<h3 id="the-problem-hidden-output">The Problem: Hidden Output</h3>
+<p>Let's write a function that logs its progress and a test for it.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/reporter.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+
+<span class="n">log</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="vm">__name__</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">generate_report</span><span class="p">(</span><span class="n">data</span><span class="p">:</span> <span class="nb">list</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Generates a summary report from a list of numbers.&quot;&quot;&quot;</span>
+    <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Starting report generation for </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="si">}</span><span class="s2"> items.&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">data</span><span class="p">:</span>
+        <span class="n">log</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Input data is empty.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="s2">&quot;Empty Report&quot;</span>
+
+    <span class="n">total</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+    <span class="n">log</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Calculated total: </span><span class="si">{</span><span class="n">total</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="n">report</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Report: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">)</span><span class="si">}</span><span class="s2"> items, Total = </span><span class="si">{</span><span class="n">total</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="s2">&quot;Report generation complete.&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">report</span>
+</code></pre></div>
+
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_reporter.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.reporter</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_report</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_generate_report_success</span><span class="p">():</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">generate_report</span><span class="p">([</span><span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">30</span><span class="p">])</span>
+    <span class="k">assert</span> <span class="s2">&quot;Total = 60&quot;</span> <span class="ow">in</span> <span class="n">result</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_generate_report_empty</span><span class="p">():</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">generate_report</span><span class="p">([])</span>
+    <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="s2">&quot;Empty Report&quot;</span>
+</code></pre></div>
+
+<p>If you run this with <code>pytest</code>, both tests will pass, and you won't see any of the log messages. This is usually what you want. But for debugging, you need to see them.</p>
+<h3 id="viewing-log-messages">Viewing Log Messages</h3>
+<p>There are several ways to configure pytest to display logs during a test run.</p>
+<ol>
+<li>
+<p><strong>Disable all capturing (<code>-s</code>)</strong>: The simplest way is to use <code>pytest -s</code>. This disables all output capturing, so <code>print</code> statements and log messages will be printed to the console in real-time. This is a blunt instrument but effective for quick debugging.</p>
+</li>
+<li>
+<p><strong>Set the log level (<code>--log-cli-level</code>)</strong>: A more controlled approach is to tell pytest the minimum log level to display on the console.</p>
+</li>
+</ol>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>--log-cli-level<span class="o">=</span><span class="nv">INFO</span>
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
+
+tests/test_reporter.py::test_generate_report_success<span class="w"> </span>
+-------------------------------<span class="w"> </span>live<span class="w"> </span>log<span class="w"> </span>call<span class="w"> </span>--------------------------------
+INFO<span class="w">     </span>src.reporter:reporter.py:7<span class="w"> </span>Starting<span class="w"> </span>report<span class="w"> </span>generation<span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="m">3</span><span class="w"> </span>items.
+INFO<span class="w">     </span>src.reporter:reporter.py:15<span class="w"> </span>Report<span class="w"> </span>generation<span class="w"> </span>complete.
+PASSED<span class="w">                                                                 </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+tests/test_reporter.py::test_generate_report_empty<span class="w"> </span>
+-------------------------------<span class="w"> </span>live<span class="w"> </span>log<span class="w"> </span>call<span class="w"> </span>--------------------------------
+INFO<span class="w">     </span>src.reporter:reporter.py:7<span class="w"> </span>Starting<span class="w"> </span>report<span class="w"> </span>generation<span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="m">0</span><span class="w"> </span>items.
+WARNING<span class="w">  </span>src.reporter:reporter.py:10<span class="w"> </span>Input<span class="w"> </span>data<span class="w"> </span>is<span class="w"> </span>empty.
+PASSED<span class="w">                                                                 </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">============================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.02s<span class="w"> </span><span class="o">=============================</span>
+</code></pre></div>
+
+<p>Notice the <code>DEBUG</code> message was not shown, because its level is lower than <code>INFO</code>. This is a much cleaner way to see logs without disabling all of pytest's helpful capturing.</p>
+<h3 id="testing-logs-with-the-caplog-fixture">Testing Logs with the <code>caplog</code> Fixture</h3>
+<p>Viewing logs is useful for manual debugging, but what if you want to <em>test</em> that your code is logging correctly? For this, pytest provides the built-in <code>caplog</code> fixture.</p>
+<p>The <code>caplog</code> fixture captures log records so you can make assertions against them.</p>
+<p>Let's rewrite <code>test_generate_report_empty</code> to verify that a warning was logged.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_reporter.py (updated)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.reporter</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_report</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_generate_report_success</span><span class="p">(</span><span class="n">caplog</span><span class="p">):</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">generate_report</span><span class="p">([</span><span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">30</span><span class="p">])</span>
+    <span class="k">assert</span> <span class="s2">&quot;Total = 60&quot;</span> <span class="ow">in</span> <span class="n">result</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_generate_report_empty_logs_warning</span><span class="p">(</span><span class="n">caplog</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Verify that a WARNING is logged for empty data.&quot;&quot;&quot;</span>
+    <span class="c1"># You can optionally set the level for the capture context</span>
+    <span class="k">with</span> <span class="n">caplog</span><span class="o">.</span><span class="n">at_level</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">WARNING</span><span class="p">):</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">generate_report</span><span class="p">([])</span>
+
+    <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="s2">&quot;Empty Report&quot;</span>
+
+    <span class="c1"># caplog.records is a list of all captured LogRecord objects</span>
+    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">caplog</span><span class="o">.</span><span class="n">records</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
+
+    <span class="c1"># Get the first record</span>
+    <span class="n">record</span> <span class="o">=</span> <span class="n">caplog</span><span class="o">.</span><span class="n">records</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">assert</span> <span class="n">record</span><span class="o">.</span><span class="n">levelname</span> <span class="o">==</span> <span class="s2">&quot;WARNING&quot;</span>
+    <span class="k">assert</span> <span class="s2">&quot;Input data is empty&quot;</span> <span class="ow">in</span> <span class="n">record</span><span class="o">.</span><span class="n">message</span>
+</code></pre></div>
+
+<p>Here, we've turned a side effect (logging) into a testable behavior. The <code>caplog</code> fixture gives you access to:
+- <code>caplog.text</code>: All captured log messages as a single string.
+- <code>caplog.records</code>: A list of <code>logging.LogRecord</code> objects.
+- <code>caplog.record_tuples</code>: A list of <code>(logger_name, log_level, message)</code> tuples.</p>
+<p>Using <code>caplog</code> is the idiomatic pytest way to interact with logs. It allows you to write precise tests that confirm your application's logging behavior, which is critical for observability and production support.</p>
+        </div>
+        <div class="footer">
+            Generated on 2025-11-22 16:29:18 | Made with ❤️ by GitHub Pages Generator
+        </div>
+    </div>
+    <script>
+        // Syntax highlighting for code blocks
+        document.addEventListener('DOMContentLoaded', (event) => {
+            // Highlight code blocks
+            document.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+            
+            // Add copy buttons to code blocks
+            document.querySelectorAll('pre').forEach((pre) => {
+                const button = document.createElement('button');
+                button.className = 'copy-btn';
+                button.textContent = 'Copy';
+                
+                button.addEventListener('click', () => {
+                    const code = pre.querySelector('code').textContent;
+                    navigator.clipboard.writeText(code).then(() => {
+                        button.textContent = 'Copied!';
+                        button.classList.add('copied');
+                        setTimeout(() => {
+                            button.textContent = 'Copy';
+                            button.classList.remove('copied');
+                        }, 2000);
+                    }).catch(err => {
+                        console.error('Failed to copy:', err);
+                        button.textContent = 'Error';
+                        setTimeout(() => {
+                            button.textContent = 'Copy';
+                        }, 2000);
+                    });
+                });
+                
+                pre.appendChild(button);
+            });
+        });
+    </script>
+</body>
+</html>

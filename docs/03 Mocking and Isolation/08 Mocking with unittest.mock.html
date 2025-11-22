@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>08 Mocking with unittest.mock</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #8b5cf6;
+            --bg-main: #0f172a;
+            --bg-card: #1e293b;
+            --bg-code: #0f172a;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --border: #334155;
+            --accent: #06b6d4;
+            --success: #10b981;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body { 
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.7; 
+            color: var(--text-primary); 
+            background: var(--bg-main);
+        }
+        
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            padding: 20px; 
+        }
+        
+        .home-btn { 
+            position: fixed; 
+            top: 20px; 
+            right: 20px; 
+            background: var(--accent);
+            color: white; 
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            text-decoration: none; 
+            z-index: 1000;
+            box-shadow: 0 4px 20px rgba(6, 182, 212, 0.4);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .home-btn:hover { 
+            background: #0891b2;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(6, 182, 212, 0.5);
+        }
+        
+        .breadcrumb { 
+            background: var(--bg-card);
+            padding: 12px 0; 
+            margin-bottom: 24px; 
+            font-size: 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        
+        .breadcrumb a { 
+            color: var(--accent);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        
+        .breadcrumb a:hover { 
+            color: var(--primary);
+            text-decoration: underline;
+        }
+        
+        .content { 
+            background: var(--bg-card);
+            padding: 3rem; 
+            border-radius: 16px; 
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border);
+        }
+        
+        .file-list { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); 
+            gap: 1.5rem; 
+            margin: 2rem 0; 
+        }
+        
+        .file-item { 
+            padding: 1.5rem; 
+            border: 1px solid var(--border);
+            border-radius: 12px; 
+            background: var(--bg-main);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .file-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .file-item:hover { 
+            transform: translateY(-4px); 
+            box-shadow: 0 8px 30px rgba(99, 102, 241, 0.3);
+            border-color: var(--primary);
+        }
+        
+        .file-item:hover::before {
+            opacity: 1;
+        }
+        
+        .file-item a { 
+            color: var(--text-primary);
+            text-decoration: none; 
+            font-weight: 600; 
+            display: block;
+            font-size: 1.1rem;
+        }
+        
+        .file-item a:hover { 
+            color: var(--primary);
+        }
+        
+        .file-type { 
+            font-size: 13px; 
+            color: var(--text-secondary);
+            margin-top: 8px; 
+            font-weight: 500;
+        }
+        
+        /* Code Blocks */
+        pre { 
+            background: var(--bg-code);
+            padding: 1.5rem; 
+            border-radius: 12px; 
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            margin: 1.5rem 0;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            position: relative;
+        }
+        
+        pre code { 
+            background: none;
+            padding: 0;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 0.9em;
+            line-height: 1.6;
+        }
+        
+        /* Copy Button */
+        .copy-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.2s;
+            opacity: 0.7;
+            z-index: 10;
+        }
+        
+        .copy-btn:hover {
+            opacity: 1;
+            background: var(--primary-dark);
+            transform: translateY(-1px);
+        }
+        
+        .copy-btn.copied {
+            background: var(--success);
+        }
+        
+        pre:hover .copy-btn {
+            opacity: 1;
+        }
+        
+        /* Inline Code */
+        code { 
+            background: var(--bg-code);
+            color: #8b5cf6;
+            padding: 3px 8px; 
+            border-radius: 6px; 
+            font-size: 1.1em;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            border: 1px solid var(--border);
+        }
+        
+        /* Headings */
+        h1, h2, h3, h4, h5, h6 { 
+            color: var(--text-primary);
+            margin: 2rem 0 1rem 0;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+        
+        h1 { 
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            border-bottom: 3px solid var(--primary);
+            padding-bottom: 12px;
+            margin-bottom: 1.5rem;
+        }
+        
+        h2 { 
+            font-size: 2rem;
+            color: var(--primary);
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 8px;
+        }
+        
+        h3 { 
+            font-size: 1.5rem;
+            color: var(--accent);
+        }
+        
+        /* Links */
+        a { 
+            color: var(--accent);
+            transition: color 0.2s;
+        }
+        
+        a:hover { 
+            color: var(--primary);
+        }
+        
+        /* Paragraphs */
+        p {
+            margin: 1rem 0;
+            color: var(--text-secondary);
+        }
+        
+        /* Lists */
+        ul, ol {
+            margin: 1rem 0;
+            padding-left: 2rem;
+            color: var(--text-secondary);
+        }
+        
+        li {
+            margin: 0.5rem 0;
+        }
+        
+        /* Tables */
+        table { 
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1.5rem 0;
+            background: var(--bg-main);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+        
+        th, td { 
+            border: 1px solid var(--border);
+            padding: 12px 16px;
+            text-align: left;
+        }
+        
+        th { 
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:hover {
+            background: var(--bg-card);
+        }
+        
+        /* Blockquotes */
+        blockquote {
+            border-left: 4px solid var(--primary);
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            background: var(--bg-main);
+            border-radius: 0 8px 8px 0;
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+        
+        /* Horizontal Rule */
+        hr {
+            border: none;
+            border-top: 2px solid var(--border);
+            margin: 2rem 0;
+        }
+        
+        .footer { 
+            text-align: center; 
+            padding: 2rem; 
+            color: var(--text-secondary);
+            border-top: 1px solid var(--border);
+            margin-top: 3rem; 
+            font-size: 14px;
+        }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 12px;
+            height: 12px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: var(--bg-main);
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 6px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--primary);
+        }
+        
+        @media (max-width: 768px) {
+            .container { padding: 10px; }
+            .file-list { grid-template-columns: 1fr; }
+            .content { padding: 1.5rem; }
+            h1 { font-size: 2rem; }
+            h2 { font-size: 1.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <a href="../index.html" class="home-btn">🏠</a>
+    <div class="container">
+        <div class="breadcrumb">
+            <div style="padding: 0 20px;">
+                <a href="../index.html">🏠 Home</a> <span style="color: #64748b;">/</span> <a href="index.html">03 Mocking and Isolation</a>
+            </div>
+        </div>
+        <div class="content">
+            <h1 id="chapter-8-mocking-with-unittestmock">Chapter 8: Mocking with unittest.mock</h1>
+<h2 id="why-mock">Why Mock?</h2>
+<h2 id="why-mock_1">Why Mock?</h2>
+<p>So far, we've tested functions that are self-contained. They take inputs, perform calculations, and return outputs. But what happens when your code isn't self-contained? What happens when it depends on something outside of its control?</p>
+<p>Consider a function that gets the current weather for a city by calling an external API.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/weather_reporter.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">requests</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">get_weather_data</span><span class="p">(</span><span class="n">city</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fetches weather data from a (fictional) live API.&quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;https://api.weather.com/data?city=</span><span class="si">{</span><span class="n">city</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">response</span><span class="o">.</span><span class="n">raise_for_status</span><span class="p">()</span>  <span class="c1"># Raise an exception for bad status codes</span>
+        <span class="k">return</span> <span class="n">response</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+    <span class="k">except</span> <span class="n">requests</span><span class="o">.</span><span class="n">exceptions</span><span class="o">.</span><span class="n">RequestException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;API request failed: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;error&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)}</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">format_weather_report</span><span class="p">(</span><span class="n">city</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Formats a human-readable weather report.&quot;&quot;&quot;</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">get_weather_data</span><span class="p">(</span><span class="n">city</span><span class="p">)</span>
+    <span class="k">if</span> <span class="s2">&quot;error&quot;</span> <span class="ow">in</span> <span class="n">data</span><span class="p">:</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;Sorry, could not retrieve weather for </span><span class="si">{</span><span class="n">city</span><span class="si">}</span><span class="s2">.&quot;</span>
+
+    <span class="n">temp</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;temperature&quot;</span><span class="p">)</span>
+    <span class="n">condition</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;condition&quot;</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">temp</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">condition</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;Incomplete weather data for </span><span class="si">{</span><span class="n">city</span><span class="si">}</span><span class="s2">.&quot;</span>
+
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;The weather in </span><span class="si">{</span><span class="n">city</span><span class="si">}</span><span class="s2"> is </span><span class="si">{</span><span class="n">temp</span><span class="si">}</span><span class="s2">°C and </span><span class="si">{</span><span class="n">condition</span><span class="si">}</span><span class="s2">.&quot;</span>
+</code></pre></div>
+
+<p>Now, let's think about how we would test <code>format_weather_report()</code>. If we call it directly in a test, we run into several major problems:</p>
+<ol>
+<li><strong>Unreliability:</strong> The external weather API could be down. If it is, our test will fail, even if our <code>format_weather_report</code> function is perfectly correct. A failing test should indicate a bug in <em>our</em> code, not someone else's.</li>
+<li><strong>Slowness:</strong> Network requests are slow. A test suite with hundreds of tests making real network calls would take minutes or even hours to run, discouraging developers from running it frequently.</li>
+<li><strong>Cost &amp; Rate Limiting:</strong> Many APIs are paid services or have rate limits. Running your test suite hundreds of times a day could incur costs or get your IP address blocked.</li>
+<li><strong>Unpredictability:</strong> The weather in London changes! One day the API might return "Sunny," the next "Rainy." We can't write a stable assertion like <code>assert report == "The weather in London is 15°C and Sunny."</code> because the data is always changing. We also can't easily test edge cases, like what happens if the API returns incomplete data or an error.</li>
+</ol>
+<p>This is the core problem that <strong>mocking</strong> solves.</p>
+<p>Mocking allows us to <strong>isolate the code under test</strong> from its external dependencies. Instead of calling the real <code>requests.get</code>, we'll replace it with a "stunt double"—a fake version that is completely under our control. This lets us test our <code>format_weather_report</code> logic in isolation, ensuring it works correctly regardless of what the outside world is doing.</p>
+<h2 id="what-is-a-mock">What Is a Mock?</h2>
+<h2 id="what-is-a-mock_1">What Is a Mock?</h2>
+<p>A <strong>mock object</strong> is a simulated object that mimics the behavior of a real object in a controlled way. Think of it as a stunt double in a movie. When a scene is too dangerous or requires a specific skill the main actor doesn't have, a stunt double steps in. They look and act enough like the real actor for the scene to work, but they are completely controlled by the film's director.</p>
+<p>In testing, our test function is the director. The mock object is our stunt double for a real, problematic dependency (like the <code>requests</code> library).</p>
+<p>A mock object, at its core, does two things:</p>
+<ol>
+<li><strong>Simulates Behavior:</strong> You can tell a mock object how to behave. You can configure its methods to return specific values, or even to raise exceptions, allowing you to simulate any possible scenario from the real dependency. For our weather example, we can tell our mock <code>requests.get</code> to return a specific JSON payload representing "Sunny" or an error code representing "API is down."</li>
+<li><strong>Records Interaction:</strong> A mock object spies on the code that uses it. It keeps a detailed log of every time its methods or attributes are accessed. After our code under test has run, we can inspect the mock to ask questions like:<ul>
+<li>"Were you called?"</li>
+<li>"How many times were you called?"</li>
+<li>"What arguments were you called with?"</li>
+</ul>
+</li>
+</ol>
+<p>This allows us to verify that our code is interacting with its dependencies correctly.</p>
+<p>Python's standard library includes a powerful mocking library called <code>unittest.mock</code>. While its name comes from the <code>unittest</code> framework, it is a standalone library that works perfectly with pytest and is the industry standard for mocking in Python. We'll be using it extensively.</p>
+<h3 id="test-doubles-a-family-of-fakes">Test Doubles: A Family of Fakes</h3>
+<p>"Mock" is often used as a catch-all term, but it's technically part of a larger family of objects called <strong>Test Doubles</strong>. You might hear these terms:</p>
+<ul>
+<li><strong>Dummy:</strong> An object that is passed around but never actually used. Usually just to fill a parameter list.</li>
+<li><strong>Stub:</strong> An object that provides canned answers to calls made during the test. It doesn't record interactions.</li>
+<li><strong>Spy:</strong> An object that records information on how it was called. It's a "stub with recording capabilities."</li>
+<li><strong>Fake:</strong> An object with a working implementation, but it's not the real production one. For example, an in-memory database instead of a real PostgreSQL database.</li>
+<li><strong>Mock:</strong> An object that is pre-programmed with expectations which form a specification of the calls they are expected to receive. It can throw an exception if it receives a call it doesn't expect.</li>
+</ul>
+<p><code>unittest.mock</code> provides objects that can act as stubs, spies, and mocks. For simplicity, we'll mostly use the term "mock," as it's the most common in the Python community. The key takeaway is that we are replacing a real component with a controllable fake for the purpose of a test.</p>
+<h2 id="creating-mocks-with-mock">Creating Mocks with Mock()</h2>
+<h2 id="creating-mocks-with-mock_1">Creating Mocks with Mock()</h2>
+<p>Let's start by creating a mock object directly to see how it behaves. The primary class for this is <code>Mock</code> from the <code>unittest.mock</code> library.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_mock_basics.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mock</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_basic_mock_behavior</span><span class="p">():</span>
+    <span class="c1"># Create a mock object</span>
+    <span class="n">mock_api_client</span> <span class="o">=</span> <span class="n">Mock</span><span class="p">()</span>
+
+    <span class="c1"># You can access any attribute on it, and it will return another Mock!</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Attribute access: </span><span class="si">{</span><span class="n">mock_api_client</span><span class="o">.</span><span class="n">get_user</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="c1"># Output: Attribute access: &lt;Mock name=&#39;mock.get_user&#39; id=&#39;...&#39;&gt;</span>
+
+    <span class="c1"># You can call any method on it, and it will also return another Mock!</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Method call: </span><span class="si">{</span><span class="n">mock_api_client</span><span class="o">.</span><span class="n">get_user</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="c1"># Output: Method call: &lt;Mock name=&#39;mock.get_user()&#39; id=&#39;...&#39;&gt;</span>
+
+    <span class="c1"># This is useful, but not what we usually want.</span>
+    <span class="c1"># We want to control the return value.</span>
+    <span class="n">mock_api_client</span><span class="o">.</span><span class="n">get_user</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Alice&quot;</span><span class="p">,</span> <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">}</span>
+
+    <span class="c1"># Now when we call it, we get our specified value</span>
+    <span class="n">user_data</span> <span class="o">=</span> <span class="n">mock_api_client</span><span class="o">.</span><span class="n">get_user</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">user_data</span> <span class="o">==</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Alice&quot;</span><span class="p">,</span> <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">}</span>
+</code></pre></div>
+
+<p>The <code>Mock</code> object is incredibly flexible. It allows any attribute access or method call by default, creating new <code>Mock</code> objects on the fly. This is powerful but can sometimes hide typos.</p>
+<p>The real utility comes from configuring its behavior and then asserting how it was used.</p>
+<h3 id="configuring-return-values-and-attributes">Configuring Return Values and Attributes</h3>
+<p>You can set the <code>return_value</code> of a mock method or set attributes directly.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_mock_basics.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mock</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_configuring_a_mock</span><span class="p">():</span>
+    <span class="c1"># Create a mock for a database connection object</span>
+    <span class="n">mock_db_conn</span> <span class="o">=</span> <span class="n">Mock</span><span class="p">()</span>
+
+    <span class="c1"># Configure an attribute</span>
+    <span class="n">mock_db_conn</span><span class="o">.</span><span class="n">is_connected</span> <span class="o">=</span> <span class="kc">True</span>
+
+    <span class="c1"># Configure a method&#39;s return value</span>
+    <span class="n">mock_db_conn</span><span class="o">.</span><span class="n">get_user_by_id</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;username&quot;</span><span class="p">:</span> <span class="s2">&quot;testuser&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;email&quot;</span><span class="p">:</span> <span class="s2">&quot;test@example.com&quot;</span>
+    <span class="p">}</span>
+
+    <span class="c1"># Now we can use it as if it were a real object</span>
+    <span class="k">assert</span> <span class="n">mock_db_conn</span><span class="o">.</span><span class="n">is_connected</span> <span class="ow">is</span> <span class="kc">True</span>
+
+    <span class="n">user</span> <span class="o">=</span> <span class="n">mock_db_conn</span><span class="o">.</span><span class="n">get_user_by_id</span><span class="p">(</span><span class="mi">123</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">user</span><span class="p">[</span><span class="s2">&quot;username&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;testuser&quot;</span>
+</code></pre></div>
+
+<p>This is the foundation of mocking: creating a fake object and telling it how to respond when our code interacts with it. However, creating a mock like this doesn't help us test our <code>format_weather_report</code> function. That function doesn't accept a <code>requests</code> object as an argument; it imports and uses it directly.</p>
+<p>To solve this, we need to temporarily replace the <em>real</em> <code>requests</code> object in our application's namespace with our <em>mock</em> object. This process is called <strong>patching</strong>.</p>
+<h2 id="patching-functions-with-patch">Patching Functions with @patch</h2>
+<h2 id="patching-functions-with-patch_1">Patching Functions with @patch</h2>
+<p>Patching is the act of intercepting calls to functions or objects and replacing them with something else, usually a mock. The <code>unittest.mock.patch</code> function is our primary tool for this, and it's most commonly used as a decorator.</p>
+<p>Let's finally write a proper, isolated test for our <code>format_weather_report</code> function.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_weather_reporter.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">patch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.weather_reporter</span><span class="w"> </span><span class="kn">import</span> <span class="n">format_weather_report</span>
+
+<span class="c1"># The target string is &#39;path.to.module.object_to_patch&#39;</span>
+<span class="c1"># We are patching &#39;requests.get&#39; inside the &#39;weather_reporter&#39; module.</span>
+<span class="nd">@patch</span><span class="p">(</span><span class="s2">&quot;src.weather_reporter.requests.get&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_format_weather_report_sunny</span><span class="p">(</span><span class="n">mock_requests_get</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Test the report formatter with a successful, sunny weather API response.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Configure the mock to behave like a successful API call</span>
+    <span class="n">mock_response</span> <span class="o">=</span> <span class="n">mock_requests_get</span><span class="o">.</span><span class="n">return_value</span>
+    <span class="n">mock_response</span><span class="o">.</span><span class="n">status_code</span> <span class="o">=</span> <span class="mi">200</span>
+    <span class="n">mock_response</span><span class="o">.</span><span class="n">json</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;temperature&quot;</span><span class="p">:</span> <span class="mi">25</span><span class="p">,</span>
+        <span class="s2">&quot;condition&quot;</span><span class="p">:</span> <span class="s2">&quot;Sunny&quot;</span>
+    <span class="p">}</span>
+
+    <span class="c1"># Call the function we are testing</span>
+    <span class="n">report</span> <span class="o">=</span> <span class="n">format_weather_report</span><span class="p">(</span><span class="s2">&quot;London&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Assert that our function formatted the report correctly</span>
+    <span class="k">assert</span> <span class="n">report</span> <span class="o">==</span> <span class="s2">&quot;The weather in London is 25°C and Sunny.&quot;</span>
+</code></pre></div>
+
+<p>Let's break this down, because it's the most important concept in this chapter.</p>
+<h3 id="the-patch-decorator">The <code>@patch</code> Decorator</h3>
+<p><code>@patch("src.weather_reporter.requests.get")</code></p>
+<p>This decorator does all the magic. During the execution of <code>test_format_weather_report_sunny</code>, it finds the <code>get</code> object inside the <code>requests</code> module <em>as it is seen by <code>src.weather_reporter</code></em> and replaces it with a mock object.</p>
+<p>After the test function finishes (whether it passes, fails, or raises an error), <code>patch</code> automatically restores the original <code>requests.get</code>, so other tests are not affected.</p>
+<h3 id="the-mock-argument">The Mock Argument</h3>
+<p><code>def test_format_weather_report_sunny(mock_requests_get):</code></p>
+<p>The <code>patch</code> decorator creates a mock object and passes it into our test function as an argument. The name of the argument (<code>mock_requests_get</code>) can be anything you like, but it's good practice to name it descriptively. This is the object we use to configure behavior and make assertions.</p>
+<h3 id="the-target-string-the-most-common-point-of-confusion">The Target String: The Most Common Point of Confusion</h3>
+<p><code>"src.weather_reporter.requests.get"</code></p>
+<p>Why this specific string? This is critical. <strong>You must patch the object where it is looked up, not where it is defined.</strong></p>
+<p>Our code under test is in <code>src/weather_reporter.py</code>. Inside that file, the line <code>response = requests.get(...)</code> looks up the name <code>get</code> within the <code>requests</code> module that was imported into that file's namespace. Therefore, we must patch <code>requests.get</code> <em>within the <code>src.weather_reporter</code> module</em>.</p>
+<p>A common mistake is to try patching <code>'requests.get'</code>. This would patch the <code>get</code> function in the original <code>requests</code> library, but our <code>weather_reporter</code> module has already imported its own reference to it. The patch would have no effect on our code under test.</p>
+<p><strong>Think of it like this:</strong> You need to change the tool in the toolbox that your code is actually using.</p>
+<h3 id="testing-an-error-case">Testing an Error Case</h3>
+<p>Now, let's see how easy it is to test the "API is down" scenario.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_weather_reporter.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">patch</span><span class="p">,</span> <span class="n">Mock</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">requests.exceptions</span><span class="w"> </span><span class="kn">import</span> <span class="n">RequestException</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.weather_reporter</span><span class="w"> </span><span class="kn">import</span> <span class="n">format_weather_report</span>
+
+<span class="c1"># ... (previous test) ...</span>
+
+<span class="nd">@patch</span><span class="p">(</span><span class="s2">&quot;src.weather_reporter.requests.get&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_format_weather_report_api_error</span><span class="p">(</span><span class="n">mock_requests_get</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Test the report formatter when the API call fails.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Configure the mock to raise an exception, just like the real library would</span>
+    <span class="n">mock_requests_get</span><span class="o">.</span><span class="n">side_effect</span> <span class="o">=</span> <span class="n">RequestException</span><span class="p">(</span><span class="s2">&quot;API is down&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Call the function we are testing</span>
+    <span class="n">report</span> <span class="o">=</span> <span class="n">format_weather_report</span><span class="p">(</span><span class="s2">&quot;Paris&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Assert that our function handles the error gracefully</span>
+    <span class="k">assert</span> <span class="n">report</span> <span class="o">==</span> <span class="s2">&quot;Sorry, could not retrieve weather for Paris.&quot;</span>
+</code></pre></div>
+
+<p>Without mocking, this test would be nearly impossible to write reliably. With mocking, it's trivial. We simply configure our mock to raise an exception when called, and then verify that our error-handling logic works as expected. We'll cover <code>side_effect</code> in more detail shortly.</p>
+<h2 id="common-mock-assertions-assert_called-assert_called_with">Common Mock Assertions (assert_called, assert_called_with)</h2>
+<h2 id="common-mock-assertions-assert_called-assert_called_with_1">Common Mock Assertions (assert_called, assert_called_with)</h2>
+<p>The first part of mocking is controlling behavior. The second, equally important part is verifying that our code interacted with the dependency as we expected. Mock objects provide a suite of assertion methods for this purpose.</p>
+<p>Let's go back to our successful weather test and add some assertions about how the mock was used.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_weather_reporter.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">patch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.weather_reporter</span><span class="w"> </span><span class="kn">import</span> <span class="n">format_weather_report</span>
+
+<span class="nd">@patch</span><span class="p">(</span><span class="s2">&quot;src.weather_reporter.requests.get&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_format_weather_report_sunny_with_call_assertions</span><span class="p">(</span><span class="n">mock_requests_get</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Test the report formatter and verify the API call.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">mock_response</span> <span class="o">=</span> <span class="n">mock_requests_get</span><span class="o">.</span><span class="n">return_value</span>
+    <span class="n">mock_response</span><span class="o">.</span><span class="n">status_code</span> <span class="o">=</span> <span class="mi">200</span>
+    <span class="n">mock_response</span><span class="o">.</span><span class="n">json</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;temperature&quot;</span><span class="p">:</span> <span class="mi">25</span><span class="p">,</span>
+        <span class="s2">&quot;condition&quot;</span><span class="p">:</span> <span class="s2">&quot;Sunny&quot;</span>
+    <span class="p">}</span>
+
+    <span class="c1"># Call the function we are testing</span>
+    <span class="n">report</span> <span class="o">=</span> <span class="n">format_weather_report</span><span class="p">(</span><span class="s2">&quot;London&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Assert the output is correct</span>
+    <span class="k">assert</span> <span class="n">report</span> <span class="o">==</span> <span class="s2">&quot;The weather in London is 25°C and Sunny.&quot;</span>
+
+    <span class="c1"># --- New Assertions ---</span>
+    <span class="c1"># Verify that requests.get was called</span>
+    <span class="n">mock_requests_get</span><span class="o">.</span><span class="n">assert_called</span><span class="p">()</span>
+
+    <span class="c1"># Verify it was called exactly once</span>
+    <span class="n">mock_requests_get</span><span class="o">.</span><span class="n">assert_called_once</span><span class="p">()</span>
+
+    <span class="c1"># Verify it was called with the correct arguments</span>
+    <span class="n">mock_requests_get</span><span class="o">.</span><span class="n">assert_called_once_with</span><span class="p">(</span><span class="s2">&quot;https://api.weather.com/data?city=London&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>These assertions allow us to confirm that our function is constructing the API URL correctly.</p>
+<h3 id="reading-failure-messages">Reading Failure Messages</h3>
+<p>Pytest's integration with <code>unittest.mock</code> provides incredibly detailed failure messages. Let's say we made a typo in our code and called the API with <code>city=london</code> (lowercase).</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># In src/weather_reporter.py (with a bug)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">get_weather_data</span><span class="p">(</span><span class="n">city</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+    <span class="c1"># ...</span>
+    <span class="c1"># BUG: city is not capitalized as expected</span>
+    <span class="n">response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;https://api.weather.com/data?city=</span><span class="si">{</span><span class="n">city</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> 
+    <span class="c1"># ...</span>
+</code></pre></div>
+
+<p>Our <code>assert_called_once_with</code> would fail with a very helpful message:</p>
+<div class="codehilite"><pre><span></span><code>&gt;<span class="w">       </span>mock_requests_get.assert_called_once_with<span class="o">(</span><span class="s2">&quot;https://api.weather.com/data?city=London&quot;</span><span class="o">)</span>
+E<span class="w">       </span>AssertionError:<span class="w"> </span>expected<span class="w"> </span>call<span class="w"> </span>not<span class="w"> </span>found.
+E<span class="w">       </span>Expected:<span class="w"> </span>get<span class="o">(</span><span class="s1">&#39;https://api.weather.com/data?city=London&#39;</span><span class="o">)</span>
+E<span class="w">       </span>Actual:<span class="w"> </span>get<span class="o">(</span><span class="s1">&#39;https://api.weather.com/data?city=london&#39;</span><span class="o">)</span>
+</code></pre></div>
+
+<p>This is an example of <strong>treating errors as data</strong>. The output isn't just "failure"; it's a map showing you exactly what went wrong.</p>
+<h3 id="other-useful-assertions">Other Useful Assertions</h3>
+<p>Here are some other common assertion methods:</p>
+<ul>
+<li><code>mock_object.assert_not_called()</code>: Verifies the mock was never called. Useful for testing logic branches where a dependency <em>shouldn't</em> be touched.</li>
+<li><code>mock_object.assert_any_call(*args, **kwargs)</code>: Verifies the mock was called with the given arguments at least once, even if it was called with other arguments as well.</li>
+<li><code>mock_object.call_count</code>: An integer property that tells you how many times the mock was called. You can assert against it directly: <code>assert mock_object.call_count == 2</code>.</li>
+</ul>
+<p>Let's write a test for the <code>assert_not_called</code> case. Imagine we have a function that caches results and should only call the API if the city is not in the cache.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/cached_weather.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">requests</span>
+
+<span class="n">CACHE</span> <span class="o">=</span> <span class="p">{}</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">get_weather_with_cache</span><span class="p">(</span><span class="n">city</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+    <span class="k">if</span> <span class="n">city</span> <span class="ow">in</span> <span class="n">CACHE</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">CACHE</span><span class="p">[</span><span class="n">city</span><span class="p">]</span>
+
+    <span class="c1"># This part should only be reached if the city is not in the cache</span>
+    <span class="n">response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;https://api.weather.com/data?city=</span><span class="si">{</span><span class="n">city</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">response</span><span class="o">.</span><span class="n">raise_for_status</span><span class="p">()</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+    <span class="n">CACHE</span><span class="p">[</span><span class="n">city</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span>
+    <span class="k">return</span> <span class="n">data</span>
+</code></pre></div>
+
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_cached_weather.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">patch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.cached_weather</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_weather_with_cache</span><span class="p">,</span> <span class="n">CACHE</span>
+
+<span class="nd">@patch</span><span class="p">(</span><span class="s2">&quot;src.cached_weather.requests.get&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_get_weather_from_cache</span><span class="p">(</span><span class="n">mock_requests_get</span><span class="p">):</span>
+    <span class="c1"># Pre-populate the cache</span>
+    <span class="n">CACHE</span><span class="p">[</span><span class="s2">&quot;Tokyo&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;temperature&quot;</span><span class="p">:</span> <span class="mi">18</span><span class="p">,</span> <span class="s2">&quot;condition&quot;</span><span class="p">:</span> <span class="s2">&quot;Cloudy&quot;</span><span class="p">}</span>
+
+    <span class="c1"># Call the function for a cached city</span>
+    <span class="n">get_weather_with_cache</span><span class="p">(</span><span class="s2">&quot;Tokyo&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Verify that the real API was NOT called</span>
+    <span class="n">mock_requests_get</span><span class="o">.</span><span class="n">assert_not_called</span><span class="p">()</span>
+
+    <span class="c1"># Clean up the cache for other tests</span>
+    <span class="n">CACHE</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+</code></pre></div>
+
+<h2 id="mock-side-effects-and-return-values">Mock Side Effects and Return Values</h2>
+<h2 id="mock-side-effects-and-return-values_1">Mock Side Effects and Return Values</h2>
+<p>We've already seen <code>return_value</code> and a brief example of <code>side_effect</code>. Let's explore these two powerful configuration options in more detail. They are the primary ways you control how your mock behaves when called.</p>
+<h3 id="return_value-the-simple-case"><code>return_value</code>: The Simple Case</h3>
+<p><code>return_value</code> is an attribute on a mock. When the mock is called, it will always return the value assigned to this attribute. This is perfect for simulating successful function calls that return a predictable object.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_return_value.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mock</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_return_value_example</span><span class="p">():</span>
+    <span class="n">mock_func</span> <span class="o">=</span> <span class="n">Mock</span><span class="p">()</span>
+    <span class="n">mock_func</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="mi">42</span>
+
+    <span class="n">result</span> <span class="o">=</span> <span class="n">mock_func</span><span class="p">(</span><span class="s2">&quot;some&quot;</span><span class="p">,</span> <span class="s2">&quot;arguments&quot;</span><span class="p">)</span>
+
+    <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="mi">42</span>
+    <span class="n">mock_func</span><span class="o">.</span><span class="n">assert_called_once_with</span><span class="p">(</span><span class="s2">&quot;some&quot;</span><span class="p">,</span> <span class="s2">&quot;arguments&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<h3 id="side_effect-for-complex-behavior"><code>side_effect</code>: For Complex Behavior</h3>
+<p><code>side_effect</code> is more versatile and powerful. It can be set to an exception, an iterable, or a callable function.</p>
+<h4 id="1-raising-exceptions">1. Raising Exceptions</h4>
+<p>To test your code's error handling, you can set <code>side_effect</code> to an exception class or instance. When the mock is called, it will raise that exception.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_side_effect.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mock</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">function_that_handles_errors</span><span class="p">(</span><span class="n">api_call</span><span class="p">):</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">api_call</span><span class="p">()</span>
+    <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;Handled ValueError&quot;</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_side_effect_with_exception</span><span class="p">():</span>
+    <span class="n">mock_api</span> <span class="o">=</span> <span class="n">Mock</span><span class="p">()</span>
+    <span class="n">mock_api</span><span class="o">.</span><span class="n">side_effect</span> <span class="o">=</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Invalid API Key&quot;</span><span class="p">)</span>
+
+    <span class="n">result</span> <span class="o">=</span> <span class="n">function_that_handles_errors</span><span class="p">(</span><span class="n">mock_api</span><span class="p">)</span>
+
+    <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="s2">&quot;Handled ValueError&quot;</span>
+    <span class="n">mock_api</span><span class="o">.</span><span class="n">assert_called_once</span><span class="p">()</span>
+</code></pre></div>
+
+<p>This is exactly what we did in our <code>test_format_weather_report_api_error</code> test to simulate a network failure.</p>
+<h4 id="2-returning-a-sequence-of-values">2. Returning a Sequence of Values</h4>
+<p>If you need a mock to return different values on subsequent calls, you can assign an iterable (like a list or tuple) to <code>side_effect</code>.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_side_effect.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mock</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_side_effect_with_iterable</span><span class="p">():</span>
+    <span class="c1"># Imagine a mock for a database cursor&#39;s fetchone() method</span>
+    <span class="n">mock_fetchone</span> <span class="o">=</span> <span class="n">Mock</span><span class="p">()</span>
+    <span class="n">mock_fetchone</span><span class="o">.</span><span class="n">side_effect</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="p">(</span><span class="s2">&quot;user1&quot;</span><span class="p">,</span> <span class="s2">&quot;user1@a.com&quot;</span><span class="p">),</span>
+        <span class="p">(</span><span class="s2">&quot;user2&quot;</span><span class="p">,</span> <span class="s2">&quot;user2@b.com&quot;</span><span class="p">),</span>
+        <span class="kc">None</span>  <span class="c1"># The last call returns None, indicating no more rows</span>
+    <span class="p">]</span>
+
+    <span class="k">assert</span> <span class="n">mock_fetchone</span><span class="p">()</span> <span class="o">==</span> <span class="p">(</span><span class="s2">&quot;user1&quot;</span><span class="p">,</span> <span class="s2">&quot;user1@a.com&quot;</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">mock_fetchone</span><span class="p">()</span> <span class="o">==</span> <span class="p">(</span><span class="s2">&quot;user2&quot;</span><span class="p">,</span> <span class="s2">&quot;user2@b.com&quot;</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">mock_fetchone</span><span class="p">()</span> <span class="ow">is</span> <span class="kc">None</span>
+
+    <span class="c1"># If you call it again after exhaustion, it raises StopIteration</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="ne">StopIteration</span><span class="p">):</span>
+        <span class="n">mock_fetchone</span><span class="p">()</span>
+</code></pre></div>
+
+<h4 id="3-using-a-callable-for-dynamic-behavior">3. Using a Callable for Dynamic Behavior</h4>
+<p>For the most complex scenarios, you can assign a function (or any callable) to <code>side_effect</code>. The mock will delegate the call to your function, passing along any arguments it received. Your function's return value will be used as the mock's return value.</p>
+<p>This is useful when the mock's output needs to depend on its input.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_side_effect.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mock</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">user_db_side_effect</span><span class="p">(</span><span class="n">user_id</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A fake function to simulate a user database.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">user_id</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Alice&quot;</span><span class="p">}</span>
+    <span class="k">if</span> <span class="n">user_id</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Bob&quot;</span><span class="p">}</span>
+    <span class="k">return</span> <span class="kc">None</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_side_effect_with_callable</span><span class="p">():</span>
+    <span class="n">mock_get_user</span> <span class="o">=</span> <span class="n">Mock</span><span class="p">()</span>
+    <span class="n">mock_get_user</span><span class="o">.</span><span class="n">side_effect</span> <span class="o">=</span> <span class="n">user_db_side_effect</span>
+
+    <span class="n">alice</span> <span class="o">=</span> <span class="n">mock_get_user</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">bob</span> <span class="o">=</span> <span class="n">mock_get_user</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+    <span class="n">charlie</span> <span class="o">=</span> <span class="n">mock_get_user</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
+
+    <span class="k">assert</span> <span class="n">alice</span> <span class="o">==</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Alice&quot;</span><span class="p">}</span>
+    <span class="k">assert</span> <span class="n">bob</span> <span class="o">==</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Bob&quot;</span><span class="p">}</span>
+    <span class="k">assert</span> <span class="n">charlie</span> <span class="ow">is</span> <span class="kc">None</span>
+
+    <span class="c1"># You can still assert how the mock was called</span>
+    <span class="k">assert</span> <span class="n">mock_get_user</span><span class="o">.</span><span class="n">call_count</span> <span class="o">==</span> <span class="mi">3</span>
+    <span class="n">mock_get_user</span><span class="o">.</span><span class="n">assert_any_call</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">mock_get_user</span><span class="o">.</span><span class="n">assert_any_call</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+</code></pre></div>
+
+<h2 id="combining-mocks-and-fixtures">Combining Mocks and Fixtures</h2>
+<h2 id="combining-mocks-and-fixtures_1">Combining Mocks and Fixtures</h2>
+<p>Using <code>@patch</code> is great, but it can become unwieldy if you need the same mock setup for multiple tests, or if you need to patch several things at once.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># The &quot;crowded decorator&quot; problem</span>
+<span class="nd">@patch</span><span class="p">(</span><span class="s2">&quot;src.module.api.get_user&quot;</span><span class="p">)</span>
+<span class="nd">@patch</span><span class="p">(</span><span class="s2">&quot;src.module.api.get_account&quot;</span><span class="p">)</span>
+<span class="nd">@patch</span><span class="p">(</span><span class="s2">&quot;src.module.db.save_record&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_something</span><span class="p">(</span><span class="n">mock_save</span><span class="p">,</span> <span class="n">mock_get_account</span><span class="p">,</span> <span class="n">mock_get_user</span><span class="p">):</span>
+    <span class="c1"># ... test logic ...</span>
+</code></pre></div>
+
+<p>This is where fixtures, the foundation of pytest, come to the rescue. We can encapsulate our patching logic inside a fixture to create clean, reusable, and composable mock setups. This is the "pytest way" of handling mocks.</p>
+<h3 id="the-wrong-way-repetitive-setup">The Wrong Way: Repetitive Setup</h3>
+<p>First, let's see the problem. Imagine we have several tests that all need a mock of our weather API that returns a "Sunny" response. We could copy-paste the setup, but that's not maintainable.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># Repetitive setup (don&#39;t do this)</span>
+<span class="nd">@patch</span><span class="p">(</span><span class="s2">&quot;src.weather_reporter.requests.get&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_report_for_sunny_day</span><span class="p">(</span><span class="n">mock_requests_get</span><span class="p">):</span>
+    <span class="n">mock_response</span> <span class="o">=</span> <span class="n">mock_requests_get</span><span class="o">.</span><span class="n">return_value</span>
+    <span class="n">mock_response</span><span class="o">.</span><span class="n">json</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;temperature&quot;</span><span class="p">:</span> <span class="mi">25</span><span class="p">,</span> <span class="s2">&quot;condition&quot;</span><span class="p">:</span> <span class="s2">&quot;Sunny&quot;</span><span class="p">}</span>
+    <span class="c1"># ... test logic ...</span>
+
+<span class="nd">@patch</span><span class="p">(</span><span class="s2">&quot;src.weather_reporter.requests.get&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_another_feature_on_a_sunny_day</span><span class="p">(</span><span class="n">mock_requests_get</span><span class="p">):</span>
+    <span class="n">mock_response</span> <span class="o">=</span> <span class="n">mock_requests_get</span><span class="o">.</span><span class="n">return_value</span>
+    <span class="n">mock_response</span><span class="o">.</span><span class="n">json</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;temperature&quot;</span><span class="p">:</span> <span class="mi">25</span><span class="p">,</span> <span class="s2">&quot;condition&quot;</span><span class="p">:</span> <span class="s2">&quot;Sunny&quot;</span><span class="p">}</span>
+    <span class="c1"># ... another test&#39;s logic ...</span>
+</code></pre></div>
+
+<h3 id="the-right-way-a-mocking-fixture">The Right Way: A Mocking Fixture</h3>
+<p>Let's refactor this into a fixture. We can use <code>patch</code> as a context manager inside the fixture.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/conftest.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">patch</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">mock_sunny_weather_api</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A fixture that patches requests.get and mocks a sunny weather response.</span>
+<span class="sd">    It yields the mock object for optional further configuration in tests.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># The &#39;with&#39; statement starts the patch</span>
+    <span class="k">with</span> <span class="n">patch</span><span class="p">(</span><span class="s2">&quot;src.weather_reporter.requests.get&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">mock_get</span><span class="p">:</span>
+        <span class="n">mock_response</span> <span class="o">=</span> <span class="n">mock_get</span><span class="o">.</span><span class="n">return_value</span>
+        <span class="n">mock_response</span><span class="o">.</span><span class="n">status_code</span> <span class="o">=</span> <span class="mi">200</span>
+        <span class="n">mock_response</span><span class="o">.</span><span class="n">json</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;temperature&quot;</span><span class="p">:</span> <span class="mi">25</span><span class="p">,</span>
+            <span class="s2">&quot;condition&quot;</span><span class="p">:</span> <span class="s2">&quot;Sunny&quot;</span>
+        <span class="p">}</span>
+        <span class="k">yield</span> <span class="n">mock_get</span>  <span class="c1"># The test runs here</span>
+    <span class="c1"># The patch is automatically stopped when the &#39;with&#39; block exits</span>
+</code></pre></div>
+
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_weather_reporter_with_fixture.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.weather_reporter</span><span class="w"> </span><span class="kn">import</span> <span class="n">format_weather_report</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_format_weather_report_with_fixture</span><span class="p">(</span><span class="n">mock_sunny_weather_api</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Test the formatter using our fixture. The test is now much cleaner.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">report</span> <span class="o">=</span> <span class="n">format_weather_report</span><span class="p">(</span><span class="s2">&quot;London&quot;</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">report</span> <span class="o">==</span> <span class="s2">&quot;The weather in London is 25°C and Sunny.&quot;</span>
+
+    <span class="c1"># We can still make assertions on the mock yielded by the fixture</span>
+    <span class="n">mock_sunny_weather_api</span><span class="o">.</span><span class="n">assert_called_once_with</span><span class="p">(</span>
+        <span class="s2">&quot;https://api.weather.com/data?city=London&quot;</span>
+    <span class="p">)</span>
+</code></pre></div>
+
+<p>This approach is vastly superior:</p>
+<ul>
+<li><strong>DRY (Don't Repeat Yourself):</strong> The mock setup is defined in one place. If the API response format changes, we only need to update the fixture.</li>
+<li><strong>Readability:</strong> The test function is now focused purely on the logic it's testing: call the function and assert the result. The setup mechanism is abstracted away.</li>
+<li><strong>Reusability:</strong> Any test in our suite can now request the <code>mock_sunny_weather_api</code> fixture to get a consistent testing environment.</li>
+</ul>
+<h3 id="using-pytests-monkeypatch-fixture">Using Pytest's <code>monkeypatch</code> Fixture</h3>
+<p>Pytest provides its own built-in fixture for modifying code during tests called <code>monkeypatch</code>. It's an alternative to <code>unittest.mock.patch</code> for some use cases.</p>
+<p><code>monkeypatch</code> is excellent for replacing attributes, dictionary items, or environment variables. Its most common method is <code>setattr</code>.</p>
+<p>Let's rewrite our fixture using <code>monkeypatch</code>. This requires a bit more manual work, as <code>monkeypatch</code> doesn't create a <code>Mock</code> object for us, but it's very explicit.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/conftest.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mock</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">mock_sunny_weather_api_monkeypatch</span><span class="p">(</span><span class="n">monkeypatch</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A fixture that uses monkeypatch to replace requests.get.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># We need to create the mock object ourselves</span>
+    <span class="n">mock_get</span> <span class="o">=</span> <span class="n">Mock</span><span class="p">()</span>
+    <span class="n">mock_response</span> <span class="o">=</span> <span class="n">mock_get</span><span class="o">.</span><span class="n">return_value</span>
+    <span class="n">mock_response</span><span class="o">.</span><span class="n">status_code</span> <span class="o">=</span> <span class="mi">200</span>
+    <span class="n">mock_response</span><span class="o">.</span><span class="n">json</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;temperature&quot;</span><span class="p">:</span> <span class="mi">25</span><span class="p">,</span>
+        <span class="s2">&quot;condition&quot;</span><span class="p">:</span> <span class="s2">&quot;Sunny&quot;</span>
+    <span class="p">}</span>
+
+    <span class="c1"># Use monkeypatch.setattr to replace the real function with our mock</span>
+    <span class="n">monkeypatch</span><span class="o">.</span><span class="n">setattr</span><span class="p">(</span><span class="s2">&quot;src.weather_reporter.requests.get&quot;</span><span class="p">,</span> <span class="n">mock_get</span><span class="p">)</span>
+
+    <span class="c1"># Unlike the context manager, we don&#39;t need to yield.</span>
+    <span class="c1"># Monkeypatch handles the teardown automatically.</span>
+    <span class="c1"># We can return the mock if tests need to inspect it.</span>
+    <span class="k">return</span> <span class="n">mock_get</span>
+</code></pre></div>
+
+<h3 id="patch-vs-monkeypatch-which-to-choose"><code>patch</code> vs. <code>monkeypatch</code>: Which to Choose?</h3>
+<p>Both <code>unittest.mock.patch</code> and pytest's <code>monkeypatch</code> are excellent tools. Here's a general guideline:</p>
+<ul>
+<li>Use <strong><code>unittest.mock.patch</code></strong> (as a decorator or context manager) when your primary goal is to replace an object with a <code>Mock</code> to verify interactions (e.g., <code>assert_called_with</code>). It's the standard for classic mocking.</li>
+<li>Use <strong><code>monkeypatch</code></strong> when you want to replace something with a simple value or a fake function that doesn't need complex mock assertions. It's great for setting environment variables (<code>monkeypatch.setenv</code>), changing constants, or replacing a function with a simple lambda that returns a fixed value.</li>
+</ul>
+<p>For most of the mocking scenarios you'll encounter, combining <code>unittest.mock.patch</code> with pytest fixtures provides the cleanest and most powerful pattern. It leverages the strengths of both libraries: the sophisticated mocking capabilities of <code>unittest.mock</code> and the elegant dependency injection and setup/teardown management of pytest fixtures.</p>
+        </div>
+        <div class="footer">
+            Generated on 2025-11-22 16:29:18 | Made with ❤️ by GitHub Pages Generator
+        </div>
+    </div>
+    <script>
+        // Syntax highlighting for code blocks
+        document.addEventListener('DOMContentLoaded', (event) => {
+            // Highlight code blocks
+            document.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+            
+            // Add copy buttons to code blocks
+            document.querySelectorAll('pre').forEach((pre) => {
+                const button = document.createElement('button');
+                button.className = 'copy-btn';
+                button.textContent = 'Copy';
+                
+                button.addEventListener('click', () => {
+                    const code = pre.querySelector('code').textContent;
+                    navigator.clipboard.writeText(code).then(() => {
+                        button.textContent = 'Copied!';
+                        button.classList.add('copied');
+                        setTimeout(() => {
+                            button.textContent = 'Copy';
+                            button.classList.remove('copied');
+                        }, 2000);
+                    }).catch(err => {
+                        console.error('Failed to copy:', err);
+                        button.textContent = 'Error';
+                        setTimeout(() => {
+                            button.textContent = 'Copy';
+                        }, 2000);
+                    });
+                });
+                
+                pre.appendChild(button);
+            });
+        });
+    </script>
+</body>
+</html>

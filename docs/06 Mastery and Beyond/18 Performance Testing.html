@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>18 Performance Testing</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #8b5cf6;
+            --bg-main: #0f172a;
+            --bg-card: #1e293b;
+            --bg-code: #0f172a;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --border: #334155;
+            --accent: #06b6d4;
+            --success: #10b981;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body { 
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.7; 
+            color: var(--text-primary); 
+            background: var(--bg-main);
+        }
+        
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            padding: 20px; 
+        }
+        
+        .home-btn { 
+            position: fixed; 
+            top: 20px; 
+            right: 20px; 
+            background: var(--accent);
+            color: white; 
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            text-decoration: none; 
+            z-index: 1000;
+            box-shadow: 0 4px 20px rgba(6, 182, 212, 0.4);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .home-btn:hover { 
+            background: #0891b2;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(6, 182, 212, 0.5);
+        }
+        
+        .breadcrumb { 
+            background: var(--bg-card);
+            padding: 12px 0; 
+            margin-bottom: 24px; 
+            font-size: 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        
+        .breadcrumb a { 
+            color: var(--accent);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        
+        .breadcrumb a:hover { 
+            color: var(--primary);
+            text-decoration: underline;
+        }
+        
+        .content { 
+            background: var(--bg-card);
+            padding: 3rem; 
+            border-radius: 16px; 
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border);
+        }
+        
+        .file-list { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); 
+            gap: 1.5rem; 
+            margin: 2rem 0; 
+        }
+        
+        .file-item { 
+            padding: 1.5rem; 
+            border: 1px solid var(--border);
+            border-radius: 12px; 
+            background: var(--bg-main);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .file-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .file-item:hover { 
+            transform: translateY(-4px); 
+            box-shadow: 0 8px 30px rgba(99, 102, 241, 0.3);
+            border-color: var(--primary);
+        }
+        
+        .file-item:hover::before {
+            opacity: 1;
+        }
+        
+        .file-item a { 
+            color: var(--text-primary);
+            text-decoration: none; 
+            font-weight: 600; 
+            display: block;
+            font-size: 1.1rem;
+        }
+        
+        .file-item a:hover { 
+            color: var(--primary);
+        }
+        
+        .file-type { 
+            font-size: 13px; 
+            color: var(--text-secondary);
+            margin-top: 8px; 
+            font-weight: 500;
+        }
+        
+        /* Code Blocks */
+        pre { 
+            background: var(--bg-code);
+            padding: 1.5rem; 
+            border-radius: 12px; 
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            margin: 1.5rem 0;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            position: relative;
+        }
+        
+        pre code { 
+            background: none;
+            padding: 0;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 0.9em;
+            line-height: 1.6;
+        }
+        
+        /* Copy Button */
+        .copy-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.2s;
+            opacity: 0.7;
+            z-index: 10;
+        }
+        
+        .copy-btn:hover {
+            opacity: 1;
+            background: var(--primary-dark);
+            transform: translateY(-1px);
+        }
+        
+        .copy-btn.copied {
+            background: var(--success);
+        }
+        
+        pre:hover .copy-btn {
+            opacity: 1;
+        }
+        
+        /* Inline Code */
+        code { 
+            background: var(--bg-code);
+            color: #8b5cf6;
+            padding: 3px 8px; 
+            border-radius: 6px; 
+            font-size: 1.1em;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            border: 1px solid var(--border);
+        }
+        
+        /* Headings */
+        h1, h2, h3, h4, h5, h6 { 
+            color: var(--text-primary);
+            margin: 2rem 0 1rem 0;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+        
+        h1 { 
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            border-bottom: 3px solid var(--primary);
+            padding-bottom: 12px;
+            margin-bottom: 1.5rem;
+        }
+        
+        h2 { 
+            font-size: 2rem;
+            color: var(--primary);
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 8px;
+        }
+        
+        h3 { 
+            font-size: 1.5rem;
+            color: var(--accent);
+        }
+        
+        /* Links */
+        a { 
+            color: var(--accent);
+            transition: color 0.2s;
+        }
+        
+        a:hover { 
+            color: var(--primary);
+        }
+        
+        /* Paragraphs */
+        p {
+            margin: 1rem 0;
+            color: var(--text-secondary);
+        }
+        
+        /* Lists */
+        ul, ol {
+            margin: 1rem 0;
+            padding-left: 2rem;
+            color: var(--text-secondary);
+        }
+        
+        li {
+            margin: 0.5rem 0;
+        }
+        
+        /* Tables */
+        table { 
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1.5rem 0;
+            background: var(--bg-main);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+        
+        th, td { 
+            border: 1px solid var(--border);
+            padding: 12px 16px;
+            text-align: left;
+        }
+        
+        th { 
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:hover {
+            background: var(--bg-card);
+        }
+        
+        /* Blockquotes */
+        blockquote {
+            border-left: 4px solid var(--primary);
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            background: var(--bg-main);
+            border-radius: 0 8px 8px 0;
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+        
+        /* Horizontal Rule */
+        hr {
+            border: none;
+            border-top: 2px solid var(--border);
+            margin: 2rem 0;
+        }
+        
+        .footer { 
+            text-align: center; 
+            padding: 2rem; 
+            color: var(--text-secondary);
+            border-top: 1px solid var(--border);
+            margin-top: 3rem; 
+            font-size: 14px;
+        }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 12px;
+            height: 12px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: var(--bg-main);
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 6px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--primary);
+        }
+        
+        @media (max-width: 768px) {
+            .container { padding: 10px; }
+            .file-list { grid-template-columns: 1fr; }
+            .content { padding: 1.5rem; }
+            h1 { font-size: 2rem; }
+            h2 { font-size: 1.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <a href="../index.html" class="home-btn">🏠</a>
+    <div class="container">
+        <div class="breadcrumb">
+            <div style="padding: 0 20px;">
+                <a href="../index.html">🏠 Home</a> <span style="color: #64748b;">/</span> <a href="index.html">06 Mastery and Beyond</a>
+            </div>
+        </div>
+        <div class="content">
+            <h1 id="chapter-18-performance-testing">Chapter 18: Performance Testing</h1>
+<h2 id="when-performance-testing-matters">When Performance Testing Matters</h2>
+<h2 id="when-performance-testing-matters_1">When Performance Testing Matters</h2>
+<p>So far, our focus has been on correctness: does our code produce the right output? But in the real world, another question is just as critical: is our code <em>fast enough</em>? A correct algorithm that takes ten minutes to sort a list of a thousand items is practically useless. A web page that takes 30 seconds to load will be abandoned by users.</p>
+<p>Performance testing isn't about making every line of code as fast as possible. That's a path to premature optimization and unreadable code. Instead, it's about identifying and protecting the performance of the critical paths in your application.</p>
+<h3 id="what-is-a-critical-path">What is a "Critical Path"?</h3>
+<p>A critical path is a sequence of operations or a piece of code whose performance has a direct and significant impact on the user experience or system efficiency. Think about:</p>
+<ul>
+<li><strong>Core Algorithms:</strong> The sorting function in your e-commerce backend that ranks products by relevance.</li>
+<li><strong>Data Processing Pipelines:</strong> An ETL job that processes millions of log entries per hour.</li>
+<li><strong>API Endpoints:</strong> The <code>/api/v1/search</code> endpoint that is hit thousands of times per minute.</li>
+<li><strong>Resource-Intensive Tasks:</strong> Image processing, video encoding, or complex scientific calculations.</li>
+</ul>
+<p>For these parts of your system, a small performance degradation can have a massive ripple effect, leading to higher server costs, slower response times, and unhappy users.</p>
+<h3 id="the-goal-preventing-regressions">The Goal: Preventing Regressions</h3>
+<p>The primary goal of performance testing within your test suite is not to achieve the absolute fastest speed, but to <strong>prevent performance regressions</strong>. A regression is when a code change inadvertently makes a critical path slower.</p>
+<p>Imagine a developer makes a seemingly harmless change to a utility function. They run the correctness tests, everything passes, and they merge the code. A week later, customers start complaining that the search feature is sluggish. The team scrambles to find the cause, eventually tracing it back to that "harmless" change which, it turns out, is called by the search algorithm and has introduced a 200ms delay.</p>
+<p>Performance tests act as a safety net. They establish a baseline for how your critical code <em>should</em> perform and automatically flag any new code that deviates significantly from that baseline.</p>
+<h3 id="types-of-performance-testing">Types of Performance Testing</h3>
+<p>In the context of pytest, we'll focus on two main types:</p>
+<ol>
+<li><strong>Micro-benchmarking:</strong> Measuring the execution speed of a single, small unit of code, like a function or a method. This is excellent for optimizing specific algorithms.</li>
+<li><strong>Macro-benchmarking:</strong> Measuring the performance of a larger operation, like a full API request-response cycle or processing a file. This is more representative of the user experience.</li>
+</ol>
+<p>Throughout this chapter, we'll learn the tools to implement both, moving from simple, naive measurements to robust, statistically sound benchmarking that can be integrated directly into your development workflow.</p>
+<h2 id="measuring-test-execution-time">Measuring Test Execution Time</h2>
+<h2 id="measuring-test-execution-time_1">Measuring Test Execution Time</h2>
+<p>Before we dive into specialized tools, let's explore the most basic ways to measure time and understand their limitations. This will illuminate the path by first showing the pits, making the case for why more robust tools are necessary.</p>
+<h3 id="the-wrong-way-timetime">The Wrong Way: <code>time.time()</code></h3>
+<p>A beginner's first instinct might be to use Python's built-in <code>time</code> module directly within a test.</p>
+<p>Let's imagine we have a simple function that sorts a list of numbers. We want to ensure it completes within a certain timeframe.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/sorting.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">bubble_sort</span><span class="p">(</span><span class="n">items</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A deliberately inefficient sorting algorithm.&quot;&quot;&quot;</span>
+    <span class="n">n</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">items</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">j</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">n</span> <span class="o">-</span> <span class="n">i</span> <span class="o">-</span> <span class="mi">1</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">items</span><span class="p">[</span><span class="n">j</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">items</span><span class="p">[</span><span class="n">j</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]:</span>
+                <span class="n">items</span><span class="p">[</span><span class="n">j</span><span class="p">],</span> <span class="n">items</span><span class="p">[</span><span class="n">j</span> <span class="o">+</span> <span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="n">items</span><span class="p">[</span><span class="n">j</span> <span class="o">+</span> <span class="mi">1</span><span class="p">],</span> <span class="n">items</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">items</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">fast_sort</span><span class="p">(</span><span class="n">items</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A much more efficient sorting algorithm.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">items</span><span class="p">)</span>
+</code></pre></div>
+
+<p>Now, let's write a test using <code>time.time()</code>.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_sorting_perf_naive.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.sorting</span><span class="w"> </span><span class="kn">import</span> <span class="n">bubble_sort</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_bubble_sort_performance_naive</span><span class="p">():</span>
+    <span class="c1"># Setup</span>
+    <span class="n">items</span> <span class="o">=</span> <span class="p">[</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1000</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">500</span><span class="p">)]</span>
+
+    <span class="c1"># Measure</span>
+    <span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+    <span class="n">bubble_sort</span><span class="p">(</span><span class="n">items</span><span class="p">)</span>
+    <span class="n">end_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+
+    <span class="n">duration</span> <span class="o">=</span> <span class="n">end_time</span> <span class="o">-</span> <span class="n">start_time</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Bubble sort took </span><span class="si">{</span><span class="n">duration</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2"> seconds&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Assert</span>
+    <span class="k">assert</span> <span class="n">duration</span> <span class="o">&lt;</span> <span class="mf">0.05</span> <span class="c1"># 50 milliseconds</span>
+</code></pre></div>
+
+<p>If you run this test, it will likely fail.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>-s<span class="w"> </span>tests/test_sorting_perf_naive.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
+
+tests/test_sorting_perf_naive.py::test_bubble_sort_performance_naive<span class="w"> </span>
+Bubble<span class="w"> </span>sort<span class="w"> </span>took<span class="w"> </span><span class="m">0</span>.0612<span class="w"> </span>seconds
+<span class="nv">FAILED</span>
+
+<span class="o">=================================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">=================================</span>
+___________<span class="w"> </span>test_bubble_sort_performance_naive<span class="w"> </span>___________
+
+<span class="w">    </span>def<span class="w"> </span>test_bubble_sort_performance_naive<span class="o">()</span>:
+<span class="w">        </span><span class="c1"># Setup</span>
+<span class="w">        </span><span class="nv">items</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">[</span>random.randint<span class="o">(</span><span class="m">1</span>,<span class="w"> </span><span class="m">1000</span><span class="o">)</span><span class="w"> </span><span class="k">for</span><span class="w"> </span>_<span class="w"> </span><span class="k">in</span><span class="w"> </span>range<span class="o">(</span><span class="m">500</span><span class="o">)]</span>
+
+<span class="w">        </span><span class="c1"># Measure</span>
+<span class="w">        </span><span class="nv">start_time</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>time.time<span class="o">()</span>
+<span class="w">        </span>bubble_sort<span class="o">(</span>items<span class="o">)</span>
+<span class="w">        </span><span class="nv">end_time</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>time.time<span class="o">()</span>
+
+<span class="w">        </span><span class="nv">duration</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>end_time<span class="w"> </span>-<span class="w"> </span>start_time
+<span class="w">        </span>print<span class="o">(</span>f<span class="s2">&quot;\nBubble sort took {duration:.4f} seconds&quot;</span><span class="o">)</span>
+
+<span class="w">        </span><span class="c1"># Assert</span>
+&gt;<span class="w">       </span>assert<span class="w"> </span>duration<span class="w"> </span>&lt;<span class="w"> </span><span class="m">0</span>.05<span class="w"> </span><span class="c1"># 50 milliseconds</span>
+E<span class="w">       </span>assert<span class="w"> </span><span class="m">0</span>.0612...<span class="w"> </span>&lt;<span class="w"> </span><span class="m">0</span>.05
+
+tests/test_sorting_perf_naive.py:17:<span class="w"> </span><span class="nv">AssertionError</span>
+<span class="o">=========================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>failed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">=========================</span>
+</code></pre></div>
+
+<p>This approach is fundamentally flawed for several reasons:
+1.  <strong>It's Unstable:</strong> The execution time depends heavily on what else your computer is doing. If your OS decides to run a background process, the test will slow down and fail. This leads to "flaky" tests.
+2.  <strong>It's Not Statistically Significant:</strong> A single run is not a reliable measure. A proper benchmark needs to run the code many times to get a stable average and understand the variance.
+3.  <strong>It's Not Portable:</strong> A test that passes on a powerful developer machine might fail on a slower CI server. The hardcoded threshold (<code>0.05</code>) is arbitrary and brittle.</p>
+<p>This method tells you very little, and what it does tell you is unreliable.</p>
+<h3 id="the-pytest-way-finding-slow-tests-with-durations">The Pytest Way: Finding Slow Tests with <code>--durations</code></h3>
+<p>Pytest has a built-in feature that is perfect for identifying which <em>tests</em> in your suite are taking the longest to run. It's not a benchmarking tool for your <em>code</em>, but an invaluable diagnostic tool for your <em>test suite</em>.</p>
+<p>The <code>--durations</code> option reports the N slowest test durations.</p>
+<p>Let's add a few more tests to see it in action.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_suite_speed.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.sorting</span><span class="w"> </span><span class="kn">import</span> <span class="n">bubble_sort</span><span class="p">,</span> <span class="n">fast_sort</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_fast_sort</span><span class="p">():</span>
+    <span class="n">items</span> <span class="o">=</span> <span class="p">[</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1000</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">500</span><span class="p">)]</span>
+    <span class="n">fast_sort</span><span class="p">(</span><span class="n">items</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="kc">True</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_bubble_sort</span><span class="p">():</span>
+    <span class="n">items</span> <span class="o">=</span> <span class="p">[</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1000</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">500</span><span class="p">)]</span>
+    <span class="n">bubble_sort</span><span class="p">(</span><span class="n">items</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="kc">True</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_quick_check</span><span class="p">():</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.01</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="kc">True</span>
+</code></pre></div>
+
+<p>Now, run pytest with <code>--durations=3</code>:</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>--durations<span class="o">=</span><span class="m">3</span><span class="w"> </span>tests/test_suite_speed.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items
+
+tests/test_suite_speed.py<span class="w"> </span>...<span class="w">                                        </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">========================</span><span class="w"> </span>slowest<span class="w"> </span><span class="m">3</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span><span class="nv">durations</span><span class="w"> </span><span class="o">========================</span>
+<span class="m">0</span>.06s<span class="w"> </span>call<span class="w">     </span>tests/test_suite_speed.py::test_bubble_sort
+<span class="m">0</span>.01s<span class="w"> </span>call<span class="w">     </span>tests/test_suite_speed.py::test_quick_check
+<span class="m">0</span>.00s<span class="w"> </span>call<span class="w">     </span>tests/test_suite_speed.py::test_fast_sort
+<span class="o">=========================</span><span class="w"> </span><span class="m">3</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">=========================</span>
+</code></pre></div>
+
+<p>The output clearly shows that <code>test_bubble_sort</code> is by far the slowest test. This is the correct tool for the job of monitoring your test suite's health. If you see a test suddenly appear at the top of this list after a code change, it's a strong signal that you've introduced a performance issue in your tests.</p>
+<p>However, it still doesn't solve our original problem: how to reliably benchmark a specific piece of code and prevent regressions. For that, we need a dedicated plugin.</p>
+<h2 id="pytest-benchmark-for-reliable-benchmarks">pytest-benchmark for Reliable Benchmarks</h2>
+<h2 id="pytest-benchmark-for-reliable-benchmarks_1">pytest-benchmark for Reliable Benchmarks</h2>
+<p>To overcome the limitations of naive timing, we need a tool that performs statistically sound measurements. The most popular and powerful tool for this in the pytest ecosystem is <code>pytest-benchmark</code>.</p>
+<p>It solves the problems we identified:
+-   <strong>Reliability:</strong> It runs your code many times in a loop to get a stable average, minimizing the impact of system noise.
+-   <strong>Statistical Rigor:</strong> It provides rich data, including minimum, maximum, mean, and standard deviation.
+-   <strong>Regression Tracking:</strong> It can save results from a run and compare them against future runs, automatically detecting performance changes.</p>
+<h3 id="installation">Installation</h3>
+<p>First, install the plugin into your virtual environment.</p>
+<div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>pytest-benchmark
+</code></pre></div>
+
+<h3 id="your-first-benchmark">Your First Benchmark</h3>
+<p>Using <code>pytest-benchmark</code> is incredibly simple. It provides a special <code>benchmark</code> fixture. You pass the function you want to test to this fixture.</p>
+<p>Let's rewrite our sorting test the right way.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_sorting_benchmark.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.sorting</span><span class="w"> </span><span class="kn">import</span> <span class="n">bubble_sort</span><span class="p">,</span> <span class="n">fast_sort</span>
+
+<span class="c1"># Prepare some data to be used by the tests</span>
+<span class="n">random_data</span> <span class="o">=</span> <span class="p">[</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1000</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">500</span><span class="p">)]</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_bubble_sort_benchmark</span><span class="p">(</span><span class="n">benchmark</span><span class="p">):</span>
+    <span class="c1"># The benchmark fixture receives the function to test</span>
+    <span class="c1"># The lambda is used to pass arguments to the function</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">benchmark</span><span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="n">bubble_sort</span><span class="p">(</span><span class="n">random_data</span><span class="o">.</span><span class="n">copy</span><span class="p">()))</span>
+
+    <span class="c1"># You can still assert correctness</span>
+    <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">random_data</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_fast_sort_benchmark</span><span class="p">(</span><span class="n">benchmark</span><span class="p">):</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">benchmark</span><span class="p">(</span><span class="k">lambda</span><span class="p">:</span> <span class="n">fast_sort</span><span class="p">(</span><span class="n">random_data</span><span class="o">.</span><span class="n">copy</span><span class="p">()))</span>
+    <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">random_data</span><span class="p">)</span>
+</code></pre></div>
+
+<p>Note that we pass a <code>lambda</code> to <code>benchmark()</code>. This is how you call a function that requires arguments. We also use <code>random_data.copy()</code> to ensure each run of the benchmark gets a fresh, unsorted list.</p>
+<p>Now, run pytest. The output is much more informative.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>tests/test_sorting_benchmark.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+plugins:<span class="w"> </span>benchmark-4.0.0
+...
+collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
+
+tests/test_sorting_benchmark.py::test_bubble_sort_benchmark<span class="w"> </span>✓<span class="w">         </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+tests/test_sorting_benchmark.py::test_fast_sort_benchmark<span class="w"> </span>✓<span class="w">         </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+----------------------------------------------------------------------------------<span class="w"> </span>benchmark:<span class="w"> </span><span class="m">2</span><span class="w"> </span>tests<span class="w"> </span>----------------------------------------------------------------------------------
+Name<span class="w"> </span><span class="o">(</span><span class="nb">time</span><span class="w"> </span><span class="k">in</span><span class="w"> </span>ms<span class="o">)</span><span class="w">                       </span>Min<span class="w">                 </span>Max<span class="w">                </span>Mean<span class="w">             </span>StdDev<span class="w">              </span>Median<span class="w">               </span>IQR<span class="w">            </span>Outliers<span class="w">     </span>OPS<span class="w">            </span>Rounds
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+test_fast_sort_benchmark<span class="w">           </span><span class="m">0</span>.0046<span class="w"> </span><span class="o">(</span><span class="m">1</span>.0<span class="o">)</span><span class="w">        </span><span class="m">0</span>.0183<span class="w"> </span><span class="o">(</span><span class="m">1</span>.0<span class="o">)</span><span class="w">        </span><span class="m">0</span>.0056<span class="w"> </span><span class="o">(</span><span class="m">1</span>.0<span class="o">)</span><span class="w">       </span><span class="m">0</span>.0018<span class="w"> </span><span class="o">(</span><span class="m">1</span>.0<span class="o">)</span><span class="w">        </span><span class="m">0</span>.0051<span class="w"> </span><span class="o">(</span><span class="m">1</span>.0<span class="o">)</span><span class="w">        </span><span class="m">0</span>.0005<span class="w"> </span><span class="o">(</span><span class="m">1</span>.0<span class="o">)</span><span class="w">       </span><span class="m">103</span><span class="p">;</span><span class="m">140</span><span class="w">  </span><span class="m">179</span>,245.8055<span class="w"> </span><span class="o">(</span><span class="m">1</span>.0<span class="o">)</span><span class="w">      </span><span class="m">1000</span>
+test_bubble_sort_benchmark<span class="w">        </span><span class="m">51</span>.3411<span class="w"> </span><span class="o">(</span><span class="m">11</span>,221.9<span class="o">)</span><span class="w">  </span><span class="m">59</span>.9411<span class="w"> </span><span class="o">(</span><span class="m">3</span>,275.6<span class="o">)</span><span class="w">   </span><span class="m">53</span>.5981<span class="w"> </span><span class="o">(</span><span class="m">9</span>,613.8<span class="o">)</span><span class="w">   </span><span class="m">2</span>.2091<span class="w"> </span><span class="o">(</span><span class="m">1</span>,227.3<span class="o">)</span><span class="w">    </span><span class="m">52</span>.9821<span class="w"> </span><span class="o">(</span><span class="m">10</span>,413.0<span class="o">)</span><span class="w">   </span><span class="m">2</span>.2998<span class="w"> </span><span class="o">(</span><span class="m">4</span>,599.6<span class="o">)</span><span class="w">      </span><span class="m">2</span><span class="p">;</span><span class="m">2</span><span class="w">    </span><span class="m">18</span>.6574<span class="w"> </span><span class="o">(</span><span class="m">0</span>.0001<span class="o">)</span><span class="w">        </span><span class="m">5</span>
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Legend:
+<span class="w">  </span>Outliers:<span class="w"> </span><span class="m">1</span><span class="w"> </span>Standard<span class="w"> </span>Deviation<span class="w"> </span>from<span class="w"> </span>Mean<span class="p">;</span><span class="w"> </span><span class="m">1</span>.5<span class="w"> </span>IQR<span class="w"> </span><span class="o">(</span>InterQuartile<span class="w"> </span>Range<span class="o">)</span><span class="w"> </span>from<span class="w"> </span>1st<span class="w"> </span>Quartile<span class="w"> </span>and<span class="w"> </span>3rd<span class="w"> </span>Quartile.
+<span class="w">  </span>OPS:<span class="w"> </span>Operations<span class="w"> </span>Per<span class="w"> </span>Second,<span class="w"> </span>computed<span class="w"> </span>as<span class="w"> </span><span class="m">1</span><span class="w"> </span>/<span class="w"> </span>Mean.
+<span class="o">============================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">============================</span>
+</code></pre></div>
+
+<h3 id="reading-the-benchmark-report">Reading the Benchmark Report</h3>
+<p>Let's break down this table. <code>pytest-benchmark</code> ran <code>fast_sort</code> 1000 times (<code>Rounds</code>) and <code>bubble_sort</code> only 5 times. It automatically calibrates the number of rounds to get a statistically stable result within a reasonable amount of time.</p>
+<ul>
+<li><strong>Min/Max/Mean:</strong> The minimum, maximum, and average time for a single execution. The <code>Mean</code> is usually the most important number.</li>
+<li><strong>StdDev:</strong> The standard deviation, which tells you how much the timing varied between runs. A low StdDev is good.</li>
+<li><strong>OPS:</strong> Operations Per Second. This is simply <code>1 / Mean</code>, a useful metric for throughput.</li>
+<li><strong>Comparison numbers <code>(...)</code>:</strong> The numbers in parentheses show the performance ratio compared to the fastest test. Here, <code>bubble_sort</code>'s mean time is over 9,600 times slower than <code>fast_sort</code>.</li>
+</ul>
+<h3 id="detecting-regressions">Detecting Regressions</h3>
+<p>This report is useful, but the real power comes from comparing runs over time.</p>
+<p>First, let's save a baseline result.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># Save the current results to a file in .benchmarks/</span>
+pytest<span class="w"> </span>--benchmark-save<span class="o">=</span>sorting_baseline
+</code></pre></div>
+
+<p>Now, let's introduce a performance regression. We'll add an unnecessary <code>time.sleep()</code> to our "fast" sort function.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/sorting.py (modified)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+
+<span class="c1"># ... bubble_sort remains the same ...</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">fast_sort</span><span class="p">(</span><span class="n">items</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A much more efficient sorting algorithm... with a regression.&quot;&quot;&quot;</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.001</span><span class="p">)</span> <span class="c1"># Simulate doing extra, slow work</span>
+    <span class="k">return</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">items</span><span class="p">)</span>
+</code></pre></div>
+
+<p>Now, run the benchmarks again, but this time, compare them to the baseline we just saved.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>--benchmark-compare<span class="o">=</span>sorting_baseline
+...
+------------------------------------------------------------------------------------<span class="w"> </span>benchmark:<span class="w"> </span><span class="m">2</span><span class="w"> </span>tests<span class="w"> </span>------------------------------------------------------------------------------------
+Name<span class="w"> </span><span class="o">(</span><span class="nb">time</span><span class="w"> </span><span class="k">in</span><span class="w"> </span>ms<span class="o">)</span><span class="w">                       </span>Min<span class="w">                 </span>Max<span class="w">                </span>Mean<span class="w">             </span>StdDev<span class="w">              </span>Median<span class="w">               </span>IQR<span class="w">            </span>Outliers<span class="w">     </span>OPS<span class="w">            </span>Rounds
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+test_fast_sort_benchmark<span class="w">           </span><span class="m">1</span>.0118<span class="w"> </span><span class="o">(</span><span class="m">221</span>.1<span class="o">)</span><span class="w">      </span><span class="m">1</span>.2121<span class="w"> </span><span class="o">(</span><span class="m">66</span>.2<span class="o">)</span><span class="w">       </span><span class="m">1</span>.0321<span class="w"> </span><span class="o">(</span><span class="m">185</span>.1<span class="o">)</span><span class="w">      </span><span class="m">0</span>.0321<span class="w"> </span><span class="o">(</span><span class="m">17</span>.8<span class="o">)</span><span class="w">       </span><span class="m">1</span>.0249<span class="w"> </span><span class="o">(</span><span class="m">201</span>.4<span class="o">)</span><span class="w">      </span><span class="m">0</span>.0328<span class="w"> </span><span class="o">(</span><span class="m">65</span>.6<span class="o">)</span><span class="w">        </span><span class="m">5</span><span class="p">;</span><span class="m">8</span><span class="w">     </span><span class="m">968</span>.8693<span class="w"> </span><span class="o">(</span><span class="m">0</span>.005<span class="o">)</span><span class="w">       </span><span class="m">959</span>
+test_bubble_sort_benchmark<span class="w">        </span><span class="m">51</span>.5805<span class="w"> </span><span class="o">(</span><span class="m">1</span>.0<span class="o">)</span><span class="w">       </span><span class="m">55</span>.9805<span class="w"> </span><span class="o">(</span><span class="m">0</span>.9<span class="o">)</span><span class="w">       </span><span class="m">52</span>.9812<span class="w"> </span><span class="o">(</span><span class="m">1</span>.0<span class="o">)</span><span class="w">        </span><span class="m">1</span>.3521<span class="w"> </span><span class="o">(</span><span class="m">0</span>.6<span class="o">)</span><span class="w">       </span><span class="m">52</span>.6811<span class="w"> </span><span class="o">(</span><span class="m">1</span>.0<span class="o">)</span><span class="w">        </span><span class="m">1</span>.6011<span class="w"> </span><span class="o">(</span><span class="m">0</span>.7<span class="o">)</span><span class="w">         </span><span class="m">2</span><span class="p">;</span><span class="m">2</span><span class="w">      </span><span class="m">18</span>.8746<span class="w"> </span><span class="o">(</span><span class="m">1</span>.0<span class="o">)</span><span class="w">          </span><span class="m">5</span>
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Benchmark<span class="w"> </span>comparison<span class="w"> </span>appears<span class="w"> </span>to<span class="w"> </span>have<span class="w"> </span>degraded<span class="w"> </span>performance.
+<span class="w">  </span><span class="m">1</span>/2<span class="w"> </span>benchmarks<span class="w"> </span>faster<span class="w"> </span><span class="o">(</span><span class="m">50</span>.00%<span class="o">)</span>
+<span class="w">  </span><span class="m">1</span>/2<span class="w"> </span>benchmarks<span class="w"> </span>slower<span class="w"> </span><span class="o">(</span><span class="m">50</span>.00%<span class="o">)</span>
+<span class="w">  </span><span class="m">0</span>/2<span class="w"> </span>benchmarks<span class="w"> </span>unchanged<span class="w"> </span><span class="o">(</span><span class="m">0</span>.00%<span class="o">)</span>
+ERROR:<span class="w"> </span>Benchmark<span class="w"> </span>performance<span class="w"> </span>has<span class="w"> </span>degraded.
+<span class="o">===========================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>error<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">============================</span>
+</code></pre></div>
+
+<p>Pytest exits with an error! The report shows that <code>test_fast_sort_benchmark</code> is now ~185 times slower than the baseline (<code>Mean</code> column). <code>pytest-benchmark</code> has successfully caught our performance regression automatically. This is the core workflow for performance testing.</p>
+<h2 id="memory-profiling-in-tests">Memory Profiling in Tests</h2>
+<h2 id="memory-profiling-in-tests_1">Memory Profiling in Tests</h2>
+<p>Performance isn't just about speed; it's also about memory. A function that is lightning fast but consumes gigabytes of RAM for a simple task can be just as problematic as a slow one, especially in data science applications or long-running services where memory leaks can be catastrophic.</p>
+<p>While <code>pytest-benchmark</code> is the king of timing, we need a different tool for memory. A fantastic modern option is <code>pytest-memray</code>. <code>Memray</code> is a memory profiler for Python that can track every allocation, helping you find memory leaks and identify code that allocates too much memory.</p>
+<h3 id="installation_1">Installation</h3>
+<p>Install <code>memray</code> and its pytest plugin.</p>
+<div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>memray<span class="w"> </span>pytest-memray
+</code></pre></div>
+
+<h3 id="a-memory-hungry-example">A Memory-Hungry Example</h3>
+<p>Let's write a function that is inefficient in its memory usage. This function will build a list of a million strings, but it does so by creating a large intermediate list of numbers first, which is unnecessary.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/memory_hog.py</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">process_data_inefficiently</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">1_000_000</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Creates a list of strings, but via a large intermediate list.&quot;&quot;&quot;</span>
+    <span class="c1"># This intermediate list consumes a lot of memory</span>
+    <span class="n">intermediate_numbers</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="n">size</span><span class="p">))</span>
+
+    <span class="c1"># The final list also consumes memory</span>
+    <span class="n">final_strings</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">intermediate_numbers</span><span class="p">]</span>
+    <span class="k">return</span> <span class="n">final_strings</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">process_data_efficiently</span><span class="p">(</span><span class="n">size</span><span class="o">=</span><span class="mi">1_000_000</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Creates the same list of strings using a memory-efficient generator.&quot;&quot;&quot;</span>
+    <span class="c1"># A generator doesn&#39;t create the intermediate list in memory</span>
+    <span class="n">final_strings</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">size</span><span class="p">)]</span>
+    <span class="k">return</span> <span class="n">final_strings</span>
+</code></pre></div>
+
+<p>Now, let's write a simple test for one of these functions. We don't need any special fixtures; we just need to run pytest with the right command-line flag.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_memory.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.memory_hog</span><span class="w"> </span><span class="kn">import</span> <span class="n">process_data_inefficiently</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_inefficient_processing</span><span class="p">():</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">process_data_inefficiently</span><span class="p">()</span>
+    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">result</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1_000_000</span>
+    <span class="k">assert</span> <span class="n">result</span><span class="p">[</span><span class="mi">123</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;123&quot;</span>
+</code></pre></div>
+
+<h3 id="running-the-memory-profiler">Running the Memory Profiler</h3>
+<p>To profile this test, we use the <code>--memray</code> flag.</p>
+<div class="codehilite"><pre><span></span><code>pytest<span class="w"> </span>--memray<span class="w"> </span>tests/test_memory.py
+</code></pre></div>
+
+<p>This command will run the test and, upon completion, generate a detailed report file (e.g., <code>memray-test_inefficient_processing.bin</code>). The output will tell you how to view the results.</p>
+<div class="codehilite"><pre><span></span><code>...
+<span class="o">[</span><span class="m">100</span>%<span class="o">]</span><span class="w"> </span>PASSED
+A<span class="w"> </span>memory<span class="w"> </span>profile<span class="w"> </span>has<span class="w"> </span>been<span class="w"> </span>generated.
+
+To<span class="w"> </span>view<span class="w"> </span>the<span class="w"> </span>flame<span class="w"> </span>graph,<span class="w"> </span>run:
+<span class="w"> </span>python3<span class="w"> </span>-m<span class="w"> </span>memray<span class="w"> </span>flamegraph<span class="w"> </span>.../memray-test_inefficient_processing.bin
+</code></pre></div>
+
+<h3 id="interpreting-the-report">Interpreting the Report</h3>
+<p>The most intuitive way to view a <code>memray</code> report is as a "flame graph." Running the command suggested in the output will generate an HTML file and open it in your browser.</p>
+<p>A flame graph is a visualization of your program's memory allocations.
+-   The <strong>width</strong> of a bar represents the proportion of total memory allocated by that function and its children.
+-   The <strong>y-axis</strong> represents the call stack. Functions at the bottom call the functions directly above them.</p>
+<p>When you analyze the flame graph for <code>test_inefficient_processing</code>, you will see a very wide bar corresponding to the line <code>intermediate_numbers = list(range(size))</code>. This immediately tells you that this specific line of code is responsible for a huge chunk of the memory allocation during the test.</p>
+<p>If you were to profile <code>process_data_efficiently</code> instead, you would see a much smaller memory footprint, as the generator expression avoids creating the large intermediate list.</p>
+<p>Using <code>pytest-memray</code> allows you to pinpoint the exact lines of code that are causing high memory usage, making it an essential tool for optimizing memory-intensive applications.</p>
+<h2 id="identifying-and-fixing-slow-tests">Identifying and Fixing Slow Tests</h2>
+<h2 id="identifying-and-fixing-slow-tests_1">Identifying and Fixing Slow Tests</h2>
+<p>So far, we've focused on testing the performance of your application code. But what about the performance of your <em>test suite</em> itself? A slow test suite is a major drag on developer productivity. If running tests takes 20 minutes, developers will run them less often, feedback loops will lengthen, and the benefits of rapid testing will be lost.</p>
+<p>This section is about using pytest's tools to find and fix the bottlenecks <em>within your tests</em>.</p>
+<h3 id="the-tool-for-the-job-durations-revisited">The Tool for the Job: <code>--durations</code> Revisited</h3>
+<p>As we saw in section 18.2, the <code>pytest --durations=N</code> flag is the primary tool for this task. It doesn't have the statistical rigor of <code>pytest-benchmark</code>, but that's not its purpose. Its goal is to quickly point out the slowest parts of your test suite's execution.</p>
+<p>A common practice is to always run it with a small number, like <code>--durations=10</code>, to keep an eye on the slowest tests in your project.</p>
+<h3 id="common-causes-of-slow-tests-and-how-to-fix-them">Common Causes of Slow Tests (and How to Fix Them)</h3>
+<p>Slow tests are rarely caused by slow application code. More often, they are caused by inefficient test setup and teardown. Let's look at the most common culprits.</p>
+<h4 id="culprit-1-inefficient-fixture-scope">Culprit 1: Inefficient Fixture Scope</h4>
+<p>This is the most frequent cause of slow test suites. A fixture that performs an expensive operation (like creating a database connection, reading a large file, or setting up a complex object) with the default <code>function</code> scope will repeat that expensive operation for <em>every single test</em> that uses it.</p>
+<p><strong>The Pit (Wrong Way):</strong> Imagine a fixture that sets up a test database by loading a 100MB SQL dump file.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/conftest.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">db_connection</span><span class="p">():</span>
+    <span class="c1"># This is a function-scoped fixture by default</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Setting up the database (SLOW OPERATION)...&quot;</span><span class="p">)</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="c1"># Simulate loading a large file</span>
+    <span class="n">db</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;user&quot;</span><span class="p">:</span> <span class="s2">&quot;test&quot;</span><span class="p">,</span> <span class="s2">&quot;data&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">]}</span>
+    <span class="k">yield</span> <span class="n">db</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Tearing down the database...&quot;</span><span class="p">)</span>
+
+<span class="c1"># tests/test_db_operations.py</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_read_from_db</span><span class="p">(</span><span class="n">db_connection</span><span class="p">):</span>
+    <span class="k">assert</span> <span class="n">db_connection</span><span class="p">[</span><span class="s2">&quot;user&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;test&quot;</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_write_to_db</span><span class="p">(</span><span class="n">db_connection</span><span class="p">):</span>
+    <span class="n">db_connection</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="mi">4</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="mi">4</span> <span class="ow">in</span> <span class="n">db_connection</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">]</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_another_check</span><span class="p">(</span><span class="n">db_connection</span><span class="p">):</span>
+    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">db_connection</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">])</span> <span class="o">&gt;</span> <span class="mi">0</span>
+</code></pre></div>
+
+<p>Let's run this and see the durations.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-s<span class="w"> </span>--durations<span class="o">=</span><span class="m">3</span><span class="w"> </span>tests/test_db_operations.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items
+
+tests/test_db_operations.py::test_read_from_db<span class="w"> </span>
+Setting<span class="w"> </span>up<span class="w"> </span>the<span class="w"> </span>database<span class="w"> </span><span class="o">(</span>SLOW<span class="w"> </span>OPERATION<span class="o">)</span>...
+PASSED
+Tearing<span class="w"> </span>down<span class="w"> </span>the<span class="w"> </span>database...
+
+tests/test_db_operations.py::test_write_to_db<span class="w"> </span>
+Setting<span class="w"> </span>up<span class="w"> </span>the<span class="w"> </span>database<span class="w"> </span><span class="o">(</span>SLOW<span class="w"> </span>OPERATION<span class="o">)</span>...
+PASSED
+Tearing<span class="w"> </span>down<span class="w"> </span>the<span class="w"> </span>database...
+
+tests/test_db_operations.py::test_another_check<span class="w"> </span>
+Setting<span class="w"> </span>up<span class="w"> </span>the<span class="w"> </span>database<span class="w"> </span><span class="o">(</span>SLOW<span class="w"> </span>OPERATION<span class="o">)</span>...
+PASSED
+Tearing<span class="w"> </span>down<span class="w"> </span>the<span class="w"> </span>database...
+
+<span class="o">========================</span><span class="w"> </span>slowest<span class="w"> </span><span class="m">3</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span><span class="nv">durations</span><span class="w"> </span><span class="o">========================</span>
+<span class="m">2</span>.00s<span class="w"> </span>call<span class="w">     </span>tests/test_db_operations.py::test_read_from_db
+<span class="m">2</span>.00s<span class="w"> </span>call<span class="w">     </span>tests/test_db_operations.py::test_write_to_db
+<span class="m">2</span>.00s<span class="w"> </span>call<span class="w">     </span>tests/test_db_operations.py::test_another_check
+<span class="o">=========================</span><span class="w"> </span><span class="m">3</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">=========================</span>
+</code></pre></div>
+
+<p>Each test took 2 seconds, for a total of 6 seconds. The expensive setup ran three times.</p>
+<p><strong>The Fix:</strong> If the tests don't modify the state of the resource in a way that would affect other tests, you can change the fixture's scope. By changing the scope to <code>module</code>, the setup will run only <em>once</em> for all tests in that file.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/conftest.py (fixed)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">&quot;module&quot;</span><span class="p">)</span> <span class="c1"># Changed scope!</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">db_connection</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Setting up the database ONCE for the module...&quot;</span><span class="p">)</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="c1"># Simulate loading a large file</span>
+    <span class="n">db</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;user&quot;</span><span class="p">:</span> <span class="s2">&quot;test&quot;</span><span class="p">,</span> <span class="s2">&quot;data&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">]}</span>
+    <span class="k">yield</span> <span class="n">db</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Tearing down the database ONCE...&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>Now, let's re-run the tests.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-s<span class="w"> </span>--durations<span class="o">=</span><span class="m">3</span><span class="w"> </span>tests/test_db_operations.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items
+
+tests/test_db_operations.py::test_read_from_db<span class="w"> </span>
+Setting<span class="w"> </span>up<span class="w"> </span>the<span class="w"> </span>database<span class="w"> </span>ONCE<span class="w"> </span><span class="k">for</span><span class="w"> </span>the<span class="w"> </span>module...
+PASSED
+tests/test_db_operations.py::test_write_to_db<span class="w"> </span>PASSED
+tests/test_db_operations.py::test_another_check<span class="w"> </span>PASSED
+Tearing<span class="w"> </span>down<span class="w"> </span>the<span class="w"> </span>database<span class="w"> </span>ONCE...
+
+<span class="o">========================</span><span class="w"> </span>slowest<span class="w"> </span><span class="m">3</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span><span class="nv">durations</span><span class="w"> </span><span class="o">========================</span>
+<span class="m">2</span>.00s<span class="w"> </span>setup<span class="w">    </span>tests/test_db_operations.py::test_read_from_db
+<span class="m">0</span>.00s<span class="w"> </span>call<span class="w">     </span>tests/test_db_operations.py::test_read_from_db
+<span class="m">0</span>.00s<span class="w"> </span>call<span class="w">     </span>tests/test_db_operations.py::test_write_to_db
+<span class="o">(</span>setup<span class="w"> </span>duration<span class="w"> </span>is<span class="w"> </span>only<span class="w"> </span>reported<span class="w"> </span><span class="k">for</span><span class="w"> </span>the<span class="w"> </span>first<span class="w"> </span><span class="nb">test</span><span class="w"> </span>that<span class="w"> </span>uses<span class="w"> </span>the<span class="w"> </span>fixture<span class="o">)</span>
+<span class="o">=========================</span><span class="w"> </span><span class="m">3</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">=========================</span>
+</code></pre></div>
+
+<p>The total execution time is now just over 2 seconds instead of 6! The <code>setup</code> part took 2 seconds, but the <code>call</code> for each test was instantaneous. This is a massive improvement and a critical optimization for any large test suite.</p>
+<h4 id="culprit-2-unnecessary-io-network-or-disk">Culprit 2: Unnecessary I/O (Network or Disk)</h4>
+<p>Tests that make real network requests or frequently read/write from the disk will be slow and unreliable.
+-   <strong>The Fix:</strong> Mock external services and file system interactions. Use libraries like <code>pytest-mock</code> (covered in Chapter 8) to replace slow I/O calls with fast, in-memory fakes. Use the built-in <code>tmp_path</code> fixture (Chapter 12) for tests that absolutely must interact with the filesystem.</p>
+<h4 id="culprit-3-timesleep">Culprit 3: <code>time.sleep()</code></h4>
+<p>Explicit sleeps are a major anti-pattern in tests. They are usually added to wait for an asynchronous operation to complete.
+-   <strong>The Fix:</strong> Never use <code>time.sleep()</code>. If you are testing asynchronous code, use a proper async testing library like <code>pytest-asyncio</code> (Chapter 11) that can <code>await</code> results. If you are waiting for a resource, implement a polling mechanism with a timeout instead of a fixed sleep.</p>
+<h2 id="performance-testing-in-cicd">Performance Testing in CI/CD</h2>
+<h2 id="performance-testing-in-cicd_1">Performance Testing in CI/CD</h2>
+<p>Identifying performance issues on your local machine is good, but integrating performance testing into your Continuous Integration/Continuous Deployment (CI/CD) pipeline is where you build a true safety net for your project. This allows you to automatically catch regressions before they ever reach production.</p>
+<h3 id="strategy-1-monitor-test-suite-health">Strategy 1: Monitor Test Suite Health</h3>
+<p>The simplest strategy is to monitor the overall speed of your test suite. A sudden increase in total test time can indicate a problem.</p>
+<p>You can add a step to your CI workflow that always reports the slowest tests. This doesn't fail the build, but it creates a record and makes performance degradation visible to the whole team.</p>
+<p>Here is an example snippet for a GitHub Actions workflow:</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># .github/workflows/ci.yml</span>
+<span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Python CI</span>
+
+<span class="nt">on</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">push</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">pull_request</span><span class="p p-Indicator">]</span>
+
+<span class="nt">jobs</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">test</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ubuntu-latest</span>
+<span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
+<span class="w">      </span><span class="c1"># ... (checkout code, setup python, install dependencies) ...</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Run tests</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pytest</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Report slowest tests</span>
+<span class="w">        </span><span class="c1"># This step runs even if the previous one fails</span>
+<span class="w">        </span><span class="nt">if</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">always()</span><span class="w"> </span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pytest --durations=20</span>
+</code></pre></div>
+
+<p>This ensures that every pull request and merge to <code>main</code> will include a report of the 20 slowest tests. If a developer sees their new test at the top of that list, it's a clear signal to investigate.</p>
+<h3 id="strategy-2-automated-regression-detection-with-pytest-benchmark">Strategy 2: Automated Regression Detection with <code>pytest-benchmark</code></h3>
+<p>This is the most powerful approach. The goal is to automatically fail a CI build if a change introduces a significant performance regression in a critical code path.</p>
+<p>The workflow is as follows:
+1.  <strong>Establish a Baseline:</strong> Run the benchmarks on your main branch (<code>main</code> or <code>master</code>) and save the results as a CI artifact. This artifact represents the "known good" performance.
+2.  <strong>Compare on Pull Requests:</strong> When a pull request is opened, run the benchmarks again. Use <code>pytest-benchmark</code>'s comparison feature to check the new results against the baseline downloaded from the main branch.
+3.  <strong>Fail on Regression:</strong> Configure <code>pytest-benchmark</code> to fail the build if performance degrades by more than a set threshold.</p>
+<p>Here's a conceptual GitHub Actions workflow demonstrating this:</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># .github/workflows/ci.yml</span>
+<span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Python CI with Performance Benchmarks</span>
+
+<span class="nt">on</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">push</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">branches</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="nv">main</span><span class="w"> </span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">pull_request</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">branches</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="nv">main</span><span class="w"> </span><span class="p p-Indicator">]</span>
+
+<span class="nt">jobs</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">benchmark</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ubuntu-latest</span>
+<span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/checkout@v3</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Set up Python</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/setup-python@v4</span>
+<span class="w">        </span><span class="nt">with</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">python-version</span><span class="p">:</span><span class="w"> </span><span class="s">&#39;3.10&#39;</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Install dependencies</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">python -m pip install --upgrade pip</span>
+<span class="w">          </span><span class="no">pip install -r requirements.txt</span>
+<span class="w">          </span><span class="no">pip install pytest-benchmark</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Download baseline benchmark data</span>
+<span class="w">        </span><span class="c1"># Only run on PRs, not on main branch itself</span>
+<span class="w">        </span><span class="nt">if</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">github.event_name == &#39;pull_request&#39;</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/cache@v3</span>
+<span class="w">        </span><span class="nt">with</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">.benchmarks</span>
+<span class="w">          </span><span class="c1"># Try to get cache from the target branch (main)</span>
+<span class="w">          </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">benchmark-cache-${{ github.base_ref }}</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Run benchmarks and compare</span>
+<span class="w">        </span><span class="c1"># --benchmark-fail-on-alert will fail if a regression is detected</span>
+<span class="w">        </span><span class="c1"># The expression checks if we are in a PR to enable comparison</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">pytest --benchmark-save=current_run \</span>
+<span class="w">                 </span><span class="no">${{ github.event_name == &#39;pull_request&#39; &amp;&amp; &#39;--benchmark-compare=current_run&#39; || &#39;&#39; }} \</span>
+<span class="w">                 </span><span class="no">--benchmark-compare-fail=alert:5%</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Upload benchmark data as artifact</span>
+<span class="w">        </span><span class="c1"># On the main branch, save the results to the cache</span>
+<span class="w">        </span><span class="nt">if</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">github.event_name == &#39;push&#39; &amp;&amp; github.ref == &#39;refs/heads/main&#39;</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/cache@v3</span>
+<span class="w">        </span><span class="nt">with</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">.benchmarks</span>
+<span class="w">          </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">benchmark-cache-${{ github.ref_name }}</span>
+</code></pre></div>
+
+<p><strong>Key parts of this workflow:</strong>
+-   <strong><code>actions/cache</code></strong>: This action is used to store the <code>.benchmarks</code> directory. On a PR, it downloads the cache from the <code>main</code> branch. On a push to <code>main</code>, it saves the new results to the cache.
+-   <strong><code>--benchmark-compare-fail=alert:5%</code></strong>: This is the magic flag. It tells <code>pytest-benchmark</code> to compare the current run to the default comparison data (which we loaded from the cache). If any benchmark is more than 5% slower (<code>alert:5%</code>), it will cause the pytest command to exit with an error code, failing the CI job.</p>
+<h3 id="important-considerations-for-ci-benchmarking">Important Considerations for CI Benchmarking</h3>
+<ul>
+<li><strong>Noisy Neighbors:</strong> CI runners are often virtual machines sharing hardware with other jobs. This can cause performance results to fluctuate. Don't set your failure threshold too low (e.g., 1%). A 5-10% threshold is often more practical to avoid flaky failures.</li>
+<li><strong>Dedicated Runners:</strong> For projects where performance is absolutely paramount, consider running benchmarks on dedicated, self-hosted hardware. This provides a much more stable environment for consistent measurements.</li>
+<li><strong>Treat Regressions as Data:</strong> A failed performance test in CI isn't a failure; it's a conversation starter. It forces the developer and reviewer to ask: "Is this slowdown expected and acceptable for the new feature, or is it an accidental regression that needs to be fixed?" This makes performance a conscious part of the development process.</li>
+</ul>
+        </div>
+        <div class="footer">
+            Generated on 2025-11-22 16:29:18 | Made with ❤️ by GitHub Pages Generator
+        </div>
+    </div>
+    <script>
+        // Syntax highlighting for code blocks
+        document.addEventListener('DOMContentLoaded', (event) => {
+            // Highlight code blocks
+            document.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+            
+            // Add copy buttons to code blocks
+            document.querySelectorAll('pre').forEach((pre) => {
+                const button = document.createElement('button');
+                button.className = 'copy-btn';
+                button.textContent = 'Copy';
+                
+                button.addEventListener('click', () => {
+                    const code = pre.querySelector('code').textContent;
+                    navigator.clipboard.writeText(code).then(() => {
+                        button.textContent = 'Copied!';
+                        button.classList.add('copied');
+                        setTimeout(() => {
+                            button.textContent = 'Copy';
+                            button.classList.remove('copied');
+                        }, 2000);
+                    }).catch(err => {
+                        console.error('Failed to copy:', err);
+                        button.textContent = 'Error';
+                        setTimeout(() => {
+                            button.textContent = 'Copy';
+                        }, 2000);
+                    });
+                });
+                
+                pre.appendChild(button);
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>06 Markers and Test Organization</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #8b5cf6;
+            --bg-main: #0f172a;
+            --bg-card: #1e293b;
+            --bg-code: #0f172a;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --border: #334155;
+            --accent: #06b6d4;
+            --success: #10b981;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body { 
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.7; 
+            color: var(--text-primary); 
+            background: var(--bg-main);
+        }
+        
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            padding: 20px; 
+        }
+        
+        .home-btn { 
+            position: fixed; 
+            top: 20px; 
+            right: 20px; 
+            background: var(--accent);
+            color: white; 
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            text-decoration: none; 
+            z-index: 1000;
+            box-shadow: 0 4px 20px rgba(6, 182, 212, 0.4);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .home-btn:hover { 
+            background: #0891b2;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(6, 182, 212, 0.5);
+        }
+        
+        .breadcrumb { 
+            background: var(--bg-card);
+            padding: 12px 0; 
+            margin-bottom: 24px; 
+            font-size: 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        
+        .breadcrumb a { 
+            color: var(--accent);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        
+        .breadcrumb a:hover { 
+            color: var(--primary);
+            text-decoration: underline;
+        }
+        
+        .content { 
+            background: var(--bg-card);
+            padding: 3rem; 
+            border-radius: 16px; 
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border);
+        }
+        
+        .file-list { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); 
+            gap: 1.5rem; 
+            margin: 2rem 0; 
+        }
+        
+        .file-item { 
+            padding: 1.5rem; 
+            border: 1px solid var(--border);
+            border-radius: 12px; 
+            background: var(--bg-main);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .file-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .file-item:hover { 
+            transform: translateY(-4px); 
+            box-shadow: 0 8px 30px rgba(99, 102, 241, 0.3);
+            border-color: var(--primary);
+        }
+        
+        .file-item:hover::before {
+            opacity: 1;
+        }
+        
+        .file-item a { 
+            color: var(--text-primary);
+            text-decoration: none; 
+            font-weight: 600; 
+            display: block;
+            font-size: 1.1rem;
+        }
+        
+        .file-item a:hover { 
+            color: var(--primary);
+        }
+        
+        .file-type { 
+            font-size: 13px; 
+            color: var(--text-secondary);
+            margin-top: 8px; 
+            font-weight: 500;
+        }
+        
+        /* Code Blocks */
+        pre { 
+            background: var(--bg-code);
+            padding: 1.5rem; 
+            border-radius: 12px; 
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            margin: 1.5rem 0;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            position: relative;
+        }
+        
+        pre code { 
+            background: none;
+            padding: 0;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 0.9em;
+            line-height: 1.6;
+        }
+        
+        /* Copy Button */
+        .copy-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.2s;
+            opacity: 0.7;
+            z-index: 10;
+        }
+        
+        .copy-btn:hover {
+            opacity: 1;
+            background: var(--primary-dark);
+            transform: translateY(-1px);
+        }
+        
+        .copy-btn.copied {
+            background: var(--success);
+        }
+        
+        pre:hover .copy-btn {
+            opacity: 1;
+        }
+        
+        /* Inline Code */
+        code { 
+            background: var(--bg-code);
+            color: #8b5cf6;
+            padding: 3px 8px; 
+            border-radius: 6px; 
+            font-size: 1.1em;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            border: 1px solid var(--border);
+        }
+        
+        /* Headings */
+        h1, h2, h3, h4, h5, h6 { 
+            color: var(--text-primary);
+            margin: 2rem 0 1rem 0;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+        
+        h1 { 
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            border-bottom: 3px solid var(--primary);
+            padding-bottom: 12px;
+            margin-bottom: 1.5rem;
+        }
+        
+        h2 { 
+            font-size: 2rem;
+            color: var(--primary);
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 8px;
+        }
+        
+        h3 { 
+            font-size: 1.5rem;
+            color: var(--accent);
+        }
+        
+        /* Links */
+        a { 
+            color: var(--accent);
+            transition: color 0.2s;
+        }
+        
+        a:hover { 
+            color: var(--primary);
+        }
+        
+        /* Paragraphs */
+        p {
+            margin: 1rem 0;
+            color: var(--text-secondary);
+        }
+        
+        /* Lists */
+        ul, ol {
+            margin: 1rem 0;
+            padding-left: 2rem;
+            color: var(--text-secondary);
+        }
+        
+        li {
+            margin: 0.5rem 0;
+        }
+        
+        /* Tables */
+        table { 
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1.5rem 0;
+            background: var(--bg-main);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+        
+        th, td { 
+            border: 1px solid var(--border);
+            padding: 12px 16px;
+            text-align: left;
+        }
+        
+        th { 
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:hover {
+            background: var(--bg-card);
+        }
+        
+        /* Blockquotes */
+        blockquote {
+            border-left: 4px solid var(--primary);
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            background: var(--bg-main);
+            border-radius: 0 8px 8px 0;
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+        
+        /* Horizontal Rule */
+        hr {
+            border: none;
+            border-top: 2px solid var(--border);
+            margin: 2rem 0;
+        }
+        
+        .footer { 
+            text-align: center; 
+            padding: 2rem; 
+            color: var(--text-secondary);
+            border-top: 1px solid var(--border);
+            margin-top: 3rem; 
+            font-size: 14px;
+        }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 12px;
+            height: 12px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: var(--bg-main);
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 6px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--primary);
+        }
+        
+        @media (max-width: 768px) {
+            .container { padding: 10px; }
+            .file-list { grid-template-columns: 1fr; }
+            .content { padding: 1.5rem; }
+            h1 { font-size: 2rem; }
+            h2 { font-size: 1.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <a href="../index.html" class="home-btn">🏠</a>
+    <div class="container">
+        <div class="breadcrumb">
+            <div style="padding: 0 20px;">
+                <a href="../index.html">🏠 Home</a> <span style="color: #64748b;">/</span> <a href="index.html">02 Core Testing Concepts</a>
+            </div>
+        </div>
+        <div class="content">
+            <h1 id="chapter-6-markers-and-test-organization">Chapter 6: Markers and Test Organization</h1>
+<h2 id="what-are-markers">What Are Markers?</h2>
+<h2 id="what-are-markers_1">What Are Markers?</h2>
+<p>As your test suite grows, you'll find that not all tests are created equal. Some are fast unit tests, others are slow integration tests. Some require a database connection, while others should only run on a specific operating system. How do you manage this complexity?</p>
+<p>This is the problem that markers solve. <strong>Markers are metadata you can apply to your test functions.</strong> Think of them as tags or labels. You can "tag" a test as <code>slow</code>, <code>database</code>, or <code>smoke_test</code>, and then instruct pytest to run—or not run—tests based on these tags.</p>
+<p>Markers are implemented as Python decorators, and their syntax is simple and readable:</p>
+<div class="codehilite"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">slow</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_very_long_computation</span><span class="p">():</span>
+    <span class="c1"># ... code that takes a long time</span>
+    <span class="k">pass</span>
+</code></pre></div>
+
+<p>In this example, we've marked <code>test_very_long_computation</code> with the label <code>slow</code>. This marker doesn't change how the test runs on its own, but it gives us a powerful handle to control it from the command line.</p>
+<p>Markers are the primary tool in pytest for categorizing, filtering, and organizing your tests beyond the simple structure of files and directories. They allow you to create logical groupings that are essential for managing a large, real-world test suite.</p>
+<h2 id="built-in-markers-skip-xfail-filterwarnings">Built-in Markers (skip, xfail, filterwarnings)</h2>
+<h2 id="built-in-markers-skip-xfail-filterwarnings_1">Built-in Markers (skip, xfail, filterwarnings)</h2>
+<p>Pytest comes with several useful markers out of the box. Let's explore the most common ones by first seeing the problems they solve.</p>
+<h3 id="skip-skipping-a-test-conditionally"><code>skip</code>: Skipping a Test Conditionally</h3>
+<p>Imagine you're developing a new feature. You've written a test for it, but the feature's code isn't complete yet. If you run your test suite, this test will fail, creating noise and potentially breaking your continuous integration (CI) build.</p>
+<p><strong>The Wrong Way: Commenting Out the Test</strong></p>
+<p>You might be tempted to just comment out the test.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_feature.py</span>
+
+<span class="c1"># def test_new_feature():</span>
+<span class="c1">#     assert new_feature_function() == &quot;expected result&quot;</span>
+<span class="c1">#     # This test will be forgotten!</span>
+</code></pre></div>
+
+<p>The danger here is that commented-out code is easily forgotten. Months later, you might not remember why it's there or if it's still relevant.</p>
+<p><strong>The Right Way: Using <code>@pytest.mark.skip</code></strong></p>
+<p>A much better approach is to explicitly mark the test to be skipped. This documents the intent and keeps the test visible in your test reports.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_skipping.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_always_passes</span><span class="p">():</span>
+    <span class="k">assert</span> <span class="kc">True</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">skip</span><span class="p">(</span><span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Feature not yet implemented.&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_new_feature</span><span class="p">():</span>
+    <span class="c1"># This code will not be executed</span>
+    <span class="k">assert</span> <span class="kc">False</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">skipif</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">version_info</span> <span class="o">&lt;</span> <span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">10</span><span class="p">),</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Requires Python 3.10 or higher&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_python_310_feature</span><span class="p">():</span>
+    <span class="c1"># This test will only run on Python 3.10+</span>
+    <span class="c1"># For example, using the &#39;match&#39; statement</span>
+    <span class="n">value</span> <span class="o">=</span> <span class="mi">42</span>
+    <span class="k">match</span> <span class="n">value</span><span class="p">:</span>
+        <span class="k">case</span> <span class="mi">42</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="kc">True</span>
+        <span class="k">case</span><span class="w"> </span><span class="k">_</span><span class="p">:</span>
+            <span class="n">result</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="k">assert</span> <span class="n">result</span>
+</code></pre></div>
+
+<p>Let's run this and see the output.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>tests/test_skipping.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items
+
+tests/test_skipping.py::test_always_passes<span class="w"> </span>PASSED<span class="w">                      </span><span class="o">[</span><span class="w"> </span><span class="m">33</span>%<span class="o">]</span>
+tests/test_skipping.py::test_new_feature<span class="w"> </span>SKIPPED<span class="w"> </span><span class="o">(</span>Feature<span class="w"> </span>not<span class="w"> </span>yet<span class="w"> </span>implemented.<span class="o">)</span><span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">66</span>%<span class="o">]</span>
+tests/test_skipping.py::test_python_310_feature<span class="w"> </span>SKIPPED<span class="w"> </span><span class="o">(</span>Requires<span class="w"> </span>Python<span class="w"> </span><span class="m">3</span>.10<span class="w"> </span>or<span class="w"> </span>higher<span class="o">)</span><span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+<span class="c1"># Note: The second SKIPPED message will vary based on your Python version.</span>
+
+<span class="o">======================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">2</span><span class="w"> </span>skipped<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.01s<span class="w"> </span><span class="o">======================</span>
+</code></pre></div>
+
+<p>Notice the output:
+- <code>PASSED</code>: The test ran and succeeded.
+- <code>SKIPPED</code>: Pytest recognized the marker and did not execute the test function.
+- The <code>reason</code> string is printed in the test summary, which is crucial for understanding why a test was skipped.</p>
+<p>There are two variants:
+1.  <code>@pytest.mark.skip(reason="...")</code>: Always skips the test.
+2.  <code>@pytest.mark.skipif(condition, reason="...")</code>: Skips the test only if the <code>condition</code> evaluates to <code>True</code>. This is perfect for tests that are platform-specific or depend on a certain library version.</p>
+<h3 id="xfail-marking-a-test-as-an-expected-failure"><code>xfail</code>: Marking a Test as an Expected Failure</h3>
+<p>Now consider a different scenario: you've found a bug in your code. You write a test that reproduces the bug. This test is valuable! It proves the bug exists and will signal when it's fixed. However, until the bug is fixed, this test will fail your test suite.</p>
+<p>You don't want to <code>skip</code> it, because you <em>want</em> it to run. You just want to tell pytest, "I know this is broken, and that's okay for now." This is the job of <code>xfail</code> (expected failure).</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_xfail.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+
+<span class="c1"># A buggy function we need to fix</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">buggy_function</span><span class="p">():</span>
+    <span class="k">return</span> <span class="kc">False</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">xfail</span><span class="p">(</span><span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Bug #123: buggy_function returns False&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_known_bug</span><span class="p">():</span>
+    <span class="k">assert</span> <span class="n">buggy_function</span><span class="p">()</span> <span class="ow">is</span> <span class="kc">True</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_another_feature</span><span class="p">():</span>
+    <span class="k">assert</span> <span class="kc">True</span>
+</code></pre></div>
+
+<p>When we run this, pytest executes <code>test_known_bug</code>, sees that it fails as expected, and marks it accordingly.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>tests/test_xfail.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
+
+tests/test_xfail.py::test_known_bug<span class="w"> </span>XFAIL<span class="w"> </span><span class="o">(</span>Bug<span class="w"> </span><span class="c1">#123: buggy_function returns False) [ 50%]</span>
+tests/test_xfail.py::test_another_feature<span class="w"> </span>PASSED<span class="w">                       </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">======================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>xfailed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.01s<span class="w"> </span><span class="o">======================</span>
+</code></pre></div>
+
+<p>The test suite passes, but the report clearly shows one test is an <code>XFAIL</code>. This is the ideal way to manage tests for known bugs.</p>
+<p>What happens if we fix the bug? Let's see.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_xpass.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+
+<span class="c1"># The function is now fixed!</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">formerly_buggy_function</span><span class="p">():</span>
+    <span class="k">return</span> <span class="kc">True</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">xfail</span><span class="p">(</span><span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Bug #123: This should be fixed now&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_unexpected_pass</span><span class="p">():</span>
+    <span class="k">assert</span> <span class="n">formerly_buggy_function</span><span class="p">()</span> <span class="ow">is</span> <span class="kc">True</span>
+</code></pre></div>
+
+<p>Now, when we run the test, something interesting happens. The test runs, it passes, but pytest knows we <em>expected</em> it to fail. This is called an <code>XPASS</code> (expected failure, but it passed).</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>tests/test_xpass.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
+
+tests/test_xpass.py::test_unexpected_pass<span class="w"> </span>XPASS<span class="w"> </span><span class="o">(</span>Bug<span class="w"> </span><span class="c1">#123: This should be fixed now) [100%]</span>
+
+<span class="o">======================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>xpassed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.02s<span class="w"> </span><span class="o">======================</span>
+</code></pre></div>
+
+<p>By default, an <code>XPASS</code> does not fail the test suite. However, it's a strong signal that the underlying bug has been fixed and you should remove the <code>@pytest.mark.xfail</code> marker. This prevents you from having outdated markers in your code.</p>
+<h3 id="filterwarnings-suppressing-known-warnings"><code>filterwarnings</code>: Suppressing Known Warnings</h3>
+<p>Sometimes, your code or its dependencies will issue warnings (e.g., <code>DeprecationWarning</code>). While these don't cause tests to fail, they can clutter your test output and hide important information.</p>
+<p>Let's imagine a function that uses a deprecated feature.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_warnings.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">function_with_deprecation</span><span class="p">():</span>
+    <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s2">&quot;This function is deprecated&quot;</span><span class="p">,</span> <span class="ne">DeprecationWarning</span><span class="p">)</span>
+    <span class="k">return</span> <span class="mi">42</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_deprecation_normally</span><span class="p">():</span>
+    <span class="k">assert</span> <span class="n">function_with_deprecation</span><span class="p">()</span> <span class="o">==</span> <span class="mi">42</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">filterwarnings</span><span class="p">(</span><span class="s2">&quot;ignore:This function is deprecated&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_deprecation_with_filter</span><span class="p">():</span>
+    <span class="k">assert</span> <span class="n">function_with_deprecation</span><span class="p">()</span> <span class="o">==</span> <span class="mi">42</span>
+</code></pre></div>
+
+<p>Running this file shows the difference clearly.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>tests/test_warnings.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
+
+tests/test_warnings.py::test_deprecation_normally<span class="w"> </span>PASSED<span class="w">               </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+tests/test_warnings.py::test_deprecation_with_filter<span class="w"> </span>PASSED<span class="w">            </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">==============================</span><span class="w"> </span><span class="nv">Warnings</span><span class="w"> </span><span class="o">==================================</span>
+tests/test_warnings.py::test_deprecation_normally
+<span class="w">  </span>/path/to/tests/test_warnings.py:6:<span class="w"> </span>DeprecationWarning:<span class="w"> </span>This<span class="w"> </span><span class="k">function</span><span class="w"> </span>is<span class="w"> </span>deprecated
+<span class="w">    </span>warnings.warn<span class="o">(</span><span class="s2">&quot;This function is deprecated&quot;</span>,<span class="w"> </span>DeprecationWarning<span class="o">)</span>
+
+--<span class="w"> </span>Docs:<span class="w"> </span>https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+<span class="o">======================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>warning<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.02s<span class="w"> </span><span class="o">======================</span>
+</code></pre></div>
+
+<p>As you can see, the first test ran successfully but generated a warning in the final report. The second test, decorated with <code>filterwarnings</code>, ran without producing any warning output. This is useful for temporarily silencing warnings from third-party libraries or legacy code that you don't intend to fix immediately.</p>
+<h2 id="creating-custom-markers">Creating Custom Markers</h2>
+<h2 id="creating-custom-markers_1">Creating Custom Markers</h2>
+<p>While the built-in markers are useful, the real power comes from creating your own. This allows you to categorize your tests according to the logic of your own application.</p>
+<p>Let's use a common scenario. In a typical project, you might have:
+-   <strong>Unit tests</strong>: Fast, isolated, test a single piece of logic.
+-   <strong>Integration tests</strong>: Slower, test how multiple components work together.
+-   <strong>API tests</strong>: Even slower, make real network requests to an external service.</p>
+<p>Creating custom markers is as simple as using them. You don't need to declare them anywhere first (though we'll see why you <em>should</em> in the next section).</p>
+<p>Let's write a test file that uses these categories.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_categories.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">unit</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_sum_numbers</span><span class="p">():</span>
+    <span class="k">assert</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">4</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">integration</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_db_connection</span><span class="p">():</span>
+    <span class="c1"># Pretend this connects to a database</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="kc">True</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">api</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">slow</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_api_call</span><span class="p">():</span>
+    <span class="c1"># Pretend this makes a network call</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="kc">True</span>
+</code></pre></div>
+
+<p>That's it! We've just "created" three new markers: <code>unit</code>, <code>integration</code>, and <code>api</code>. We also added the <code>slow</code> marker to the API test, demonstrating that you can apply multiple markers to a single test.</p>
+<p>Right now, these markers don't do anything by themselves. They are just metadata waiting to be used. Their power is unlocked when we use them for filtering, which we'll cover in section 6.5. But first, let's address a small problem this code creates.</p>
+<h2 id="registering-markers-in-configuration">Registering Markers in Configuration</h2>
+<h2 id="registering-markers-in-configuration_1">Registering Markers in Configuration</h2>
+<p>If you run the test file from the previous section, you'll notice something new in the output.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>tests/test_categories.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items
+
+tests/test_categories.py<span class="w"> </span>...<span class="w">                                         </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">==============================</span><span class="w"> </span><span class="nv">Warnings</span><span class="w"> </span><span class="o">==================================</span>
+.../tests/test_categories.py:5
+<span class="w">  </span>PytestUnknownMarkWarning:<span class="w"> </span>Unknown<span class="w"> </span>pytest.mark.unit<span class="w"> </span>-<span class="w"> </span>is<span class="w"> </span>this<span class="w"> </span>a<span class="w"> </span>typo?
+<span class="w">    </span>@pytest.mark.unit
+
+.../tests/test_categories.py:9
+<span class="w">  </span>PytestUnknownMarkWarning:<span class="w"> </span>Unknown<span class="w"> </span>pytest.mark.integration<span class="w"> </span>-<span class="w"> </span>is<span class="w"> </span>this<span class="w"> </span>a<span class="w"> </span>typo?
+<span class="w">    </span>@pytest.mark.integration
+
+.../tests/test_categories.py:14
+<span class="w">  </span>PytestUnknownMarkWarning:<span class="w"> </span>Unknown<span class="w"> </span>pytest.mark.api<span class="w"> </span>-<span class="w"> </span>is<span class="w"> </span>this<span class="w"> </span>a<span class="w"> </span>typo?
+<span class="w">    </span>@pytest.mark.api
+
+--<span class="w"> </span>Docs:<span class="w"> </span>https://docs.pytest.org/en/stable/how-to/mark.html
+<span class="o">======================</span><span class="w"> </span><span class="m">3</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">3</span><span class="w"> </span>warnings<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">1</span>.52s<span class="w"> </span><span class="o">=====================</span>
+</code></pre></div>
+
+<p>Pytest runs the tests, but it issues a <code>PytestUnknownMarkWarning</code> for each of our custom markers. Why?</p>
+<p>This is a safety feature. Pytest warns you about unrecognized markers to help you catch typos. If you accidentally typed <code>@pytest.mark.integraton</code> instead of <code>@pytest.mark.integration</code>, you would want pytest to tell you! Without this warning, your misspelled marker would be silently ignored, and the test wouldn't be included in the <code>integration</code> group.</p>
+<p>To make pytest recognize our markers—and to document them for other developers—we should register them in a configuration file. The most common place for this is <code>pytest.ini</code> in the root of your project.</p>
+<p>Let's create that file.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># pytest.ini</span>
+<span class="k">[pytest]</span>
+<span class="na">markers</span><span class="w"> </span><span class="o">=</span>
+<span class="w">    </span><span class="na">unit</span><span class="o">:</span><span class="w"> </span><span class="s">marks tests as unit tests (fast, isolated)</span>
+<span class="w">    </span><span class="na">integration</span><span class="o">:</span><span class="w"> </span><span class="s">marks tests as integration tests (slower, may require services)</span>
+<span class="w">    </span><span class="na">api</span><span class="o">:</span><span class="w"> </span><span class="s">marks tests as API tests (slowest, requires network access)</span>
+<span class="w">    </span><span class="na">slow</span><span class="o">:</span><span class="w"> </span><span class="s">marks tests as slow to run</span>
+</code></pre></div>
+
+<p>The format is simple: under the <code>[pytest]</code> section, add a <code>markers</code> key. Each line that follows is a marker name, a colon, and a description. The description is excellent documentation for your team.</p>
+<p>Now, with <code>pytest.ini</code> in our project root, let's run the tests again.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>tests/test_categories.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items
+
+tests/test_categories.py<span class="w"> </span>...<span class="w">                                         </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">=========================</span><span class="w"> </span><span class="m">3</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">1</span>.52s<span class="w"> </span><span class="o">==========================</span>
+</code></pre></div>
+
+<p>The warnings are gone! We have officially told pytest about our custom markers. This is a critical best practice for any project that uses custom markers. You can also see a list of all available markers (including built-in ones) by running <code>pytest --markers</code>.</p>
+<h2 id="filtering-tests-by-markers">Filtering Tests by Markers</h2>
+<h2 id="filtering-tests-by-markers_1">Filtering Tests by Markers</h2>
+<p>Now we get to the payoff. We've tagged our tests with metadata; it's time to use that metadata to control which tests are run. This is done with the <code>-m</code> command-line option.</p>
+<p>Let's use our <code>tests/test_categories.py</code> file from before.</p>
+<h3 id="running-a-single-group-of-tests">Running a Single Group of Tests</h3>
+<p>To run only the unit tests, we use <code>-m unit</code>.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>-m<span class="w"> </span><span class="nv">unit</span>
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items<span class="w"> </span>/<span class="w"> </span><span class="m">2</span><span class="w"> </span>deselected<span class="w"> </span>/<span class="w"> </span><span class="m">1</span><span class="w"> </span>selected
+
+tests/test_categories.py::test_sum_numbers<span class="w"> </span>PASSED<span class="w">                      </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">===================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">2</span><span class="w"> </span>deselected<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.01s<span class="w"> </span><span class="o">====================</span>
+</code></pre></div>
+
+<p>Pytest reports that it collected 3 tests but deselected 2, running only the 1 test marked with <code>unit</code>.</p>
+<h3 id="excluding-a-group-of-tests">Excluding a Group of Tests</h3>
+<p>Perhaps more commonly, you'll want to run your fast tests and exclude the slow ones. You can do this with <code>not</code>.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not slow&quot;</span>
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items<span class="w"> </span>/<span class="w"> </span><span class="m">1</span><span class="w"> </span>deselected<span class="w"> </span>/<span class="w"> </span><span class="m">2</span><span class="w"> </span>selected
+
+tests/test_categories.py::test_sum_numbers<span class="w"> </span>PASSED<span class="w">                      </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+tests/test_categories.py::test_db_connection<span class="w"> </span>PASSED<span class="w">                    </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">===================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>deselected<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.51s<span class="w"> </span><span class="o">====================</span>
+</code></pre></div>
+
+<p>Notice the quotes around <code>"not slow"</code>. They are often necessary because command-line shells can interpret characters like <code>(</code> or <code>)</code> as special commands. It's a good habit to always quote your <code>-m</code> expression.</p>
+<h3 id="combining-markers-with-and-and-or">Combining Markers with <code>and</code> and <code>or</code></h3>
+<p>You can build more complex queries using boolean logic.</p>
+<ul>
+<li><strong><code>and</code></strong>: Run tests that have <em>all</em> the specified markers.</li>
+<li><strong><code>or</code></strong>: Run tests that have <em>any</em> of the specified markers.</li>
+</ul>
+<p>Let's run tests that are marked as both <code>api</code> AND <code>slow</code>.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;api and slow&quot;</span>
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items<span class="w"> </span>/<span class="w"> </span><span class="m">2</span><span class="w"> </span>deselected<span class="w"> </span>/<span class="w"> </span><span class="m">1</span><span class="w"> </span>selected
+
+tests/test_categories.py::test_api_call<span class="w"> </span>PASSED<span class="w">                         </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">===================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">2</span><span class="w"> </span>deselected<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">1</span>.01s<span class="w"> </span><span class="o">====================</span>
+</code></pre></div>
+
+<p>Only <code>test_api_call</code> matched because it's the only one with both markers.</p>
+<p>Now, let's run tests that are marked as either <code>unit</code> OR <code>api</code>.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;unit or api&quot;</span>
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items<span class="w"> </span>/<span class="w"> </span><span class="m">1</span><span class="w"> </span>deselected<span class="w"> </span>/<span class="w"> </span><span class="m">2</span><span class="w"> </span>selected
+
+tests/test_categories.py::test_sum_numbers<span class="w"> </span>PASSED<span class="w">                      </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+tests/test_categories.py::test_api_call<span class="w"> </span>PASSED<span class="w">                         </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">===================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>deselected<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">1</span>.02s<span class="w"> </span><span class="o">====================</span>
+</code></pre></div>
+
+<p>This powerful filtering is the primary reason for using markers. It allows you to slice and dice your test suite to fit any situation, from a developer's quick check to a full pre-release validation run.</p>
+<h2 id="organizing-tests-by-category">Organizing Tests by Category</h2>
+<h2 id="organizing-tests-by-category_1">Organizing Tests by Category</h2>
+<p>Markers provide a layer of logical organization that complements the physical organization of your test files and directories. While you should still group related tests in the same file (e.g., <code>tests/test_user_model.py</code>), markers allow you to create cross-cutting categories that span your entire project.</p>
+<p>Think of your test suite as a database. File paths are one way to query it (<code>pytest tests/models/</code>), but markers are like adding powerful, custom indexes.</p>
+<h3 id="a-strategic-approach-to-markers">A Strategic Approach to Markers</h3>
+<p>Here are some common and effective categories for markers in a real-world project:</p>
+<ul>
+<li>
+<p><strong>By Speed</strong>: <code>@pytest.mark.slow</code>, <code>@pytest.mark.fast</code></p>
+<ul>
+<li>This is one of the most useful distinctions. It allows developers to run <code>pytest -m "not slow"</code> for a fast feedback loop.</li>
+</ul>
+</li>
+<li>
+<p><strong>By Type/Layer</strong>: <code>@pytest.mark.unit</code>, <code>@pytest.mark.integration</code>, <code>@pytest.mark.e2e</code> (end-to-end)</p>
+<ul>
+<li>This follows the classic testing pyramid and helps in understanding the scope of a test.</li>
+</ul>
+</li>
+<li>
+<p><strong>By Subsystem/Feature</strong>: <code>@pytest.mark.auth</code>, <code>@pytest.mark.payment</code>, <code>@pytest.mark.api_v2</code></p>
+<ul>
+<li>This is invaluable for teams where different developers work on different parts of the application. A developer working on the payment system can run <code>pytest -m payment</code> to get focused results.</li>
+</ul>
+</li>
+<li>
+<p><strong>By Execution Environment</strong>: <code>@pytest.mark.database</code>, <code>@pytest.mark.network</code>, <code>@pytest.mark.filesystem</code></p>
+<ul>
+<li>This helps identify tests that have external dependencies, which might not be available in all testing environments.</li>
+</ul>
+</li>
+<li>
+<p><strong>By Purpose</strong>: <code>@pytest.mark.smoke</code>, <code>@pytest.mark.regression</code></p>
+<ul>
+<li>A <code>smoke</code> test suite is a small, critical subset of tests that can be run very quickly to see if the application is "on fire" after a deployment. <code>pytest -m smoke</code> is a perfect command for a post-deployment check.</li>
+</ul>
+</li>
+</ul>
+<h3 id="example-of-a-well-organized-test-file">Example of a Well-Organized Test File</h3>
+<p>Let's see how these strategies can be combined in a single file.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_payments.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">unit</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">payment</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_credit_card_validation_format</span><span class="p">():</span>
+    <span class="c1"># Fast, isolated check of a credit card number format</span>
+    <span class="k">assert</span> <span class="kc">True</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">integration</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">payment</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">database</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_charge_user_updates_db</span><span class="p">():</span>
+    <span class="c1"># Slower test that requires a database connection</span>
+    <span class="c1"># to verify a user&#39;s balance is updated.</span>
+    <span class="k">assert</span> <span class="kc">True</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">e2e</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">payment</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">api</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">slow</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">smoke</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_full_payment_flow</span><span class="p">():</span>
+    <span class="c1"># Very slow test that simulates a full user journey,</span>
+    <span class="c1"># hitting a real (or staging) payment gateway API.</span>
+    <span class="c1"># This is also a critical &quot;smoke&quot; test.</span>
+    <span class="k">assert</span> <span class="kc">True</span>
+</code></pre></div>
+
+<p>With this setup, you can now run your tests in many different ways, each tailored to a specific need:</p>
+<ul>
+<li><strong>A developer working on payments</strong>: <code>pytest -m payment</code></li>
+<li><strong>A quick pre-commit check</strong>: <code>pytest -m "not slow"</code></li>
+<li><strong>CI run on every pull request</strong>: <code>pytest -m "unit or integration"</code></li>
+<li><strong>A post-deployment health check</strong>: <code>pytest -m smoke</code></li>
+<li><strong>Nightly full regression run</strong>: <code>pytest</code> (runs everything)</li>
+</ul>
+<p>By thoughtfully applying markers, you transform your test suite from a monolithic block of code into a flexible, queryable, and highly organized asset that can adapt to the needs of your development lifecycle.</p>
+        </div>
+        <div class="footer">
+            Generated on 2025-11-22 16:29:18 | Made with ❤️ by GitHub Pages Generator
+        </div>
+    </div>
+    <script>
+        // Syntax highlighting for code blocks
+        document.addEventListener('DOMContentLoaded', (event) => {
+            // Highlight code blocks
+            document.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+            
+            // Add copy buttons to code blocks
+            document.querySelectorAll('pre').forEach((pre) => {
+                const button = document.createElement('button');
+                button.className = 'copy-btn';
+                button.textContent = 'Copy';
+                
+                button.addEventListener('click', () => {
+                    const code = pre.querySelector('code').textContent;
+                    navigator.clipboard.writeText(code).then(() => {
+                        button.textContent = 'Copied!';
+                        button.classList.add('copied');
+                        setTimeout(() => {
+                            button.textContent = 'Copy';
+                            button.classList.remove('copied');
+                        }, 2000);
+                    }).catch(err => {
+                        console.error('Failed to copy:', err);
+                        button.textContent = 'Error';
+                        setTimeout(() => {
+                            button.textContent = 'Copy';
+                        }, 2000);
+                    });
+                });
+                
+                pre.appendChild(button);
+            });
+        });
+    </script>
+</body>
+</html>

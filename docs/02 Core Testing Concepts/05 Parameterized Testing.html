@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>05 Parameterized Testing</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #8b5cf6;
+            --bg-main: #0f172a;
+            --bg-card: #1e293b;
+            --bg-code: #0f172a;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --border: #334155;
+            --accent: #06b6d4;
+            --success: #10b981;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body { 
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.7; 
+            color: var(--text-primary); 
+            background: var(--bg-main);
+        }
+        
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            padding: 20px; 
+        }
+        
+        .home-btn { 
+            position: fixed; 
+            top: 20px; 
+            right: 20px; 
+            background: var(--accent);
+            color: white; 
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            text-decoration: none; 
+            z-index: 1000;
+            box-shadow: 0 4px 20px rgba(6, 182, 212, 0.4);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .home-btn:hover { 
+            background: #0891b2;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(6, 182, 212, 0.5);
+        }
+        
+        .breadcrumb { 
+            background: var(--bg-card);
+            padding: 12px 0; 
+            margin-bottom: 24px; 
+            font-size: 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        
+        .breadcrumb a { 
+            color: var(--accent);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        
+        .breadcrumb a:hover { 
+            color: var(--primary);
+            text-decoration: underline;
+        }
+        
+        .content { 
+            background: var(--bg-card);
+            padding: 3rem; 
+            border-radius: 16px; 
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border);
+        }
+        
+        .file-list { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); 
+            gap: 1.5rem; 
+            margin: 2rem 0; 
+        }
+        
+        .file-item { 
+            padding: 1.5rem; 
+            border: 1px solid var(--border);
+            border-radius: 12px; 
+            background: var(--bg-main);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .file-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .file-item:hover { 
+            transform: translateY(-4px); 
+            box-shadow: 0 8px 30px rgba(99, 102, 241, 0.3);
+            border-color: var(--primary);
+        }
+        
+        .file-item:hover::before {
+            opacity: 1;
+        }
+        
+        .file-item a { 
+            color: var(--text-primary);
+            text-decoration: none; 
+            font-weight: 600; 
+            display: block;
+            font-size: 1.1rem;
+        }
+        
+        .file-item a:hover { 
+            color: var(--primary);
+        }
+        
+        .file-type { 
+            font-size: 13px; 
+            color: var(--text-secondary);
+            margin-top: 8px; 
+            font-weight: 500;
+        }
+        
+        /* Code Blocks */
+        pre { 
+            background: var(--bg-code);
+            padding: 1.5rem; 
+            border-radius: 12px; 
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            margin: 1.5rem 0;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            position: relative;
+        }
+        
+        pre code { 
+            background: none;
+            padding: 0;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            font-size: 0.9em;
+            line-height: 1.6;
+        }
+        
+        /* Copy Button */
+        .copy-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 600;
+            transition: all 0.2s;
+            opacity: 0.7;
+            z-index: 10;
+        }
+        
+        .copy-btn:hover {
+            opacity: 1;
+            background: var(--primary-dark);
+            transform: translateY(-1px);
+        }
+        
+        .copy-btn.copied {
+            background: var(--success);
+        }
+        
+        pre:hover .copy-btn {
+            opacity: 1;
+        }
+        
+        /* Inline Code */
+        code { 
+            background: var(--bg-code);
+            color: #8b5cf6;
+            padding: 3px 8px; 
+            border-radius: 6px; 
+            font-size: 1.1em;
+            font-family: 'Fira Code', 'Consolas', monospace;
+            border: 1px solid var(--border);
+        }
+        
+        /* Headings */
+        h1, h2, h3, h4, h5, h6 { 
+            color: var(--text-primary);
+            margin: 2rem 0 1rem 0;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+        
+        h1 { 
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            border-bottom: 3px solid var(--primary);
+            padding-bottom: 12px;
+            margin-bottom: 1.5rem;
+        }
+        
+        h2 { 
+            font-size: 2rem;
+            color: var(--primary);
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 8px;
+        }
+        
+        h3 { 
+            font-size: 1.5rem;
+            color: var(--accent);
+        }
+        
+        /* Links */
+        a { 
+            color: var(--accent);
+            transition: color 0.2s;
+        }
+        
+        a:hover { 
+            color: var(--primary);
+        }
+        
+        /* Paragraphs */
+        p {
+            margin: 1rem 0;
+            color: var(--text-secondary);
+        }
+        
+        /* Lists */
+        ul, ol {
+            margin: 1rem 0;
+            padding-left: 2rem;
+            color: var(--text-secondary);
+        }
+        
+        li {
+            margin: 0.5rem 0;
+        }
+        
+        /* Tables */
+        table { 
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1.5rem 0;
+            background: var(--bg-main);
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+        
+        th, td { 
+            border: 1px solid var(--border);
+            padding: 12px 16px;
+            text-align: left;
+        }
+        
+        th { 
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            color: white;
+            font-weight: 600;
+        }
+        
+        tr:hover {
+            background: var(--bg-card);
+        }
+        
+        /* Blockquotes */
+        blockquote {
+            border-left: 4px solid var(--primary);
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+            background: var(--bg-main);
+            border-radius: 0 8px 8px 0;
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+        
+        /* Horizontal Rule */
+        hr {
+            border: none;
+            border-top: 2px solid var(--border);
+            margin: 2rem 0;
+        }
+        
+        .footer { 
+            text-align: center; 
+            padding: 2rem; 
+            color: var(--text-secondary);
+            border-top: 1px solid var(--border);
+            margin-top: 3rem; 
+            font-size: 14px;
+        }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 12px;
+            height: 12px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: var(--bg-main);
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 6px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--primary);
+        }
+        
+        @media (max-width: 768px) {
+            .container { padding: 10px; }
+            .file-list { grid-template-columns: 1fr; }
+            .content { padding: 1.5rem; }
+            h1 { font-size: 2rem; }
+            h2 { font-size: 1.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <a href="../index.html" class="home-btn">🏠</a>
+    <div class="container">
+        <div class="breadcrumb">
+            <div style="padding: 0 20px;">
+                <a href="../index.html">🏠 Home</a> <span style="color: #64748b;">/</span> <a href="index.html">02 Core Testing Concepts</a>
+            </div>
+        </div>
+        <div class="content">
+            <h1 id="chapter-5-parameterized-testing">Chapter 5: Parameterized Testing</h1>
+<h2 id="testing-multiple-scenarios-without-repetition">Testing Multiple Scenarios Without Repetition</h2>
+<h2 id="testing-multiple-scenarios-without-repetition_1">Testing Multiple Scenarios Without Repetition</h2>
+<p>So far, we've written tests that check a single scenario. A function is called with one set of inputs, and we assert one specific outcome. But what happens when a function has different behaviors based on its input?</p>
+<p>Consider a simple function that checks if a number is even.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/utils.py</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">is_even</span><span class="p">(</span><span class="n">number</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Returns True if a number is even, False otherwise.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">number</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;Input must be an integer&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">number</span> <span class="o">%</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">0</span>
+</code></pre></div>
+
+<p>To test this thoroughly, we need to check several cases:
+- A positive even number (e.g., 2)
+- A positive odd number (e.g., 3)
+- Zero (which is even)
+- A negative even number (e.g., -4)
+- A negative odd number (e.g., -5)</p>
+<h3 id="the-wrong-way-repetition">The Wrong Way: Repetition</h3>
+<p>A beginner's first instinct is often to copy and paste the test, changing the values for each scenario. This is a classic example of "illuminating the path by showing the pits." Let's see what this anti-pattern looks like.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_utils_repetitive.py</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">is_even</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_is_even_with_positive_even</span><span class="p">():</span>
+    <span class="k">assert</span> <span class="n">is_even</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">True</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_is_even_with_positive_odd</span><span class="p">():</span>
+    <span class="k">assert</span> <span class="n">is_even</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">False</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_is_even_with_zero</span><span class="p">():</span>
+    <span class="k">assert</span> <span class="n">is_even</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">True</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_is_even_with_negative_even</span><span class="p">():</span>
+    <span class="k">assert</span> <span class="n">is_even</span><span class="p">(</span><span class="o">-</span><span class="mi">4</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">True</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_is_even_with_negative_odd</span><span class="p">():</span>
+    <span class="k">assert</span> <span class="n">is_even</span><span class="p">(</span><span class="o">-</span><span class="mi">5</span><span class="p">)</span> <span class="ow">is</span> <span class="kc">False</span>
+</code></pre></div>
+
+<p>Let's run these tests.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>tests/test_utils_repetitive.py
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+...
+collected<span class="w"> </span><span class="m">5</span><span class="w"> </span>items
+
+tests/test_utils_repetitive.py::test_is_even_with_positive_even<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">20</span>%<span class="o">]</span>
+tests/test_utils_repetitive.py::test_is_even_with_positive_odd<span class="w"> </span>PASSED<span class="w">  </span><span class="o">[</span><span class="w"> </span><span class="m">40</span>%<span class="o">]</span>
+tests/test_utils_repetitive.py::test_is_even_with_zero<span class="w"> </span>PASSED<span class="w">         </span><span class="o">[</span><span class="w"> </span><span class="m">60</span>%<span class="o">]</span>
+tests/test_utils_repetitive.py::test_is_even_with_negative_even<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">80</span>%<span class="o">]</span>
+tests/test_utils_repetitive.py::test_is_even_with_negative_odd<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">==========================</span><span class="w"> </span><span class="m">5</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">============================</span>
+</code></pre></div>
+
+<p>The tests pass, but this approach has serious flaws:</p>
+<ol>
+<li><strong>Code Duplication</strong>: The test logic (<code>assert is_even(...)</code>) is repeated in every single function. If we need to change the logic, we have to change it in five places.</li>
+<li><strong>Poor Readability</strong>: It's hard to see all the test cases at a glance. You have to read through five separate function definitions to understand the range of inputs being tested.</li>
+<li><strong>Maintenance Burden</strong>: Adding a new test case requires writing a whole new function. This discourages comprehensive testing.</li>
+</ol>
+<p>This violates the fundamental programming principle of <strong>DRY (Don't Repeat Yourself)</strong>. There must be a better way. Pytest provides an elegant solution to this exact problem: <strong>parameterization</strong>. The core idea is to write the test logic <em>once</em> and supply it with a list of different inputs and expected outputs.</p>
+<h2 id="pytestmarkparametrize-basics">@pytest.mark.parametrize Basics</h2>
+<h2 id="pytestmarkparametrize-basics_1">@pytest.mark.parametrize Basics</h2>
+<p>The <code>@pytest.mark.parametrize</code> decorator is the heart of parameterized testing in pytest. It allows you to define multiple sets of arguments and expected outcomes for a single test function.</p>
+<p>Let's refactor our repetitive <code>is_even</code> tests into one clean, parameterized test.</p>
+<h3 id="the-mental-model-before-the-syntax">The Mental Model Before the Syntax</h3>
+<p>Before we write the code, let's establish the concept. We want to tell pytest: "Hey, I have this one test function, <code>test_is_even</code>. I want you to run it multiple times. For the first run, give it the number <code>2</code> and expect <code>True</code>. For the second run, give it <code>3</code> and expect <code>False</code>," and so on.</p>
+<p>The <code>@pytest.mark.parametrize</code> decorator is how we provide this list of instructions.</p>
+<h3 id="implementation">Implementation</h3>
+<p>Here is the same set of tests, rewritten using parameterization.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_utils_parameterized.py</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">is_even</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">parametrize</span><span class="p">(</span><span class="s2">&quot;number, expected&quot;</span><span class="p">,</span> <span class="p">[</span>
+    <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>
+    <span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
+    <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>
+    <span class="p">(</span><span class="o">-</span><span class="mi">4</span><span class="p">,</span> <span class="kc">True</span><span class="p">),</span>
+    <span class="p">(</span><span class="o">-</span><span class="mi">5</span><span class="p">,</span> <span class="kc">False</span><span class="p">),</span>
+<span class="p">])</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_is_even</span><span class="p">(</span><span class="n">number</span><span class="p">,</span> <span class="n">expected</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Test is_even with multiple integer inputs.&quot;&quot;&quot;</span>
+    <span class="k">assert</span> <span class="n">is_even</span><span class="p">(</span><span class="n">number</span><span class="p">)</span> <span class="o">==</span> <span class="n">expected</span>
+</code></pre></div>
+
+<p>Let's break this down:</p>
+<ol>
+<li><code>@pytest.mark.parametrize(...)</code>: This is the decorator that signals to pytest that this is a parameterized test.</li>
+<li><code>"number, expected"</code>: The first argument is a string containing the names of the parameters we are defining, separated by commas. These names <strong>must</strong> match the argument names in our test function signature.</li>
+<li><code>[...]</code>: The second argument is a list. Each item in the list represents one full run of the test function.</li>
+<li><code>(2, True)</code>, <code>(3, False)</code>, etc.: Since we defined two parameter names (<code>number</code> and <code>expected</code>), each item in our list is a tuple with two values. In the first run, <code>number</code> will be <code>2</code> and <code>expected</code> will be <code>True</code>. In the second run, <code>number</code> will be <code>3</code> and <code>expected</code> will be <code>False</code>, and so on.</li>
+<li><code>def test_is_even(number, expected):</code>: The test function signature now includes the parameter names we defined in the decorator. Pytest will inject the values from our list into these arguments for each run.</li>
+</ol>
+<p>Now, let's run this single test function.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>tests/test_utils_parameterized.py
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+...
+collected<span class="w"> </span><span class="m">5</span><span class="w"> </span>items
+
+tests/test_utils_parameterized.py::test_is_even<span class="o">[</span><span class="m">2</span>-True<span class="o">]</span><span class="w"> </span>PASSED<span class="w">       </span><span class="o">[</span><span class="w"> </span><span class="m">20</span>%<span class="o">]</span>
+tests/test_utils_parameterized.py::test_is_even<span class="o">[</span><span class="m">3</span>-False<span class="o">]</span><span class="w"> </span>PASSED<span class="w">      </span><span class="o">[</span><span class="w"> </span><span class="m">40</span>%<span class="o">]</span>
+tests/test_utils_parameterized.py::test_is_even<span class="o">[</span><span class="m">0</span>-True<span class="o">]</span><span class="w"> </span>PASSED<span class="w">       </span><span class="o">[</span><span class="w"> </span><span class="m">60</span>%<span class="o">]</span>
+tests/test_utils_parameterized.py::test_is_even<span class="o">[</span>-4-True<span class="o">]</span><span class="w"> </span>PASSED<span class="w">      </span><span class="o">[</span><span class="w"> </span><span class="m">80</span>%<span class="o">]</span>
+tests/test_utils_parameterized.py::test_is_even<span class="o">[</span>-5-False<span class="o">]</span><span class="w"> </span>PASSED<span class="w">     </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">==========================</span><span class="w"> </span><span class="m">5</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">============================</span>
+</code></pre></div>
+
+<p>Look at the output! Pytest is smart. It discovered our single test function but understood from the decorator that it represents five distinct test cases. It ran the test five times, each with a different set of parameters.</p>
+<p>Notice the test identifiers in the output: <code>test_is_even[2-True]</code>, <code>test_is_even[3-False]</code>, etc. Pytest automatically generates these IDs from the parameter values to help you identify exactly which case failed.</p>
+<p>This single parameterized test is vastly superior to our five repetitive functions. It's concise, easy to read, and simple to maintain. Adding a new test case is as easy as adding a new tuple to the list.</p>
+<h2 id="multiple-parameters">Multiple Parameters</h2>
+<h2 id="multiple-parameters_1">Multiple Parameters</h2>
+<p>The previous example used two parameters, but you can use as many as you need. This is extremely useful for testing functions that take multiple inputs.</p>
+<p>Let's define a simple <code>add</code> function and test it with various combinations of positive, negative, and zero values.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/calculator.py</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Adds two numbers.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
+</code></pre></div>
+
+<p>Now, let's write a parameterized test for it. We need three parameters for our test: <code>a</code>, <code>b</code>, and the <code>expected</code> result.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_calculator.py</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.calculator</span><span class="w"> </span><span class="kn">import</span> <span class="n">add</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">parametrize</span><span class="p">(</span><span class="s2">&quot;a, b, expected&quot;</span><span class="p">,</span> <span class="p">[</span>
+    <span class="c1"># Positive numbers</span>
+    <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">),</span>
+    <span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">10</span><span class="p">),</span>
+    <span class="c1"># Negative numbers</span>
+    <span class="p">(</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">2</span><span class="p">),</span>
+    <span class="p">(</span><span class="o">-</span><span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+    <span class="c1"># Zero</span>
+    <span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span>
+    <span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">10</span><span class="p">),</span>
+    <span class="c1"># Floating point numbers</span>
+    <span class="p">(</span><span class="mf">2.5</span><span class="p">,</span> <span class="mf">2.5</span><span class="p">,</span> <span class="mf">5.0</span><span class="p">)</span>
+<span class="p">])</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_add</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">,</span> <span class="n">expected</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Test the add function with various inputs.&quot;&quot;&quot;</span>
+    <span class="k">assert</span> <span class="n">add</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">)</span> <span class="o">==</span> <span class="n">expected</span>
+</code></pre></div>
+
+<p>The structure is identical to our previous example, just with more items in the parameter name string and in each tuple.</p>
+<ol>
+<li><code>"a, b, expected"</code>: We define three parameter names.</li>
+<li><code>(1, 2, 3)</code>: Each tuple in our list now contains three values, corresponding to <code>a</code>, <code>b</code>, and <code>expected</code> respectively.</li>
+<li><code>def test_add(a, b, expected):</code>: The test function accepts all three arguments.</li>
+</ol>
+<p>Running this test shows how cleanly pytest handles multiple parameters.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>tests/test_calculator.py
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+...
+collected<span class="w"> </span><span class="m">7</span><span class="w"> </span>items
+
+tests/test_calculator.py::test_add<span class="o">[</span><span class="m">1</span>-2-3<span class="o">]</span><span class="w"> </span>PASSED<span class="w">                   </span><span class="o">[</span><span class="w"> </span><span class="m">14</span>%<span class="o">]</span>
+tests/test_calculator.py::test_add<span class="o">[</span><span class="m">5</span>-5-10<span class="o">]</span><span class="w"> </span>PASSED<span class="w">                  </span><span class="o">[</span><span class="w"> </span><span class="m">28</span>%<span class="o">]</span>
+tests/test_calculator.py::test_add<span class="o">[</span>-1--1--2<span class="o">]</span><span class="w"> </span>PASSED<span class="w">                </span><span class="o">[</span><span class="w"> </span><span class="m">42</span>%<span class="o">]</span>
+tests/test_calculator.py::test_add<span class="o">[</span>-5-5-0<span class="o">]</span><span class="w"> </span>PASSED<span class="w">                  </span><span class="o">[</span><span class="w"> </span><span class="m">57</span>%<span class="o">]</span>
+tests/test_calculator.py::test_add<span class="o">[</span><span class="m">0</span>-0-0<span class="o">]</span><span class="w"> </span>PASSED<span class="w">                   </span><span class="o">[</span><span class="w"> </span><span class="m">71</span>%<span class="o">]</span>
+tests/test_calculator.py::test_add<span class="o">[</span><span class="m">10</span>-0-10<span class="o">]</span><span class="w"> </span>PASSED<span class="w">                 </span><span class="o">[</span><span class="w"> </span><span class="m">85</span>%<span class="o">]</span>
+tests/test_calculator.py::test_add<span class="o">[</span><span class="m">2</span>.5-2.5-5.0<span class="o">]</span><span class="w"> </span>PASSED<span class="w">              </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">==========================</span><span class="w"> </span><span class="m">7</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">============================</span>
+</code></pre></div>
+
+<p>This pattern of <code>(input1, input2, ..., expected_output)</code> is one of the most common and powerful uses of parameterization. It allows you to create a comprehensive table of test cases that is both human-readable and machine-executable.</p>
+<h2 id="combining-parametrization-with-fixtures">Combining Parametrization with Fixtures</h2>
+<h2 id="combining-parametrization-with-fixtures_1">Combining Parametrization with Fixtures</h2>
+<p>Parameterization and fixtures are two of pytest's most powerful features, and they work together beautifully. You can use a fixture to set up a common object or state, and then use parameterization to test various interactions with that object.</p>
+<p>Let's imagine we have a <code>ShoppingCart</code> class. We want to test that adding various items correctly updates the total price.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/shopping_cart.py</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">ShoppingCart</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">items</span> <span class="o">=</span> <span class="p">{}</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_item</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item_name</span><span class="p">,</span> <span class="n">price</span><span class="p">,</span> <span class="n">quantity</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">item_name</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="p">[</span><span class="n">item_name</span><span class="p">][</span><span class="s2">&quot;quantity&quot;</span><span class="p">]</span> <span class="o">+=</span> <span class="n">quantity</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="p">[</span><span class="n">item_name</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;price&quot;</span><span class="p">:</span> <span class="n">price</span><span class="p">,</span> <span class="s2">&quot;quantity&quot;</span><span class="p">:</span> <span class="n">quantity</span><span class="p">}</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">total</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span>
+            <span class="n">item</span><span class="p">[</span><span class="s2">&quot;price&quot;</span><span class="p">]</span> <span class="o">*</span> <span class="n">item</span><span class="p">[</span><span class="s2">&quot;quantity&quot;</span><span class="p">]</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">items</span><span class="o">.</span><span class="n">values</span><span class="p">()</span>
+        <span class="p">)</span>
+</code></pre></div>
+
+<p>We can create a fixture that provides a fresh, empty <code>ShoppingCart</code> instance for each test run. Then, we can parameterize the test to add different items and check the expected total.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_shopping_cart.py</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.shopping_cart</span><span class="w"> </span><span class="kn">import</span> <span class="n">ShoppingCart</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">cart</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Provides an empty ShoppingCart instance.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">ShoppingCart</span><span class="p">()</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">parametrize</span><span class="p">(</span><span class="s2">&quot;item, price, quantity, expected_total&quot;</span><span class="p">,</span> <span class="p">[</span>
+    <span class="p">(</span><span class="s2">&quot;apple&quot;</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;banana&quot;</span><span class="p">,</span> <span class="mf">0.75</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mf">0.75</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;milk&quot;</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mf">3.0</span><span class="p">),</span>
+<span class="p">])</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_add_item_updates_total</span><span class="p">(</span><span class="n">cart</span><span class="p">,</span> <span class="n">item</span><span class="p">,</span> <span class="n">price</span><span class="p">,</span> <span class="n">quantity</span><span class="p">,</span> <span class="n">expected_total</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Test that adding an item correctly updates the cart total.&quot;&quot;&quot;</span>
+    <span class="n">cart</span><span class="o">.</span><span class="n">add_item</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="n">price</span><span class="p">,</span> <span class="n">quantity</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">cart</span><span class="o">.</span><span class="n">total</span> <span class="o">==</span> <span class="n">expected_total</span>
+</code></pre></div>
+
+<p>Let's analyze how pytest executes this:</p>
+<ol>
+<li>Pytest sees <code>test_add_item_updates_total</code> and notices it needs the <code>cart</code> fixture and the parameterized arguments.</li>
+<li>It also sees the <code>@pytest.mark.parametrize</code> decorator with three test cases.</li>
+<li><strong>For the first case (<code>"apple"</code>)</strong>:
+    a. Pytest executes the <code>cart()</code> fixture, creating a new, empty <code>ShoppingCart</code> instance.
+    b. It calls <code>test_add_item_updates_total(cart=..., item="apple", price=0.5, quantity=2, expected_total=1.0)</code>.
+    c. The test runs and passes.</li>
+<li><strong>For the second case (<code>"banana"</code>)</strong>:
+    a. Pytest executes the <code>cart()</code> fixture <em>again</em>, creating another new, empty <code>ShoppingCart</code> instance. This is crucial for test isolation.
+    b. It calls <code>test_add_item_updates_total(cart=..., item="banana", price=0.75, quantity=1, expected_total=0.75)</code>.
+    c. The test runs and passes.</li>
+<li>The process repeats for the third case.</li>
+</ol>
+<p>The key takeaway is that the fixture's scope (<code>function</code> by default) is respected for each parameterized run. Each run is a completely independent test, receiving its own fresh fixture instance. This combination allows you to create complex test scenarios in a very clean and maintainable way.</p>
+<h2 id="indirect-parametrization">Indirect Parametrization</h2>
+<h2 id="indirect-parametrization_1">Indirect Parametrization</h2>
+<p>Sometimes, the parameters themselves aren't the final data you need for your test. Instead, a parameter might be an identifier or a piece of configuration that you need to use to <em>generate</em> the actual test data.</p>
+<p>For example, imagine testing a system that deals with different user roles (<code>'admin'</code>, <code>'guest'</code>, <code>'editor'</code>). Your test might not want the string <code>'admin'</code>, but rather a fully-formed <code>User</code> object with admin privileges.</p>
+<p>You could create the object inside the test function, but that mixes setup logic with test logic. A cleaner way is <strong>indirect parametrization</strong>.</p>
+<h3 id="the-problem-setup-based-on-a-parameter">The Problem: Setup Based on a Parameter</h3>
+<p>Let's define a simple <code>User</code> class and a function that greets them.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/auth.py</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">User</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">role</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">role</span> <span class="o">=</span> <span class="n">role</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;User(name=&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39;, role=&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">role</span><span class="si">}</span><span class="s2">&#39;)&quot;</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">get_greeting</span><span class="p">(</span><span class="n">user</span><span class="p">:</span> <span class="n">User</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">user</span><span class="o">.</span><span class="n">role</span> <span class="o">==</span> <span class="s2">&quot;admin&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;Hello, </span><span class="si">{</span><span class="n">user</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">! Welcome, administrator.&quot;</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;Hello, </span><span class="si">{</span><span class="n">user</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">.&quot;</span>
+</code></pre></div>
+
+<p>Now, let's write a test. We want to parameterize it with user roles. The "naive" approach would be to create the <code>User</code> object inside the test.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_auth_naive.py</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.auth</span><span class="w"> </span><span class="kn">import</span> <span class="n">User</span><span class="p">,</span> <span class="n">get_greeting</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">parametrize</span><span class="p">(</span><span class="s2">&quot;role, expected_greeting&quot;</span><span class="p">,</span> <span class="p">[</span>
+    <span class="p">(</span><span class="s2">&quot;admin&quot;</span><span class="p">,</span> <span class="s2">&quot;Hello, TestAdmin! Welcome, administrator.&quot;</span><span class="p">),</span>
+    <span class="p">(</span><span class="s2">&quot;guest&quot;</span><span class="p">,</span> <span class="s2">&quot;Hello, TestGuest.&quot;</span><span class="p">),</span>
+<span class="p">])</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_get_greeting_naive</span><span class="p">(</span><span class="n">role</span><span class="p">,</span> <span class="n">expected_greeting</span><span class="p">):</span>
+    <span class="c1"># Setup logic is mixed with test logic here</span>
+    <span class="k">if</span> <span class="n">role</span> <span class="o">==</span> <span class="s2">&quot;admin&quot;</span><span class="p">:</span>
+        <span class="n">user</span> <span class="o">=</span> <span class="n">User</span><span class="p">(</span><span class="s2">&quot;TestAdmin&quot;</span><span class="p">,</span> <span class="s2">&quot;admin&quot;</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="n">user</span> <span class="o">=</span> <span class="n">User</span><span class="p">(</span><span class="s2">&quot;TestGuest&quot;</span><span class="p">,</span> <span class="s2">&quot;guest&quot;</span><span class="p">)</span>
+
+    <span class="k">assert</span> <span class="n">get_greeting</span><span class="p">(</span><span class="n">user</span><span class="p">)</span> <span class="o">==</span> <span class="n">expected_greeting</span>
+</code></pre></div>
+
+<p>This works, but it's not ideal. The test function is doing setup work. We can do better by telling pytest to pass our parameter through a fixture first.</p>
+<h3 id="the-solution-indirecttrue">The Solution: <code>indirect=True</code></h3>
+<p>Indirect parametrization lets you apply a fixture to a specific parameter. When you mark a parameter as <code>indirect</code>, pytest will:
+1. Take the value for that parameter from your list (e.g., the string <code>'admin'</code>).
+2. Find a fixture with the <strong>same name</strong> as the parameter.
+3. Call that fixture, passing the parameter's value into it via <code>request.param</code>.
+4. Pass the <em>result</em> of the fixture to the test function.</p>
+<p>Let's refactor our test using this pattern.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_auth_indirect.py</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.auth</span><span class="w"> </span><span class="kn">import</span> <span class="n">User</span><span class="p">,</span> <span class="n">get_greeting</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">user</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fixture to create a User object based on the parameter.&quot;&quot;&quot;</span>
+    <span class="n">role</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">param</span>
+    <span class="k">if</span> <span class="n">role</span> <span class="o">==</span> <span class="s2">&quot;admin&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">User</span><span class="p">(</span><span class="s2">&quot;TestAdmin&quot;</span><span class="p">,</span> <span class="s2">&quot;admin&quot;</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="n">role</span> <span class="o">==</span> <span class="s2">&quot;guest&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">User</span><span class="p">(</span><span class="s2">&quot;TestGuest&quot;</span><span class="p">,</span> <span class="s2">&quot;guest&quot;</span><span class="p">)</span>
+    <span class="c1"># You could add more roles here</span>
+    <span class="k">return</span> <span class="n">User</span><span class="p">(</span><span class="s2">&quot;DefaultUser&quot;</span><span class="p">,</span> <span class="s2">&quot;default&quot;</span><span class="p">)</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">parametrize</span><span class="p">(</span>
+    <span class="s2">&quot;user, expected_greeting&quot;</span><span class="p">,</span>
+    <span class="p">[</span>
+        <span class="p">(</span><span class="s2">&quot;admin&quot;</span><span class="p">,</span> <span class="s2">&quot;Hello, TestAdmin! Welcome, administrator.&quot;</span><span class="p">),</span>
+        <span class="p">(</span><span class="s2">&quot;guest&quot;</span><span class="p">,</span> <span class="s2">&quot;Hello, TestGuest.&quot;</span><span class="p">),</span>
+    <span class="p">],</span>
+    <span class="n">indirect</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;user&quot;</span><span class="p">]</span>  <span class="c1"># Apply the &#39;user&#39; fixture to the &#39;user&#39; parameter</span>
+<span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_get_greeting_indirect</span><span class="p">(</span><span class="n">user</span><span class="p">,</span> <span class="n">expected_greeting</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Test get_greeting with user objects created via an indirect fixture.&quot;&quot;&quot;</span>
+    <span class="c1"># The &#39;user&#39; argument is now a User object, not a string!</span>
+    <span class="k">assert</span> <span class="n">get_greeting</span><span class="p">(</span><span class="n">user</span><span class="p">)</span> <span class="o">==</span> <span class="n">expected_greeting</span>
+</code></pre></div>
+
+<p>Let's trace the execution for the first parameter set: <code>("admin", "...")</code>.</p>
+<ol>
+<li>Pytest sees <code>indirect=["user"]</code>. This tells it to treat the <code>user</code> parameter specially.</li>
+<li>It takes the value for the <code>user</code> parameter, which is the string <code>"admin"</code>.</li>
+<li>It finds the fixture named <code>user()</code>.</li>
+<li>It calls <code>user(request)</code>, where <code>request.param</code> is now <code>"admin"</code>.</li>
+<li>The fixture returns a <code>User("TestAdmin", "admin")</code> object.</li>
+<li>This <code>User</code> object is passed as the <code>user</code> argument to <code>test_get_greeting_indirect()</code>.</li>
+<li>The <code>expected_greeting</code> parameter is passed directly as <code>"Hello, TestAdmin! ..."</code>.</li>
+<li>The assertion <code>assert get_greeting(user_object) == expected_greeting</code> is executed.</li>
+</ol>
+<p>This pattern is incredibly powerful for separating complex test data setup from the test logic itself, leading to much cleaner and more maintainable tests.</p>
+<h2 id="generating-test-ids-for-clarity">Generating Test IDs for Clarity</h2>
+<h2 id="generating-test-ids-for-clarity_1">Generating Test IDs for Clarity</h2>
+<p>As we saw earlier, pytest automatically generates test IDs for parameterized runs, like <code>test_add[1-2-3]</code>. While helpful, these can become unreadable with complex data, such as long strings, nested objects, or non-obvious values.</p>
+<p>A failing test report should be a clear map to the problem. Cryptic test IDs are like a map with no labels.</p>
+<p>Let's imagine a test for a function that formats a user's data into a display string.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/formatter.py</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">format_user_display</span><span class="p">(</span><span class="n">user_data</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Formats user data dict into a display string.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">user_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;is_admin&quot;</span><span class="p">):</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">user_data</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2"> (Admin)&quot;</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">user_data</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span>
+</code></pre></div>
+
+<p>Now, a parameterized test with dictionary inputs.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_formatter.py</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.formatter</span><span class="w"> </span><span class="kn">import</span> <span class="n">format_user_display</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">parametrize</span><span class="p">(</span><span class="s2">&quot;user_data, expected&quot;</span><span class="p">,</span> <span class="p">[</span>
+    <span class="p">({</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Alice&quot;</span><span class="p">,</span> <span class="s2">&quot;is_admin&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span> <span class="s2">&quot;Alice&quot;</span><span class="p">),</span>
+    <span class="p">({</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Bob&quot;</span><span class="p">,</span> <span class="s2">&quot;is_admin&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span> <span class="s2">&quot;Bob (Admin)&quot;</span><span class="p">),</span>
+    <span class="p">({</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Charlie&quot;</span><span class="p">},</span> <span class="s2">&quot;Charlie&quot;</span><span class="p">),</span> <span class="c1"># Missing is_admin key</span>
+<span class="p">])</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_format_user_display</span><span class="p">(</span><span class="n">user_data</span><span class="p">,</span> <span class="n">expected</span><span class="p">):</span>
+    <span class="k">assert</span> <span class="n">format_user_display</span><span class="p">(</span><span class="n">user_data</span><span class="p">)</span> <span class="o">==</span> <span class="n">expected</span>
+</code></pre></div>
+
+<p>The output from running this is not very descriptive.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>tests/test_formatter.py
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+...
+collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items
+
+tests/test_formatter.py::test_format_user_display<span class="o">[</span>user_data0-Alice<span class="o">]</span><span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">33</span>%<span class="o">]</span>
+tests/test_formatter.py::test_format_user_display<span class="o">[</span>user_data1-Bob<span class="w"> </span><span class="o">(</span>Admin<span class="o">)]</span><span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">66</span>%<span class="o">]</span>
+tests/test_formatter.py::test_format_user_display<span class="o">[</span>user_data2-Charlie<span class="o">]</span><span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">==========================</span><span class="w"> </span><span class="m">3</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">============================</span>
+</code></pre></div>
+
+<p><code>user_data0</code>, <code>user_data1</code>, and <code>user_data2</code> tell us nothing about the scenario being tested. If one of these failed, we'd have to go back to the code to figure out which case it was.</p>
+<h3 id="custom-ids-with-the-ids-argument">Custom IDs with the <code>ids</code> Argument</h3>
+<p><code>@pytest.mark.parametrize</code> accepts an optional <code>ids</code> argument, which is a list of strings to use as test IDs. The list must be the same length as your parameter list.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_formatter_with_ids.py</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.formatter</span><span class="w"> </span><span class="kn">import</span> <span class="n">format_user_display</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">parametrize</span><span class="p">(</span><span class="s2">&quot;user_data, expected&quot;</span><span class="p">,</span> <span class="p">[</span>
+    <span class="p">({</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Alice&quot;</span><span class="p">,</span> <span class="s2">&quot;is_admin&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span> <span class="s2">&quot;Alice&quot;</span><span class="p">),</span>
+    <span class="p">({</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Bob&quot;</span><span class="p">,</span> <span class="s2">&quot;is_admin&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span> <span class="s2">&quot;Bob (Admin)&quot;</span><span class="p">),</span>
+    <span class="p">({</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Charlie&quot;</span><span class="p">},</span> <span class="s2">&quot;Charlie&quot;</span><span class="p">),</span>
+<span class="p">],</span> <span class="n">ids</span><span class="o">=</span><span class="p">[</span>
+    <span class="s2">&quot;Regular User&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;Admin User&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;User with missing admin key&quot;</span>
+<span class="p">])</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_format_user_display_with_ids</span><span class="p">(</span><span class="n">user_data</span><span class="p">,</span> <span class="n">expected</span><span class="p">):</span>
+    <span class="k">assert</span> <span class="n">format_user_display</span><span class="p">(</span><span class="n">user_data</span><span class="p">)</span> <span class="o">==</span> <span class="n">expected</span>
+</code></pre></div>
+
+<p>Now, the test output is a story, not a puzzle.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>tests/test_formatter_with_ids.py
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+...
+collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items
+
+tests/test_formatter_with_ids.py::test_format_user_display_with_ids<span class="o">[</span>Regular<span class="w"> </span>User<span class="o">]</span><span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">33</span>%<span class="o">]</span>
+tests/test_formatter_with_ids.py::test_format_user_display_with_ids<span class="o">[</span>Admin<span class="w"> </span>User<span class="o">]</span><span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">66</span>%<span class="o">]</span>
+tests/test_formatter_with_ids.py::test_format_user_display_with_ids<span class="o">[</span>User<span class="w"> </span>with<span class="w"> </span>missing<span class="w"> </span>admin<span class="w"> </span>key<span class="o">]</span><span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">==========================</span><span class="w"> </span><span class="m">3</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">============================</span>
+</code></pre></div>
+
+<p>If the "Admin User" test failed, you would immediately know the context of the failure without cross-referencing the test code. This is treating errors as data.</p>
+<h3 id="generating-ids-programmatically">Generating IDs Programmatically</h3>
+<p>Manually writing IDs can be tedious if you have many test cases. For more complex scenarios, you can provide a function to the <code>ids</code> argument. This function will be called for each parameter set and should return the string ID for that set.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_formatter_with_id_func.py</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.formatter</span><span class="w"> </span><span class="kn">import</span> <span class="n">format_user_display</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">user_id_generator</span><span class="p">(</span><span class="n">user_data</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Generates a descriptive test ID from user data.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">user_data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;is_admin&quot;</span><span class="p">):</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;admin-</span><span class="si">{</span><span class="n">user_data</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;user-</span><span class="si">{</span><span class="n">user_data</span><span class="p">[</span><span class="s1">&#39;name&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">parametrize</span><span class="p">(</span><span class="s2">&quot;user_data, expected&quot;</span><span class="p">,</span> <span class="p">[</span>
+    <span class="p">({</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Alice&quot;</span><span class="p">,</span> <span class="s2">&quot;is_admin&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span> <span class="s2">&quot;Alice&quot;</span><span class="p">),</span>
+    <span class="p">({</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Bob&quot;</span><span class="p">,</span> <span class="s2">&quot;is_admin&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span> <span class="s2">&quot;Bob (Admin)&quot;</span><span class="p">),</span>
+<span class="p">],</span> <span class="n">ids</span><span class="o">=</span><span class="n">user_id_generator</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_format_user_display_with_id_func</span><span class="p">(</span><span class="n">user_data</span><span class="p">,</span> <span class="n">expected</span><span class="p">):</span>
+    <span class="k">assert</span> <span class="n">format_user_display</span><span class="p">(</span><span class="n">user_data</span><span class="p">)</span> <span class="o">==</span> <span class="n">expected</span>
+</code></pre></div>
+
+<p>When you provide a function, pytest calls it with each value from the <em>first</em> parameter (<code>user_data</code> in this case).</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>tests/test_formatter_with_id_func.py
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+...
+collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
+
+tests/test_formatter_with_id_func.py::test_format_user_display_with_id_func<span class="o">[</span>user-Alice<span class="o">]</span><span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+tests/test_formatter_with_id_func.py::test_format_user_display_with_id_func<span class="o">[</span>admin-Bob<span class="o">]</span><span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">==========================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">============================</span>
+</code></pre></div>
+
+<p>Using custom IDs is a hallmark of a mature, maintainable test suite. It transforms your test output from a simple pass/fail log into a rich, descriptive report on your code's behavior.</p>
+        </div>
+        <div class="footer">
+            Generated on 2025-11-22 16:29:18 | Made with ❤️ by GitHub Pages Generator
+        </div>
+    </div>
+    <script>
+        // Syntax highlighting for code blocks
+        document.addEventListener('DOMContentLoaded', (event) => {
+            // Highlight code blocks
+            document.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+            });
+            
+            // Add copy buttons to code blocks
+            document.querySelectorAll('pre').forEach((pre) => {
+                const button = document.createElement('button');
+                button.className = 'copy-btn';
+                button.textContent = 'Copy';
+                
+                button.addEventListener('click', () => {
+                    const code = pre.querySelector('code').textContent;
+                    navigator.clipboard.writeText(code).then(() => {
+                        button.textContent = 'Copied!';
+                        button.classList.add('copied');
+                        setTimeout(() => {
+                            button.textContent = 'Copy';
+                            button.classList.remove('copied');
+                        }, 2000);
+                    }).catch(err => {
+                        console.error('Failed to copy:', err);
+                        button.textContent = 'Error';
+                        setTimeout(() => {
+                            button.textContent = 'Copy';
+                        }, 2000);
+                    });
+                });
+                
+                pre.appendChild(button);
+            });
+        });
+    </script>
+</body>
+</html>
