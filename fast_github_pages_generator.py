@@ -254,8 +254,6 @@ class FastSiteGenerator:
             font-size: 2.5rem;
             background: linear-gradient(135deg, var(--primary), var(--secondary));
             -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
             border-bottom: 3px solid var(--primary);
             padding-bottom: 12px;
             margin-bottom: 1.5rem;
