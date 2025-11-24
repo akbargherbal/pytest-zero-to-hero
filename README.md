@@ -212,6 +212,6 @@ The approach: **Show working code first. Explain why it works second. Build ment
 
 ## Start Reading
 
-**[→ Chapter 1: Your First Test in 15 Minutes](chapters/01-first-test.md)**
+**[→ Go to Book Homepage](https://akbargherbal.github.io/pytest-zero-to-hero/)**
 
 No more excuses. Go write some tests.
