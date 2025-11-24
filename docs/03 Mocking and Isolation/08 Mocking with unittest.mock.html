@@ -359,510 +359,639 @@
         <div class="content">
             <h1 id="chapter-8-mocking-with-unittestmock">Chapter 8: Mocking with unittest.mock</h1>
 <h2 id="why-mock">Why Mock?</h2>
-<h2 id="why-mock_1">Why Mock?</h2>
-<p>So far, we've tested functions that are self-contained. They take inputs, perform calculations, and return outputs. But what happens when your code isn't self-contained? What happens when it depends on something outside of its control?</p>
-<p>Consider a function that gets the current weather for a city by calling an external API.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># src/weather_reporter.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">requests</span>
+<h2 id="the-problem-testing-in-isolation">The Problem: Testing in Isolation</h2>
+<p>So far, our tests have been self-contained. We've tested functions that take data, transform it, and return a result. This is the ideal scenario for testing. But real-world applications are rarely so simple. They are complex systems that interact with databases, file systems, third-party APIs, and other services.</p>
+<p>Consider a function that processes a customer's order. Its job might involve:
+1.  Charging the customer's credit card via a payment gateway API.
+2.  Saving the order details to a database.
+3.  Sending a confirmation email via an email service.</p>
+<p>How would you write a unit test for this function? If your test calls the <em>real</em> payment gateway, you have several major problems:</p>
+<ul>
+<li><strong>Cost:</strong> You might be charged real money for every test run.</li>
+<li><strong>Slowness:</strong> Network requests to external services are orders of magnitude slower than in-memory function calls. A test suite with hundreds of such tests could take minutes or hours to run.</li>
+<li><strong>Unreliability:</strong> The external service could be down, or your network connection could be flaky. This would cause your tests to fail for reasons completely unrelated to your code's correctness.</li>
+<li><strong>Side Effects:</strong> You would be creating fake orders in the database and sending real emails to non-existent addresses with every test run.</li>
+<li><strong>Testing Edge Cases is Hard:</strong> How do you test what happens when the payment gateway returns a "Card Declined" error? Or a "Gateway Timeout" error? You can't easily force a real-world service to produce these specific error conditions on demand.</li>
+</ul>
+<p>The goal of a <strong>unit test</strong> is to test a single <em>unit</em> of code in <strong>isolation</strong>. To do this, we need a way to pretend these external dependencies exist, controlling their behavior so we can test our code's logic reliably and quickly. This is where mocking comes in.</p>
+<h3 id="phase-1-establish-the-reference-implementation">Phase 1: Establish the Reference Implementation</h3>
+<p>Let's build a concrete example that demonstrates these problems. We'll create a simple e-commerce order processing system. It has two external dependencies: a <code>PaymentGateway</code> and a <code>NotificationService</code>.</p>
+<p>Our anchor example will be the <code>process_order</code> function. We will spend this chapter refining the tests for this single function.</p>
+<p>First, let's define the external services. We'll simulate their slowness and potential for failure.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/services.py</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">get_weather_data</span><span class="p">(</span><span class="n">city</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fetches weather data from a (fictional) live API.&quot;&quot;&quot;</span>
-    <span class="k">try</span><span class="p">:</span>
-        <span class="n">response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;https://api.weather.com/data?city=</span><span class="si">{</span><span class="n">city</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="n">response</span><span class="o">.</span><span class="n">raise_for_status</span><span class="p">()</span>  <span class="c1"># Raise an exception for bad status codes</span>
-        <span class="k">return</span> <span class="n">response</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
-    <span class="k">except</span> <span class="n">requests</span><span class="o">.</span><span class="n">exceptions</span><span class="o">.</span><span class="n">RequestException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;API request failed: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;error&quot;</span><span class="p">:</span> <span class="nb">str</span><span class="p">(</span><span class="n">e</span><span class="p">)}</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">format_weather_report</span><span class="p">(</span><span class="n">city</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Formats a human-readable weather report.&quot;&quot;&quot;</span>
-    <span class="n">data</span> <span class="o">=</span> <span class="n">get_weather_data</span><span class="p">(</span><span class="n">city</span><span class="p">)</span>
-    <span class="k">if</span> <span class="s2">&quot;error&quot;</span> <span class="ow">in</span> <span class="n">data</span><span class="p">:</span>
-        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;Sorry, could not retrieve weather for </span><span class="si">{</span><span class="n">city</span><span class="si">}</span><span class="s2">.&quot;</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">PaymentGateway</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A simulated external payment gateway.&quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">charge</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">card_details</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">amount</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Charges the card. Returns a transaction ID on success.</span>
+<span class="sd">        In a real system, this would make a network request.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Connecting to payment gateway...&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">card_details</span> <span class="ow">or</span> <span class="n">amount</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Invalid card details or amount.&quot;</span><span class="p">)</span>
 
-    <span class="n">temp</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;temperature&quot;</span><span class="p">)</span>
-    <span class="n">condition</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;condition&quot;</span><span class="p">)</span>
+        <span class="c1"># Simulate network latency</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
 
-    <span class="k">if</span> <span class="n">temp</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">condition</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;Incomplete weather data for </span><span class="si">{</span><span class="n">city</span><span class="si">}</span><span class="s2">.&quot;</span>
+        <span class="c1"># Simulate a chance of failure</span>
+        <span class="k">if</span> <span class="n">random</span><span class="o">.</span><span class="n">random</span><span class="p">()</span> <span class="o">&lt;</span> <span class="mf">0.2</span><span class="p">:</span> <span class="c1"># 20% chance of failure</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;The payment was declined.&quot;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="s2">&quot;&quot;</span> <span class="c1"># Return empty string for a declined payment</span>
 
-    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;The weather in </span><span class="si">{</span><span class="n">city</span><span class="si">}</span><span class="s2"> is </span><span class="si">{</span><span class="n">temp</span><span class="si">}</span><span class="s2">°C and </span><span class="si">{</span><span class="n">condition</span><span class="si">}</span><span class="s2">.&quot;</span>
+        <span class="n">transaction_id</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;tx_</span><span class="si">{</span><span class="n">random</span><span class="o">.</span><span class="n">randint</span><span class="p">(</span><span class="mi">1000</span><span class="p">,</span><span class="w"> </span><span class="mi">9999</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Charge successful. Transaction ID: </span><span class="si">{</span><span class="n">transaction_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">transaction_id</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">NotificationService</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A simulated external notification service.&quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">send_receipt</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">email</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">transaction_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Sends a receipt to the customer&#39;s email.&quot;&quot;&quot;</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Sending receipt for </span><span class="si">{</span><span class="n">transaction_id</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">email</span><span class="si">}</span><span class="s2">...&quot;</span><span class="p">)</span>
+        <span class="c1"># Simulate network latency</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Receipt sent.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">True</span>
 </code></pre></div>
 
-<p>Now, let's think about how we would test <code>format_weather_report()</code>. If we call it directly in a test, we run into several major problems:</p>
-<ol>
-<li><strong>Unreliability:</strong> The external weather API could be down. If it is, our test will fail, even if our <code>format_weather_report</code> function is perfectly correct. A failing test should indicate a bug in <em>our</em> code, not someone else's.</li>
-<li><strong>Slowness:</strong> Network requests are slow. A test suite with hundreds of tests making real network calls would take minutes or even hours to run, discouraging developers from running it frequently.</li>
-<li><strong>Cost &amp; Rate Limiting:</strong> Many APIs are paid services or have rate limits. Running your test suite hundreds of times a day could incur costs or get your IP address blocked.</li>
-<li><strong>Unpredictability:</strong> The weather in London changes! One day the API might return "Sunny," the next "Rainy." We can't write a stable assertion like <code>assert report == "The weather in London is 15°C and Sunny."</code> because the data is always changing. We also can't easily test edge cases, like what happens if the API returns incomplete data or an error.</li>
-</ol>
-<p>This is the core problem that <strong>mocking</strong> solves.</p>
-<p>Mocking allows us to <strong>isolate the code under test</strong> from its external dependencies. Instead of calling the real <code>requests.get</code>, we'll replace it with a "stunt double"—a fake version that is completely under our control. This lets us test our <code>format_weather_report</code> logic in isolation, ensuring it works correctly regardless of what the outside world is doing.</p>
+<p>Now, here is the function we want to test. It coordinates these two services.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/orders.py</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">.services</span><span class="w"> </span><span class="kn">import</span> <span class="n">PaymentGateway</span><span class="p">,</span> <span class="n">NotificationService</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">process_order</span><span class="p">(</span><span class="n">order_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">customer_email</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">card_details</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">amount</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Processes a customer order.</span>
+<span class="sd">    1. Charges the customer&#39;s card.</span>
+<span class="sd">    2. Sends a receipt if the charge is successful.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">gateway</span> <span class="o">=</span> <span class="n">PaymentGateway</span><span class="p">()</span>
+    <span class="n">notifier</span> <span class="o">=</span> <span class="n">NotificationService</span><span class="p">()</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Processing order </span><span class="si">{</span><span class="n">order_id</span><span class="si">}</span><span class="s2">...&quot;</span><span class="p">)</span>
+    <span class="n">transaction_id</span> <span class="o">=</span> <span class="n">gateway</span><span class="o">.</span><span class="n">charge</span><span class="p">(</span><span class="n">card_details</span><span class="p">,</span> <span class="n">amount</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">transaction_id</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Payment successful for order </span><span class="si">{</span><span class="n">order_id</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+        <span class="n">notifier</span><span class="o">.</span><span class="n">send_receipt</span><span class="p">(</span><span class="n">customer_email</span><span class="p">,</span> <span class="n">transaction_id</span><span class="p">)</span>
+        <span class="k">return</span> <span class="s2">&quot;Order processed successfully.&quot;</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Payment failed for order </span><span class="si">{</span><span class="n">order_id</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="s2">&quot;Payment failed.&quot;</span>
+</code></pre></div>
+
+<p>Finally, let's write our first, naive test. This is an <strong>integration test</strong>, not a unit test, because it uses the real, live <code>services</code>.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_orders_naive.py</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.orders</span><span class="w"> </span><span class="kn">import</span> <span class="n">process_order</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_order_success_naive</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A slow and unreliable test for a successful order.</span>
+<span class="sd">    This test will take ~3 seconds to run.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">process_order</span><span class="p">(</span>
+        <span class="n">order_id</span><span class="o">=</span><span class="s2">&quot;order_123&quot;</span><span class="p">,</span>
+        <span class="n">customer_email</span><span class="o">=</span><span class="s2">&quot;test@example.com&quot;</span><span class="p">,</span>
+        <span class="n">card_details</span><span class="o">=</span><span class="s2">&quot;tok_valid&quot;</span><span class="p">,</span>
+        <span class="n">amount</span><span class="o">=</span><span class="mf">49.99</span>
+    <span class="p">)</span>
+    <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="s2">&quot;Order processed successfully.&quot;</span>
+</code></pre></div>
+
+<p>Let's run this test and see the problems firsthand.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>-s<span class="w"> </span>tests/test_orders_naive.py
+<span class="c1"># The -s flag is used to show the print statements</span>
+
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
+
+tests/test_orders_naive.py::test_process_order_success_naive<span class="w"> </span>
+Processing<span class="w"> </span>order<span class="w"> </span>order_123...
+
+Connecting<span class="w"> </span>to<span class="w"> </span>payment<span class="w"> </span>gateway...
+Charge<span class="w"> </span>successful.<span class="w"> </span>Transaction<span class="w"> </span>ID:<span class="w"> </span>tx_...
+Payment<span class="w"> </span>successful<span class="w"> </span><span class="k">for</span><span class="w"> </span>order<span class="w"> </span>order_123.
+
+Sending<span class="w"> </span>receipt<span class="w"> </span><span class="k">for</span><span class="w"> </span>tx_...<span class="w"> </span>to<span class="w"> </span>test@example.com...
+Receipt<span class="w"> </span>sent.
+PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">=======================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">3</span>.05s<span class="w"> </span><span class="o">========================</span>
+</code></pre></div>
+
+<p>The test passed, but look at the execution time: <strong>3.05 seconds</strong>. For one test! A suite of 100 such tests would take over 5 minutes. Furthermore, if we run it enough times, it will eventually fail due to the <code>random.random()</code> check we added to simulate unreliability.</p>
+<p>This is the core problem that mocking solves. We need to test the logic of <code>process_order</code> <em>without</em> actually calling the slow, unreliable, and costly external services.</p>
 <h2 id="what-is-a-mock">What Is a Mock?</h2>
-<h2 id="what-is-a-mock_1">What Is a Mock?</h2>
-<p>A <strong>mock object</strong> is a simulated object that mimics the behavior of a real object in a controlled way. Think of it as a stunt double in a movie. When a scene is too dangerous or requires a specific skill the main actor doesn't have, a stunt double steps in. They look and act enough like the real actor for the scene to work, but they are completely controlled by the film's director.</p>
-<p>In testing, our test function is the director. The mock object is our stunt double for a real, problematic dependency (like the <code>requests</code> library).</p>
-<p>A mock object, at its core, does two things:</p>
-<ol>
-<li><strong>Simulates Behavior:</strong> You can tell a mock object how to behave. You can configure its methods to return specific values, or even to raise exceptions, allowing you to simulate any possible scenario from the real dependency. For our weather example, we can tell our mock <code>requests.get</code> to return a specific JSON payload representing "Sunny" or an error code representing "API is down."</li>
-<li><strong>Records Interaction:</strong> A mock object spies on the code that uses it. It keeps a detailed log of every time its methods or attributes are accessed. After our code under test has run, we can inspect the mock to ask questions like:<ul>
-<li>"Were you called?"</li>
-<li>"How many times were you called?"</li>
-<li>"What arguments were you called with?"</li>
-</ul>
-</li>
-</ol>
-<p>This allows us to verify that our code is interacting with its dependencies correctly.</p>
-<p>Python's standard library includes a powerful mocking library called <code>unittest.mock</code>. While its name comes from the <code>unittest</code> framework, it is a standalone library that works perfectly with pytest and is the industry standard for mocking in Python. We'll be using it extensively.</p>
-<h3 id="test-doubles-a-family-of-fakes">Test Doubles: A Family of Fakes</h3>
-<p>"Mock" is often used as a catch-all term, but it's technically part of a larger family of objects called <strong>Test Doubles</strong>. You might hear these terms:</p>
-<ul>
-<li><strong>Dummy:</strong> An object that is passed around but never actually used. Usually just to fill a parameter list.</li>
-<li><strong>Stub:</strong> An object that provides canned answers to calls made during the test. It doesn't record interactions.</li>
-<li><strong>Spy:</strong> An object that records information on how it was called. It's a "stub with recording capabilities."</li>
-<li><strong>Fake:</strong> An object with a working implementation, but it's not the real production one. For example, an in-memory database instead of a real PostgreSQL database.</li>
-<li><strong>Mock:</strong> An object that is pre-programmed with expectations which form a specification of the calls they are expected to receive. It can throw an exception if it receives a call it doesn't expect.</li>
-</ul>
-<p><code>unittest.mock</code> provides objects that can act as stubs, spies, and mocks. For simplicity, we'll mostly use the term "mock," as it's the most common in the Python community. The key takeaway is that we are replacing a real component with a controllable fake for the purpose of a test.</p>
+<h2 id="test-doubles-stubs-and-mocks">Test Doubles, Stubs, and Mocks</h2>
+<p>To test our code in isolation, we replace real dependency objects (like an instance of <code>PaymentGateway</code>) with fake objects that we control. These fake objects are generically called <strong>Test Doubles</strong>. The term comes from the idea of a "stunt double" in movies—a stand-in that looks and acts like the real thing for a specific, controlled scene.</p>
+<p>There are several types of test doubles, but the most common one we'll use is a <strong>Mock</strong>.</p>
+<p>A <strong>Mock Object</strong> is a smart test double that:
+1.  <strong>Stands in</strong> for a real object.
+2.  <strong>Can be configured</strong> to return specific values from its methods.
+3.  <strong>Records how it was used</strong>, allowing you to make assertions about which methods were called, how many times, and with what arguments.</p>
+<p>In Python, the standard library for creating and managing mocks is <code>unittest.mock</code>. Even though the name includes "unittest" (the built-in test framework), it is a general-purpose library that works perfectly with pytest.</p>
+<p>The core idea is to replace this:</p>
+<p><code>Our Code -&gt; Real Payment Gateway</code></p>
+<p>with this:</p>
+<p><code>Our Code -&gt; Mock Payment Gateway &lt;- Our Test</code></p>
+<p>Our test code will:
+1.  Create a mock object that looks and feels like a <code>PaymentGateway</code>.
+2.  Tell the <code>process_order</code> function to use our mock instead of the real one.
+3.  Configure the mock to behave in a specific way (e.g., "when <code>charge</code> is called, return <code>tx_12345</code>").
+4.  Run <code>process_order</code>.
+5.  Ask the mock questions to verify the interaction (e.g., "were you called? Was your <code>charge</code> method called with an amount of 49.99?").</p>
+<p>This approach solves all our previous problems:
+-   <strong>Cost:</strong> No real services are called. It's free.
+-   <strong>Slowness:</strong> Mocks are just in-memory Python objects. They are incredibly fast.
+-   <strong>Unreliability:</strong> Mocks are 100% deterministic. They do exactly what you tell them to do.
+-   <strong>Side Effects:</strong> No databases are touched, no emails are sent.
+-   <strong>Testing Edge Cases:</strong> We can easily configure a mock to simulate a "Card Declined" error or any other scenario we want to test.</p>
 <h2 id="creating-mocks-with-mock">Creating Mocks with Mock()</h2>
-<h2 id="creating-mocks-with-mock_1">Creating Mocks with Mock()</h2>
-<p>Let's start by creating a mock object directly to see how it behaves. The primary class for this is <code>Mock</code> from the <code>unittest.mock</code> library.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># test_mock_basics.py</span>
+<h2 id="the-mock-class">The <code>Mock</code> Class</h2>
+<p>The <code>unittest.mock</code> module provides a class called <code>Mock</code> (and a more powerful subclass <code>MagicMock</code>) that serves as a generic mock object. Let's see it in action.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># You can run this in a Python interpreter</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mock</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_basic_mock_behavior</span><span class="p">():</span>
-    <span class="c1"># Create a mock object</span>
-    <span class="n">mock_api_client</span> <span class="o">=</span> <span class="n">Mock</span><span class="p">()</span>
+<span class="c1"># Create a mock object</span>
+<span class="n">mock_gateway</span> <span class="o">=</span> <span class="n">Mock</span><span class="p">()</span>
 
-    <span class="c1"># You can access any attribute on it, and it will return another Mock!</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Attribute access: </span><span class="si">{</span><span class="n">mock_api_client</span><span class="o">.</span><span class="n">get_user</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="c1"># Output: Attribute access: &lt;Mock name=&#39;mock.get_user&#39; id=&#39;...&#39;&gt;</span>
+<span class="c1"># You can call any method on it, and it will return another Mock</span>
+<span class="n">result</span> <span class="o">=</span> <span class="n">mock_gateway</span><span class="o">.</span><span class="n">charge</span><span class="p">(</span><span class="s2">&quot;details&quot;</span><span class="p">,</span> <span class="mi">100</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+<span class="c1"># Output: &lt;Mock name=&#39;mock.charge()&#39; id=&#39;...&#39;&gt;</span>
 
-    <span class="c1"># You can call any method on it, and it will also return another Mock!</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Method call: </span><span class="si">{</span><span class="n">mock_api_client</span><span class="o">.</span><span class="n">get_user</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="c1"># Output: Method call: &lt;Mock name=&#39;mock.get_user()&#39; id=&#39;...&#39;&gt;</span>
-
-    <span class="c1"># This is useful, but not what we usually want.</span>
-    <span class="c1"># We want to control the return value.</span>
-    <span class="n">mock_api_client</span><span class="o">.</span><span class="n">get_user</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Alice&quot;</span><span class="p">,</span> <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">}</span>
-
-    <span class="c1"># Now when we call it, we get our specified value</span>
-    <span class="n">user_data</span> <span class="o">=</span> <span class="n">mock_api_client</span><span class="o">.</span><span class="n">get_user</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">user_data</span> <span class="o">==</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Alice&quot;</span><span class="p">,</span> <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">}</span>
+<span class="c1"># You can access any attribute, and it will also return a Mock</span>
+<span class="n">api_key</span> <span class="o">=</span> <span class="n">mock_gateway</span><span class="o">.</span><span class="n">api_key</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">api_key</span><span class="p">)</span>
+<span class="c1"># Output: &lt;Mock name=&#39;mock.api_key&#39; id=&#39;...&#39;&gt;</span>
 </code></pre></div>
 
-<p>The <code>Mock</code> object is incredibly flexible. It allows any attribute access or method call by default, creating new <code>Mock</code> objects on the fly. This is powerful but can sometimes hide typos.</p>
-<p>The real utility comes from configuring its behavior and then asserting how it was used.</p>
-<h3 id="configuring-return-values-and-attributes">Configuring Return Values and Attributes</h3>
-<p>You can set the <code>return_value</code> of a mock method or set attributes directly.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># test_mock_basics.py</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mock</span>
+<p>This is the default behavior. A <code>Mock</code> object is a blank slate that will accept any operation you perform on it and record that it happened. This is useful, but to make it behave like our <code>PaymentGateway</code>, we need to configure it.</p>
+<p>We can pre-configure a mock to have specific attributes or methods with return values.</p>
+<div class="codehilite"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mock</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_configuring_a_mock</span><span class="p">():</span>
-    <span class="c1"># Create a mock for a database connection object</span>
-    <span class="n">mock_db_conn</span> <span class="o">=</span> <span class="n">Mock</span><span class="p">()</span>
+<span class="c1"># Configure a mock to simulate a successful charge</span>
+<span class="n">mock_gateway</span> <span class="o">=</span> <span class="n">Mock</span><span class="p">()</span>
+<span class="n">mock_gateway</span><span class="o">.</span><span class="n">charge</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="s2">&quot;tx_success_123&quot;</span>
 
-    <span class="c1"># Configure an attribute</span>
-    <span class="n">mock_db_conn</span><span class="o">.</span><span class="n">is_connected</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="c1"># Now when we call charge, it returns our configured value</span>
+<span class="n">transaction_id</span> <span class="o">=</span> <span class="n">mock_gateway</span><span class="o">.</span><span class="n">charge</span><span class="p">(</span><span class="n">card_details</span><span class="o">=</span><span class="s2">&quot;tok_valid&quot;</span><span class="p">,</span> <span class="n">amount</span><span class="o">=</span><span class="mf">50.00</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">transaction_id</span><span class="p">)</span>
+<span class="c1"># Output: tx_success_123</span>
 
-    <span class="c1"># Configure a method&#39;s return value</span>
-    <span class="n">mock_db_conn</span><span class="o">.</span><span class="n">get_user_by_id</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="s2">&quot;username&quot;</span><span class="p">:</span> <span class="s2">&quot;testuser&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;email&quot;</span><span class="p">:</span> <span class="s2">&quot;test@example.com&quot;</span>
-    <span class="p">}</span>
+<span class="c1"># We can also check if the method was called</span>
+<span class="n">mock_gateway</span><span class="o">.</span><span class="n">charge</span><span class="o">.</span><span class="n">assert_called</span><span class="p">()</span>
 
-    <span class="c1"># Now we can use it as if it were a real object</span>
-    <span class="k">assert</span> <span class="n">mock_db_conn</span><span class="o">.</span><span class="n">is_connected</span> <span class="ow">is</span> <span class="kc">True</span>
-
-    <span class="n">user</span> <span class="o">=</span> <span class="n">mock_db_conn</span><span class="o">.</span><span class="n">get_user_by_id</span><span class="p">(</span><span class="mi">123</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">user</span><span class="p">[</span><span class="s2">&quot;username&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;testuser&quot;</span>
+<span class="c1"># And check *what* it was called with</span>
+<span class="n">mock_gateway</span><span class="o">.</span><span class="n">charge</span><span class="o">.</span><span class="n">assert_called_with</span><span class="p">(</span><span class="n">card_details</span><span class="o">=</span><span class="s2">&quot;tok_valid&quot;</span><span class="p">,</span> <span class="n">amount</span><span class="o">=</span><span class="mf">50.00</span><span class="p">)</span>
 </code></pre></div>
 
-<p>This is the foundation of mocking: creating a fake object and telling it how to respond when our code interacts with it. However, creating a mock like this doesn't help us test our <code>format_weather_report</code> function. That function doesn't accept a <code>requests</code> object as an argument; it imports and uses it directly.</p>
-<p>To solve this, we need to temporarily replace the <em>real</em> <code>requests</code> object in our application's namespace with our <em>mock</em> object. This process is called <strong>patching</strong>.</p>
+<p>This is the fundamental mechanism. However, creating a mock is one thing; getting our <code>process_order</code> function to <em>use</em> it is another. The <code>process_order</code> function creates its own <code>PaymentGateway</code> instance internally. We need a way to intercept that creation and substitute our mock. This is called <strong>patching</strong>.</p>
 <h2 id="patching-functions-with-patch">Patching Functions with @patch</h2>
-<h2 id="patching-functions-with-patch_1">Patching Functions with @patch</h2>
-<p>Patching is the act of intercepting calls to functions or objects and replacing them with something else, usually a mock. The <code>unittest.mock.patch</code> function is our primary tool for this, and it's most commonly used as a decorator.</p>
-<p>Let's finally write a proper, isolated test for our <code>format_weather_report</code> function.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_weather_reporter.py</span>
+<h2 id="intercepting-code-with-patch">Intercepting Code with <code>@patch</code></h2>
+<p>The most common tool you'll use from <code>unittest.mock</code> is <code>patch</code>. It's a powerful decorator (or context manager) that temporarily replaces an object in a specific module with a mock.</p>
+<p>The key to using <code>patch</code> correctly is to provide the path to the object <strong>where it is looked up</strong>, not where it is defined. In our case, the <code>process_order</code> function lives in <code>src.orders</code> and it does <code>from .services import PaymentGateway</code>. Therefore, inside <code>src.orders</code>, <code>PaymentGateway</code> refers to <code>src.orders.PaymentGateway</code>. This is the target we must patch.</p>
+<h3 id="iteration-1-replacing-the-slow-services">Iteration 1: Replacing the Slow Services</h3>
+<p>Let's write a new test that uses <code>@patch</code> to replace both <code>PaymentGateway</code> and <code>NotificationService</code>.</p>
+<p><strong>The Goal:</strong> Run the test for <code>process_order</code> without the 3-second delay.</p>
+<p>Here is our first attempt.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_orders_mocked.py</span>
+
 <span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">patch</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.weather_reporter</span><span class="w"> </span><span class="kn">import</span> <span class="n">format_weather_report</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.orders</span><span class="w"> </span><span class="kn">import</span> <span class="n">process_order</span>
 
-<span class="c1"># The target string is &#39;path.to.module.object_to_patch&#39;</span>
-<span class="c1"># We are patching &#39;requests.get&#39; inside the &#39;weather_reporter&#39; module.</span>
-<span class="nd">@patch</span><span class="p">(</span><span class="s2">&quot;src.weather_reporter.requests.get&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_format_weather_report_sunny</span><span class="p">(</span><span class="n">mock_requests_get</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Test the report formatter with a successful, sunny weather API response.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># Configure the mock to behave like a successful API call</span>
-    <span class="n">mock_response</span> <span class="o">=</span> <span class="n">mock_requests_get</span><span class="o">.</span><span class="n">return_value</span>
-    <span class="n">mock_response</span><span class="o">.</span><span class="n">status_code</span> <span class="o">=</span> <span class="mi">200</span>
-    <span class="n">mock_response</span><span class="o">.</span><span class="n">json</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="s2">&quot;temperature&quot;</span><span class="p">:</span> <span class="mi">25</span><span class="p">,</span>
-        <span class="s2">&quot;condition&quot;</span><span class="p">:</span> <span class="s2">&quot;Sunny&quot;</span>
-    <span class="p">}</span>
+<span class="c1"># The target string is &#39;module.submodule.ClassName&#39;</span>
+<span class="c1"># Note the order: decorators are applied from the bottom up.</span>
+<span class="c1"># The first argument to the test function corresponds to the *inner-most* decorator.</span>
+<span class="c1"># So, mock_notifier comes first, then mock_gateway.</span>
+<span class="nd">@patch</span><span class="p">(</span><span class="s1">&#39;src.orders.PaymentGateway&#39;</span><span class="p">)</span>
+<span class="nd">@patch</span><span class="p">(</span><span class="s1">&#39;src.orders.NotificationService&#39;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_order_success_mocked</span><span class="p">(</span><span class="n">mock_notifier_class</span><span class="p">,</span> <span class="n">mock_gateway_class</span><span class="p">):</span>
+    <span class="c1"># The patch gives us mock *classes*, not instances.</span>
+    <span class="c1"># We can configure the behavior of instances that will be created from these classes.</span>
+    <span class="n">mock_gateway_instance</span> <span class="o">=</span> <span class="n">mock_gateway_class</span><span class="o">.</span><span class="n">return_value</span>
+    <span class="n">mock_gateway_instance</span><span class="o">.</span><span class="n">charge</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="s2">&quot;tx_mock_456&quot;</span>
 
-    <span class="c1"># Call the function we are testing</span>
-    <span class="n">report</span> <span class="o">=</span> <span class="n">format_weather_report</span><span class="p">(</span><span class="s2">&quot;London&quot;</span><span class="p">)</span>
+    <span class="n">mock_notifier_instance</span> <span class="o">=</span> <span class="n">mock_notifier_class</span><span class="o">.</span><span class="n">return_value</span>
 
-    <span class="c1"># Assert that our function formatted the report correctly</span>
-    <span class="k">assert</span> <span class="n">report</span> <span class="o">==</span> <span class="s2">&quot;The weather in London is 25°C and Sunny.&quot;</span>
+    <span class="c1"># Run the function under test</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">process_order</span><span class="p">(</span>
+        <span class="n">order_id</span><span class="o">=</span><span class="s2">&quot;order_456&quot;</span><span class="p">,</span>
+        <span class="n">customer_email</span><span class="o">=</span><span class="s2">&quot;mock@example.com&quot;</span><span class="p">,</span>
+        <span class="n">card_details</span><span class="o">=</span><span class="s2">&quot;tok_mock&quot;</span><span class="p">,</span>
+        <span class="n">amount</span><span class="o">=</span><span class="mf">19.99</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Assert the final result</span>
+    <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="s2">&quot;Order processed successfully.&quot;</span>
 </code></pre></div>
 
-<p>Let's break this down, because it's the most important concept in this chapter.</p>
-<h3 id="the-patch-decorator">The <code>@patch</code> Decorator</h3>
-<p><code>@patch("src.weather_reporter.requests.get")</code></p>
-<p>This decorator does all the magic. During the execution of <code>test_format_weather_report_sunny</code>, it finds the <code>get</code> object inside the <code>requests</code> module <em>as it is seen by <code>src.weather_reporter</code></em> and replaces it with a mock object.</p>
-<p>After the test function finishes (whether it passes, fails, or raises an error), <code>patch</code> automatically restores the original <code>requests.get</code>, so other tests are not affected.</p>
-<h3 id="the-mock-argument">The Mock Argument</h3>
-<p><code>def test_format_weather_report_sunny(mock_requests_get):</code></p>
-<p>The <code>patch</code> decorator creates a mock object and passes it into our test function as an argument. The name of the argument (<code>mock_requests_get</code>) can be anything you like, but it's good practice to name it descriptively. This is the object we use to configure behavior and make assertions.</p>
-<h3 id="the-target-string-the-most-common-point-of-confusion">The Target String: The Most Common Point of Confusion</h3>
-<p><code>"src.weather_reporter.requests.get"</code></p>
-<p>Why this specific string? This is critical. <strong>You must patch the object where it is looked up, not where it is defined.</strong></p>
-<p>Our code under test is in <code>src/weather_reporter.py</code>. Inside that file, the line <code>response = requests.get(...)</code> looks up the name <code>get</code> within the <code>requests</code> module that was imported into that file's namespace. Therefore, we must patch <code>requests.get</code> <em>within the <code>src.weather_reporter</code> module</em>.</p>
-<p>A common mistake is to try patching <code>'requests.get'</code>. This would patch the <code>get</code> function in the original <code>requests</code> library, but our <code>weather_reporter</code> module has already imported its own reference to it. The patch would have no effect on our code under test.</p>
-<p><strong>Think of it like this:</strong> You need to change the tool in the toolbox that your code is actually using.</p>
-<h3 id="testing-an-error-case">Testing an Error Case</h3>
-<p>Now, let's see how easy it is to test the "API is down" scenario.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_weather_reporter.py</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">patch</span><span class="p">,</span> <span class="n">Mock</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">requests.exceptions</span><span class="w"> </span><span class="kn">import</span> <span class="n">RequestException</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.weather_reporter</span><span class="w"> </span><span class="kn">import</span> <span class="n">format_weather_report</span>
+<p>Let's run this new test.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>-s<span class="w"> </span>tests/test_orders_mocked.py
 
-<span class="c1"># ... (previous test) ...</span>
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
 
-<span class="nd">@patch</span><span class="p">(</span><span class="s2">&quot;src.weather_reporter.requests.get&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_format_weather_report_api_error</span><span class="p">(</span><span class="n">mock_requests_get</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Test the report formatter when the API call fails.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># Configure the mock to raise an exception, just like the real library would</span>
-    <span class="n">mock_requests_get</span><span class="o">.</span><span class="n">side_effect</span> <span class="o">=</span> <span class="n">RequestException</span><span class="p">(</span><span class="s2">&quot;API is down&quot;</span><span class="p">)</span>
+tests/test_orders_mocked.py::test_process_order_success_mocked<span class="w"> </span>
+Processing<span class="w"> </span>order<span class="w"> </span>order_456...
+Payment<span class="w"> </span>successful<span class="w"> </span><span class="k">for</span><span class="w"> </span>order<span class="w"> </span>order_456.
+PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
 
-    <span class="c1"># Call the function we are testing</span>
-    <span class="n">report</span> <span class="o">=</span> <span class="n">format_weather_report</span><span class="p">(</span><span class="s2">&quot;Paris&quot;</span><span class="p">)</span>
-
-    <span class="c1"># Assert that our function handles the error gracefully</span>
-    <span class="k">assert</span> <span class="n">report</span> <span class="o">==</span> <span class="s2">&quot;Sorry, could not retrieve weather for Paris.&quot;</span>
+<span class="o">=======================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.02s<span class="w"> </span><span class="o">========================</span>
 </code></pre></div>
 
-<p>Without mocking, this test would be nearly impossible to write reliably. With mocking, it's trivial. We simply configure our mock to raise an exception when called, and then verify that our error-handling logic works as expected. We'll cover <code>side_effect</code> in more detail shortly.</p>
+<p>Look at that! The test passed in <strong>0.02 seconds</strong>. We have successfully replaced the slow external services with fast mock objects.</p>
+<p>However, our test is incomplete. It asserts that <code>process_order</code> returns the correct string, but it doesn't verify that the services were used correctly. Did we actually call <code>gateway.charge</code> with the right amount? Did we call <code>notifier.send_receipt</code> with the correct email and transaction ID? Right now, we have no idea. A test that passes for the wrong reasons is just as dangerous as a test that fails. We need to add assertions about the <em>interactions</em> with our mocks.</p>
 <h2 id="common-mock-assertions-assert_called-assert_called_with">Common Mock Assertions (assert_called, assert_called_with)</h2>
-<h2 id="common-mock-assertions-assert_called-assert_called_with_1">Common Mock Assertions (assert_called, assert_called_with)</h2>
-<p>The first part of mocking is controlling behavior. The second, equally important part is verifying that our code interacted with the dependency as we expected. Mock objects provide a suite of assertion methods for this purpose.</p>
-<p>Let's go back to our successful weather test and add some assertions about how the mock was used.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_weather_reporter.py</span>
+<h2 id="verifying-mock-interactions">Verifying Mock Interactions</h2>
+<p>Mocks are not just stand-ins; they are spies. They record every interaction you have with them. After running your code, you can query the mock to ensure it was used as you expected.</p>
+<p>The most common assertion methods are:
+-   <code>mock_object.method.assert_called()</code>: Asserts that the method was called at least once.
+-   <code>mock_object.method.assert_called_once()</code>: Asserts that the method was called exactly once.
+-   <code>mock_object.method.assert_called_with(*args, **kwargs)</code>: Asserts that the <em>last</em> call to the method was with these specific arguments.
+-   <code>mock_object.method.assert_called_once_with(*args, **kwargs)</code>: A combination of the above. Asserts it was called exactly once, and that one call was with these arguments.
+-   <code>mock_object.method.assert_not_called()</code>: Asserts the method was never called.
+-   <code>mock_object.method.call_count</code>: An integer property that tells you how many times the method was called.</p>
+<h3 id="iteration-2-verifying-the-gateway-and-notifier-calls">Iteration 2: Verifying the Gateway and Notifier Calls</h3>
+<p>Let's improve our previous test by adding assertions to verify that the gateway and notifier were called correctly.</p>
+<p><strong>Current Limitation:</strong> Our test only checks the final return value. It doesn't confirm that the dependencies were used correctly.</p>
+<p><strong>New Scenario:</strong> We need to ensure <code>gateway.charge</code> is called with the correct <code>card_details</code> and <code>amount</code>, and that <code>notifier.send_receipt</code> is called with the correct <code>email</code> and the <code>transaction_id</code> returned by the gateway.</p>
+<p>Let's add these assertions to our test. To demonstrate how the assertions work, we'll start by making a mistake on purpose. Let's assert that the <code>amount</code> was <code>29.99</code> when it was actually <code>19.99</code>.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_orders_mocked.py (updated test)</span>
+
 <span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">patch</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.weather_reporter</span><span class="w"> </span><span class="kn">import</span> <span class="n">format_weather_report</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.orders</span><span class="w"> </span><span class="kn">import</span> <span class="n">process_order</span>
 
-<span class="nd">@patch</span><span class="p">(</span><span class="s2">&quot;src.weather_reporter.requests.get&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_format_weather_report_sunny_with_call_assertions</span><span class="p">(</span><span class="n">mock_requests_get</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Test the report formatter and verify the API call.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">mock_response</span> <span class="o">=</span> <span class="n">mock_requests_get</span><span class="o">.</span><span class="n">return_value</span>
-    <span class="n">mock_response</span><span class="o">.</span><span class="n">status_code</span> <span class="o">=</span> <span class="mi">200</span>
-    <span class="n">mock_response</span><span class="o">.</span><span class="n">json</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="s2">&quot;temperature&quot;</span><span class="p">:</span> <span class="mi">25</span><span class="p">,</span>
-        <span class="s2">&quot;condition&quot;</span><span class="p">:</span> <span class="s2">&quot;Sunny&quot;</span>
-    <span class="p">}</span>
+<span class="nd">@patch</span><span class="p">(</span><span class="s1">&#39;src.orders.PaymentGateway&#39;</span><span class="p">)</span>
+<span class="nd">@patch</span><span class="p">(</span><span class="s1">&#39;src.orders.NotificationService&#39;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_order_success_with_assertions</span><span class="p">(</span><span class="n">mock_notifier_class</span><span class="p">,</span> <span class="n">mock_gateway_class</span><span class="p">):</span>
+    <span class="c1"># Arrange: Configure the mocks</span>
+    <span class="n">mock_gateway_instance</span> <span class="o">=</span> <span class="n">mock_gateway_class</span><span class="o">.</span><span class="n">return_value</span>
+    <span class="n">mock_gateway_instance</span><span class="o">.</span><span class="n">charge</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="s2">&quot;tx_mock_456&quot;</span>
 
-    <span class="c1"># Call the function we are testing</span>
-    <span class="n">report</span> <span class="o">=</span> <span class="n">format_weather_report</span><span class="p">(</span><span class="s2">&quot;London&quot;</span><span class="p">)</span>
+    <span class="n">mock_notifier_instance</span> <span class="o">=</span> <span class="n">mock_notifier_class</span><span class="o">.</span><span class="n">return_value</span>
 
-    <span class="c1"># Assert the output is correct</span>
-    <span class="k">assert</span> <span class="n">report</span> <span class="o">==</span> <span class="s2">&quot;The weather in London is 25°C and Sunny.&quot;</span>
+    <span class="c1"># Act: Run the function under test</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">process_order</span><span class="p">(</span>
+        <span class="n">order_id</span><span class="o">=</span><span class="s2">&quot;order_456&quot;</span><span class="p">,</span>
+        <span class="n">customer_email</span><span class="o">=</span><span class="s2">&quot;mock@example.com&quot;</span><span class="p">,</span>
+        <span class="n">card_details</span><span class="o">=</span><span class="s2">&quot;tok_mock&quot;</span><span class="p">,</span>
+        <span class="n">amount</span><span class="o">=</span><span class="mf">19.99</span>
+    <span class="p">)</span>
 
-    <span class="c1"># --- New Assertions ---</span>
-    <span class="c1"># Verify that requests.get was called</span>
-    <span class="n">mock_requests_get</span><span class="o">.</span><span class="n">assert_called</span><span class="p">()</span>
+    <span class="c1"># Assert: Check the final result and the interactions</span>
+    <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="s2">&quot;Order processed successfully.&quot;</span>
 
-    <span class="c1"># Verify it was called exactly once</span>
-    <span class="n">mock_requests_get</span><span class="o">.</span><span class="n">assert_called_once</span><span class="p">()</span>
+    <span class="c1"># Verify the gateway was used correctly</span>
+    <span class="n">mock_gateway_instance</span><span class="o">.</span><span class="n">charge</span><span class="o">.</span><span class="n">assert_called_once_with</span><span class="p">(</span><span class="s2">&quot;tok_mock&quot;</span><span class="p">,</span> <span class="mf">29.99</span><span class="p">)</span> <span class="c1"># INTENTIONAL ERROR</span>
 
-    <span class="c1"># Verify it was called with the correct arguments</span>
-    <span class="n">mock_requests_get</span><span class="o">.</span><span class="n">assert_called_once_with</span><span class="p">(</span><span class="s2">&quot;https://api.weather.com/data?city=London&quot;</span><span class="p">)</span>
-</code></pre></div>
-
-<p>These assertions allow us to confirm that our function is constructing the API URL correctly.</p>
-<h3 id="reading-failure-messages">Reading Failure Messages</h3>
-<p>Pytest's integration with <code>unittest.mock</code> provides incredibly detailed failure messages. Let's say we made a typo in our code and called the API with <code>city=london</code> (lowercase).</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># In src/weather_reporter.py (with a bug)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">get_weather_data</span><span class="p">(</span><span class="n">city</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
-    <span class="c1"># ...</span>
-    <span class="c1"># BUG: city is not capitalized as expected</span>
-    <span class="n">response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;https://api.weather.com/data?city=</span><span class="si">{</span><span class="n">city</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> 
-    <span class="c1"># ...</span>
-</code></pre></div>
-
-<p>Our <code>assert_called_once_with</code> would fail with a very helpful message:</p>
-<div class="codehilite"><pre><span></span><code>&gt;<span class="w">       </span>mock_requests_get.assert_called_once_with<span class="o">(</span><span class="s2">&quot;https://api.weather.com/data?city=London&quot;</span><span class="o">)</span>
-E<span class="w">       </span>AssertionError:<span class="w"> </span>expected<span class="w"> </span>call<span class="w"> </span>not<span class="w"> </span>found.
-E<span class="w">       </span>Expected:<span class="w"> </span>get<span class="o">(</span><span class="s1">&#39;https://api.weather.com/data?city=London&#39;</span><span class="o">)</span>
-E<span class="w">       </span>Actual:<span class="w"> </span>get<span class="o">(</span><span class="s1">&#39;https://api.weather.com/data?city=london&#39;</span><span class="o">)</span>
-</code></pre></div>
-
-<p>This is an example of <strong>treating errors as data</strong>. The output isn't just "failure"; it's a map showing you exactly what went wrong.</p>
-<h3 id="other-useful-assertions">Other Useful Assertions</h3>
-<p>Here are some other common assertion methods:</p>
-<ul>
-<li><code>mock_object.assert_not_called()</code>: Verifies the mock was never called. Useful for testing logic branches where a dependency <em>shouldn't</em> be touched.</li>
-<li><code>mock_object.assert_any_call(*args, **kwargs)</code>: Verifies the mock was called with the given arguments at least once, even if it was called with other arguments as well.</li>
-<li><code>mock_object.call_count</code>: An integer property that tells you how many times the mock was called. You can assert against it directly: <code>assert mock_object.call_count == 2</code>.</li>
-</ul>
-<p>Let's write a test for the <code>assert_not_called</code> case. Imagine we have a function that caches results and should only call the API if the city is not in the cache.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># src/cached_weather.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">requests</span>
-
-<span class="n">CACHE</span> <span class="o">=</span> <span class="p">{}</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">get_weather_with_cache</span><span class="p">(</span><span class="n">city</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
-    <span class="k">if</span> <span class="n">city</span> <span class="ow">in</span> <span class="n">CACHE</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">CACHE</span><span class="p">[</span><span class="n">city</span><span class="p">]</span>
-
-    <span class="c1"># This part should only be reached if the city is not in the cache</span>
-    <span class="n">response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;https://api.weather.com/data?city=</span><span class="si">{</span><span class="n">city</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="n">response</span><span class="o">.</span><span class="n">raise_for_status</span><span class="p">()</span>
-    <span class="n">data</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
-    <span class="n">CACHE</span><span class="p">[</span><span class="n">city</span><span class="p">]</span> <span class="o">=</span> <span class="n">data</span>
-    <span class="k">return</span> <span class="n">data</span>
-</code></pre></div>
-
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_cached_weather.py</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">patch</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.cached_weather</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_weather_with_cache</span><span class="p">,</span> <span class="n">CACHE</span>
-
-<span class="nd">@patch</span><span class="p">(</span><span class="s2">&quot;src.cached_weather.requests.get&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_get_weather_from_cache</span><span class="p">(</span><span class="n">mock_requests_get</span><span class="p">):</span>
-    <span class="c1"># Pre-populate the cache</span>
-    <span class="n">CACHE</span><span class="p">[</span><span class="s2">&quot;Tokyo&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;temperature&quot;</span><span class="p">:</span> <span class="mi">18</span><span class="p">,</span> <span class="s2">&quot;condition&quot;</span><span class="p">:</span> <span class="s2">&quot;Cloudy&quot;</span><span class="p">}</span>
-
-    <span class="c1"># Call the function for a cached city</span>
-    <span class="n">get_weather_with_cache</span><span class="p">(</span><span class="s2">&quot;Tokyo&quot;</span><span class="p">)</span>
-
-    <span class="c1"># Verify that the real API was NOT called</span>
-    <span class="n">mock_requests_get</span><span class="o">.</span><span class="n">assert_not_called</span><span class="p">()</span>
-
-    <span class="c1"># Clean up the cache for other tests</span>
-    <span class="n">CACHE</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
-</code></pre></div>
-
-<h2 id="mock-side-effects-and-return-values">Mock Side Effects and Return Values</h2>
-<h2 id="mock-side-effects-and-return-values_1">Mock Side Effects and Return Values</h2>
-<p>We've already seen <code>return_value</code> and a brief example of <code>side_effect</code>. Let's explore these two powerful configuration options in more detail. They are the primary ways you control how your mock behaves when called.</p>
-<h3 id="return_value-the-simple-case"><code>return_value</code>: The Simple Case</h3>
-<p><code>return_value</code> is an attribute on a mock. When the mock is called, it will always return the value assigned to this attribute. This is perfect for simulating successful function calls that return a predictable object.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># test_return_value.py</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mock</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_return_value_example</span><span class="p">():</span>
-    <span class="n">mock_func</span> <span class="o">=</span> <span class="n">Mock</span><span class="p">()</span>
-    <span class="n">mock_func</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="mi">42</span>
-
-    <span class="n">result</span> <span class="o">=</span> <span class="n">mock_func</span><span class="p">(</span><span class="s2">&quot;some&quot;</span><span class="p">,</span> <span class="s2">&quot;arguments&quot;</span><span class="p">)</span>
-
-    <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="mi">42</span>
-    <span class="n">mock_func</span><span class="o">.</span><span class="n">assert_called_once_with</span><span class="p">(</span><span class="s2">&quot;some&quot;</span><span class="p">,</span> <span class="s2">&quot;arguments&quot;</span><span class="p">)</span>
-</code></pre></div>
-
-<h3 id="side_effect-for-complex-behavior"><code>side_effect</code>: For Complex Behavior</h3>
-<p><code>side_effect</code> is more versatile and powerful. It can be set to an exception, an iterable, or a callable function.</p>
-<h4 id="1-raising-exceptions">1. Raising Exceptions</h4>
-<p>To test your code's error handling, you can set <code>side_effect</code> to an exception class or instance. When the mock is called, it will raise that exception.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># test_side_effect.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mock</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">function_that_handles_errors</span><span class="p">(</span><span class="n">api_call</span><span class="p">):</span>
-    <span class="k">try</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">api_call</span><span class="p">()</span>
-    <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
-        <span class="k">return</span> <span class="s2">&quot;Handled ValueError&quot;</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_side_effect_with_exception</span><span class="p">():</span>
-    <span class="n">mock_api</span> <span class="o">=</span> <span class="n">Mock</span><span class="p">()</span>
-    <span class="n">mock_api</span><span class="o">.</span><span class="n">side_effect</span> <span class="o">=</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Invalid API Key&quot;</span><span class="p">)</span>
-
-    <span class="n">result</span> <span class="o">=</span> <span class="n">function_that_handles_errors</span><span class="p">(</span><span class="n">mock_api</span><span class="p">)</span>
-
-    <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="s2">&quot;Handled ValueError&quot;</span>
-    <span class="n">mock_api</span><span class="o">.</span><span class="n">assert_called_once</span><span class="p">()</span>
-</code></pre></div>
-
-<p>This is exactly what we did in our <code>test_format_weather_report_api_error</code> test to simulate a network failure.</p>
-<h4 id="2-returning-a-sequence-of-values">2. Returning a Sequence of Values</h4>
-<p>If you need a mock to return different values on subsequent calls, you can assign an iterable (like a list or tuple) to <code>side_effect</code>.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># test_side_effect.py</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mock</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_side_effect_with_iterable</span><span class="p">():</span>
-    <span class="c1"># Imagine a mock for a database cursor&#39;s fetchone() method</span>
-    <span class="n">mock_fetchone</span> <span class="o">=</span> <span class="n">Mock</span><span class="p">()</span>
-    <span class="n">mock_fetchone</span><span class="o">.</span><span class="n">side_effect</span> <span class="o">=</span> <span class="p">[</span>
-        <span class="p">(</span><span class="s2">&quot;user1&quot;</span><span class="p">,</span> <span class="s2">&quot;user1@a.com&quot;</span><span class="p">),</span>
-        <span class="p">(</span><span class="s2">&quot;user2&quot;</span><span class="p">,</span> <span class="s2">&quot;user2@b.com&quot;</span><span class="p">),</span>
-        <span class="kc">None</span>  <span class="c1"># The last call returns None, indicating no more rows</span>
-    <span class="p">]</span>
-
-    <span class="k">assert</span> <span class="n">mock_fetchone</span><span class="p">()</span> <span class="o">==</span> <span class="p">(</span><span class="s2">&quot;user1&quot;</span><span class="p">,</span> <span class="s2">&quot;user1@a.com&quot;</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">mock_fetchone</span><span class="p">()</span> <span class="o">==</span> <span class="p">(</span><span class="s2">&quot;user2&quot;</span><span class="p">,</span> <span class="s2">&quot;user2@b.com&quot;</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">mock_fetchone</span><span class="p">()</span> <span class="ow">is</span> <span class="kc">None</span>
-
-    <span class="c1"># If you call it again after exhaustion, it raises StopIteration</span>
-    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="ne">StopIteration</span><span class="p">):</span>
-        <span class="n">mock_fetchone</span><span class="p">()</span>
-</code></pre></div>
-
-<h4 id="3-using-a-callable-for-dynamic-behavior">3. Using a Callable for Dynamic Behavior</h4>
-<p>For the most complex scenarios, you can assign a function (or any callable) to <code>side_effect</code>. The mock will delegate the call to your function, passing along any arguments it received. Your function's return value will be used as the mock's return value.</p>
-<p>This is useful when the mock's output needs to depend on its input.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># test_side_effect.py</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mock</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">user_db_side_effect</span><span class="p">(</span><span class="n">user_id</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;A fake function to simulate a user database.&quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="n">user_id</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
-        <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Alice&quot;</span><span class="p">}</span>
-    <span class="k">if</span> <span class="n">user_id</span> <span class="o">==</span> <span class="mi">2</span><span class="p">:</span>
-        <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Bob&quot;</span><span class="p">}</span>
-    <span class="k">return</span> <span class="kc">None</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_side_effect_with_callable</span><span class="p">():</span>
-    <span class="n">mock_get_user</span> <span class="o">=</span> <span class="n">Mock</span><span class="p">()</span>
-    <span class="n">mock_get_user</span><span class="o">.</span><span class="n">side_effect</span> <span class="o">=</span> <span class="n">user_db_side_effect</span>
-
-    <span class="n">alice</span> <span class="o">=</span> <span class="n">mock_get_user</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
-    <span class="n">bob</span> <span class="o">=</span> <span class="n">mock_get_user</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
-    <span class="n">charlie</span> <span class="o">=</span> <span class="n">mock_get_user</span><span class="p">(</span><span class="mi">3</span><span class="p">)</span>
-
-    <span class="k">assert</span> <span class="n">alice</span> <span class="o">==</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Alice&quot;</span><span class="p">}</span>
-    <span class="k">assert</span> <span class="n">bob</span> <span class="o">==</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Bob&quot;</span><span class="p">}</span>
-    <span class="k">assert</span> <span class="n">charlie</span> <span class="ow">is</span> <span class="kc">None</span>
-
-    <span class="c1"># You can still assert how the mock was called</span>
-    <span class="k">assert</span> <span class="n">mock_get_user</span><span class="o">.</span><span class="n">call_count</span> <span class="o">==</span> <span class="mi">3</span>
-    <span class="n">mock_get_user</span><span class="o">.</span><span class="n">assert_any_call</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
-    <span class="n">mock_get_user</span><span class="o">.</span><span class="n">assert_any_call</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
-</code></pre></div>
-
-<h2 id="combining-mocks-and-fixtures">Combining Mocks and Fixtures</h2>
-<h2 id="combining-mocks-and-fixtures_1">Combining Mocks and Fixtures</h2>
-<p>Using <code>@patch</code> is great, but it can become unwieldy if you need the same mock setup for multiple tests, or if you need to patch several things at once.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># The &quot;crowded decorator&quot; problem</span>
-<span class="nd">@patch</span><span class="p">(</span><span class="s2">&quot;src.module.api.get_user&quot;</span><span class="p">)</span>
-<span class="nd">@patch</span><span class="p">(</span><span class="s2">&quot;src.module.api.get_account&quot;</span><span class="p">)</span>
-<span class="nd">@patch</span><span class="p">(</span><span class="s2">&quot;src.module.db.save_record&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_something</span><span class="p">(</span><span class="n">mock_save</span><span class="p">,</span> <span class="n">mock_get_account</span><span class="p">,</span> <span class="n">mock_get_user</span><span class="p">):</span>
-    <span class="c1"># ... test logic ...</span>
-</code></pre></div>
-
-<p>This is where fixtures, the foundation of pytest, come to the rescue. We can encapsulate our patching logic inside a fixture to create clean, reusable, and composable mock setups. This is the "pytest way" of handling mocks.</p>
-<h3 id="the-wrong-way-repetitive-setup">The Wrong Way: Repetitive Setup</h3>
-<p>First, let's see the problem. Imagine we have several tests that all need a mock of our weather API that returns a "Sunny" response. We could copy-paste the setup, but that's not maintainable.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># Repetitive setup (don&#39;t do this)</span>
-<span class="nd">@patch</span><span class="p">(</span><span class="s2">&quot;src.weather_reporter.requests.get&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_report_for_sunny_day</span><span class="p">(</span><span class="n">mock_requests_get</span><span class="p">):</span>
-    <span class="n">mock_response</span> <span class="o">=</span> <span class="n">mock_requests_get</span><span class="o">.</span><span class="n">return_value</span>
-    <span class="n">mock_response</span><span class="o">.</span><span class="n">json</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;temperature&quot;</span><span class="p">:</span> <span class="mi">25</span><span class="p">,</span> <span class="s2">&quot;condition&quot;</span><span class="p">:</span> <span class="s2">&quot;Sunny&quot;</span><span class="p">}</span>
-    <span class="c1"># ... test logic ...</span>
-
-<span class="nd">@patch</span><span class="p">(</span><span class="s2">&quot;src.weather_reporter.requests.get&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_another_feature_on_a_sunny_day</span><span class="p">(</span><span class="n">mock_requests_get</span><span class="p">):</span>
-    <span class="n">mock_response</span> <span class="o">=</span> <span class="n">mock_requests_get</span><span class="o">.</span><span class="n">return_value</span>
-    <span class="n">mock_response</span><span class="o">.</span><span class="n">json</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;temperature&quot;</span><span class="p">:</span> <span class="mi">25</span><span class="p">,</span> <span class="s2">&quot;condition&quot;</span><span class="p">:</span> <span class="s2">&quot;Sunny&quot;</span><span class="p">}</span>
-    <span class="c1"># ... another test&#39;s logic ...</span>
-</code></pre></div>
-
-<h3 id="the-right-way-a-mocking-fixture">The Right Way: A Mocking Fixture</h3>
-<p>Let's refactor this into a fixture. We can use <code>patch</code> as a context manager inside the fixture.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/conftest.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">patch</span>
-
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">mock_sunny_weather_api</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    A fixture that patches requests.get and mocks a sunny weather response.</span>
-<span class="sd">    It yields the mock object for optional further configuration in tests.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># The &#39;with&#39; statement starts the patch</span>
-    <span class="k">with</span> <span class="n">patch</span><span class="p">(</span><span class="s2">&quot;src.weather_reporter.requests.get&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">mock_get</span><span class="p">:</span>
-        <span class="n">mock_response</span> <span class="o">=</span> <span class="n">mock_get</span><span class="o">.</span><span class="n">return_value</span>
-        <span class="n">mock_response</span><span class="o">.</span><span class="n">status_code</span> <span class="o">=</span> <span class="mi">200</span>
-        <span class="n">mock_response</span><span class="o">.</span><span class="n">json</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="p">{</span>
-            <span class="s2">&quot;temperature&quot;</span><span class="p">:</span> <span class="mi">25</span><span class="p">,</span>
-            <span class="s2">&quot;condition&quot;</span><span class="p">:</span> <span class="s2">&quot;Sunny&quot;</span>
-        <span class="p">}</span>
-        <span class="k">yield</span> <span class="n">mock_get</span>  <span class="c1"># The test runs here</span>
-    <span class="c1"># The patch is automatically stopped when the &#39;with&#39; block exits</span>
-</code></pre></div>
-
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_weather_reporter_with_fixture.py</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.weather_reporter</span><span class="w"> </span><span class="kn">import</span> <span class="n">format_weather_report</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_format_weather_report_with_fixture</span><span class="p">(</span><span class="n">mock_sunny_weather_api</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Test the formatter using our fixture. The test is now much cleaner.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">report</span> <span class="o">=</span> <span class="n">format_weather_report</span><span class="p">(</span><span class="s2">&quot;London&quot;</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">report</span> <span class="o">==</span> <span class="s2">&quot;The weather in London is 25°C and Sunny.&quot;</span>
-
-    <span class="c1"># We can still make assertions on the mock yielded by the fixture</span>
-    <span class="n">mock_sunny_weather_api</span><span class="o">.</span><span class="n">assert_called_once_with</span><span class="p">(</span>
-        <span class="s2">&quot;https://api.weather.com/data?city=London&quot;</span>
+    <span class="c1"># Verify the notifier was used correctly</span>
+    <span class="n">mock_notifier_instance</span><span class="o">.</span><span class="n">send_receipt</span><span class="o">.</span><span class="n">assert_called_once_with</span><span class="p">(</span>
+        <span class="s2">&quot;mock@example.com&quot;</span><span class="p">,</span> <span class="s2">&quot;tx_mock_456&quot;</span>
     <span class="p">)</span>
 </code></pre></div>
 
-<p>This approach is vastly superior:</p>
-<ul>
-<li><strong>DRY (Don't Repeat Yourself):</strong> The mock setup is defined in one place. If the API response format changes, we only need to update the fixture.</li>
-<li><strong>Readability:</strong> The test function is now focused purely on the logic it's testing: call the function and assert the result. The setup mechanism is abstracted away.</li>
-<li><strong>Reusability:</strong> Any test in our suite can now request the <code>mock_sunny_weather_api</code> fixture to get a consistent testing environment.</li>
-</ul>
-<h3 id="using-pytests-monkeypatch-fixture">Using Pytest's <code>monkeypatch</code> Fixture</h3>
-<p>Pytest provides its own built-in fixture for modifying code during tests called <code>monkeypatch</code>. It's an alternative to <code>unittest.mock.patch</code> for some use cases.</p>
-<p><code>monkeypatch</code> is excellent for replacing attributes, dictionary items, or environment variables. Its most common method is <code>setattr</code>.</p>
-<p>Let's rewrite our fixture using <code>monkeypatch</code>. This requires a bit more manual work, as <code>monkeypatch</code> doesn't create a <code>Mock</code> object for us, but it's very explicit.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/conftest.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mock</span>
-
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">mock_sunny_weather_api_monkeypatch</span><span class="p">(</span><span class="n">monkeypatch</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    A fixture that uses monkeypatch to replace requests.get.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># We need to create the mock object ourselves</span>
-    <span class="n">mock_get</span> <span class="o">=</span> <span class="n">Mock</span><span class="p">()</span>
-    <span class="n">mock_response</span> <span class="o">=</span> <span class="n">mock_get</span><span class="o">.</span><span class="n">return_value</span>
-    <span class="n">mock_response</span><span class="o">.</span><span class="n">status_code</span> <span class="o">=</span> <span class="mi">200</span>
-    <span class="n">mock_response</span><span class="o">.</span><span class="n">json</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="s2">&quot;temperature&quot;</span><span class="p">:</span> <span class="mi">25</span><span class="p">,</span>
-        <span class="s2">&quot;condition&quot;</span><span class="p">:</span> <span class="s2">&quot;Sunny&quot;</span>
-    <span class="p">}</span>
-
-    <span class="c1"># Use monkeypatch.setattr to replace the real function with our mock</span>
-    <span class="n">monkeypatch</span><span class="o">.</span><span class="n">setattr</span><span class="p">(</span><span class="s2">&quot;src.weather_reporter.requests.get&quot;</span><span class="p">,</span> <span class="n">mock_get</span><span class="p">)</span>
-
-    <span class="c1"># Unlike the context manager, we don&#39;t need to yield.</span>
-    <span class="c1"># Monkeypatch handles the teardown automatically.</span>
-    <span class="c1"># We can return the mock if tests need to inspect it.</span>
-    <span class="k">return</span> <span class="n">mock_get</span>
+<p>Now, let's run this and see the failure.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>tests/test_orders_mocked.py::test_process_order_success_with_assertions
 </code></pre></div>
 
-<h3 id="patch-vs-monkeypatch-which-to-choose"><code>patch</code> vs. <code>monkeypatch</code>: Which to Choose?</h3>
-<p>Both <code>unittest.mock.patch</code> and pytest's <code>monkeypatch</code> are excellent tools. Here's a general guideline:</p>
+<h3 id="diagnostic-analysis-reading-the-failure">Diagnostic Analysis: Reading the Failure</h3>
+<p><strong>The complete output</strong>:</p>
+<div class="codehilite"><pre><span></span><code><span class="o">===========================</span><span class="w"> </span><span class="n">test</span><span class="w"> </span><span class="k">session</span><span class="w"> </span><span class="n">starts</span><span class="w"> </span><span class="o">============================</span>
+<span class="p">...</span>
+<span class="n">collected</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="n">item</span>
+
+<span class="n">tests</span><span class="o">/</span><span class="n">test_orders_mocked</span><span class="p">.</span><span class="nl">py</span><span class="p">:</span><span class="err">:</span><span class="n">test_process_order_success_with_assertions</span><span class="w"> </span><span class="n">FAILED</span><span class="w"> </span><span class="o">[</span><span class="n">100%</span><span class="o">]</span>
+
+<span class="o">=================================</span><span class="w"> </span><span class="n">FAILURES</span><span class="w"> </span><span class="o">=================================</span>
+<span class="n">___</span><span class="w"> </span><span class="n">test_process_order_success_with_assertions</span><span class="w"> </span><span class="n">___</span>
+
+<span class="n">mock_notifier_class</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&lt;</span><span class="n">MagicMock</span><span class="w"> </span><span class="n">name</span><span class="o">=</span><span class="s1">&#39;NotificationService&#39;</span><span class="w"> </span><span class="n">id</span><span class="o">=</span><span class="s1">&#39;...&#39;</span><span class="o">&gt;</span>
+<span class="n">mock_gateway_class</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&lt;</span><span class="n">MagicMock</span><span class="w"> </span><span class="n">name</span><span class="o">=</span><span class="s1">&#39;PaymentGateway&#39;</span><span class="w"> </span><span class="n">id</span><span class="o">=</span><span class="s1">&#39;...&#39;</span><span class="o">&gt;</span>
+
+<span class="w">    </span><span class="nv">@patch</span><span class="p">(</span><span class="s1">&#39;src.orders.PaymentGateway&#39;</span><span class="p">)</span>
+<span class="w">    </span><span class="nv">@patch</span><span class="p">(</span><span class="s1">&#39;src.orders.NotificationService&#39;</span><span class="p">)</span>
+<span class="w">    </span><span class="n">def</span><span class="w"> </span><span class="n">test_process_order_success_with_assertions</span><span class="p">(</span><span class="n">mock_notifier_class</span><span class="p">,</span><span class="w"> </span><span class="n">mock_gateway_class</span><span class="p">)</span><span class="err">:</span>
+<span class="w">        </span><span class="err">#</span><span class="w"> </span><span class="p">...</span><span class="w"> </span><span class="p">(</span><span class="n">setup</span><span class="w"> </span><span class="n">code</span><span class="p">)</span><span class="w"> </span><span class="p">...</span>
+
+<span class="w">        </span><span class="err">#</span><span class="w"> </span><span class="n">Verify</span><span class="w"> </span><span class="n">the</span><span class="w"> </span><span class="n">gateway</span><span class="w"> </span><span class="n">was</span><span class="w"> </span><span class="n">used</span><span class="w"> </span><span class="n">correctly</span>
+<span class="o">&gt;</span><span class="w">       </span><span class="n">mock_gateway_instance</span><span class="p">.</span><span class="n">charge</span><span class="p">.</span><span class="n">assert_called_once_with</span><span class="p">(</span><span class="ss">&quot;tok_mock&quot;</span><span class="p">,</span><span class="w"> </span><span class="mf">29.99</span><span class="p">)</span>
+<span class="n">E</span><span class="w">       </span><span class="nl">AssertionError</span><span class="p">:</span><span class="w"> </span><span class="n">expected</span><span class="w"> </span><span class="k">call</span><span class="w"> </span><span class="ow">not</span><span class="w"> </span><span class="k">found</span><span class="p">.</span>
+<span class="n">E</span><span class="w">       </span><span class="nl">Expected</span><span class="p">:</span><span class="w"> </span><span class="n">charge</span><span class="p">(</span><span class="s1">&#39;tok_mock&#39;</span><span class="p">,</span><span class="w"> </span><span class="mf">29.99</span><span class="p">)</span>
+<span class="n">E</span><span class="w">       </span><span class="nl">Actual</span><span class="p">:</span><span class="w"> </span><span class="n">charge</span><span class="p">(</span><span class="s1">&#39;tok_mock&#39;</span><span class="p">,</span><span class="w"> </span><span class="mf">19.99</span><span class="p">)</span>
+
+<span class="n">tests</span><span class="o">/</span><span class="n">test_orders_mocked</span><span class="p">.</span><span class="nl">py</span><span class="p">:</span><span class="mi">28</span><span class="err">:</span><span class="w"> </span><span class="n">AssertionError</span>
+<span class="o">=========================</span><span class="w"> </span><span class="n">short</span><span class="w"> </span><span class="n">test</span><span class="w"> </span><span class="n">summary</span><span class="w"> </span><span class="n">info</span><span class="w"> </span><span class="o">==========================</span>
+<span class="n">FAILED</span><span class="w"> </span><span class="n">tests</span><span class="o">/</span><span class="n">test_orders_mocked</span><span class="p">.</span><span class="nl">py</span><span class="p">:</span><span class="err">:</span><span class="n">test_process_order_success_with_assertions</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="nl">AssertionError</span><span class="p">:</span><span class="w"> </span><span class="n">expected</span><span class="w"> </span><span class="k">call</span><span class="w"> </span><span class="ow">not</span><span class="w"> </span><span class="k">found</span><span class="p">.</span>
+<span class="o">============================</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="n">failed</span><span class="w"> </span><span class="ow">in</span><span class="w"> </span><span class="mf">0.05</span><span class="n">s</span><span class="w"> </span><span class="o">=============================</span>
+</code></pre></div>
+
+<p><strong>Let's parse this section by section</strong>:</p>
+<ol>
+<li>
+<p><strong>The summary line</strong>: <code>FAILED ... - AssertionError: expected call not found.</code></p>
 <ul>
-<li>Use <strong><code>unittest.mock.patch</code></strong> (as a decorator or context manager) when your primary goal is to replace an object with a <code>Mock</code> to verify interactions (e.g., <code>assert_called_with</code>). It's the standard for classic mocking.</li>
-<li>Use <strong><code>monkeypatch</code></strong> when you want to replace something with a simple value or a fake function that doesn't need complex mock assertions. It's great for setting environment variables (<code>monkeypatch.setenv</code>), changing constants, or replacing a function with a simple lambda that returns a fixed value.</li>
+<li>What this tells us: The test failed because a mock assertion failed. Specifically, we asserted a method was called in a certain way, but it wasn't.</li>
 </ul>
-<p>For most of the mocking scenarios you'll encounter, combining <code>unittest.mock.patch</code> with pytest fixtures provides the cleanest and most powerful pattern. It leverages the strengths of both libraries: the sophisticated mocking capabilities of <code>unittest.mock</code> and the elegant dependency injection and setup/teardown management of pytest fixtures.</p>
+</li>
+<li>
+<p><strong>The traceback</strong>:
+    <code>python
+    &gt;       mock_gateway_instance.charge.assert_called_once_with("tok_mock", 29.99)
+    E       AssertionError: expected call not found.</code></p>
+<ul>
+<li>What this tells us: The exact line that failed was our call to <code>assert_called_once_with</code>.</li>
+</ul>
+</li>
+<li>
+<p><strong>The assertion introspection</strong>:
+    <code>E       Expected: charge('tok_mock', 29.99)
+    E       Actual: charge('tok_mock', 19.99)</code></p>
+<ul>
+<li>What this tells us: This is the most valuable part. The <code>unittest.mock</code> library provides an incredibly clear report. We expected a call with the amount <code>29.99</code>, but the actual call was made with <code>19.99</code>.</li>
+</ul>
+</li>
+</ol>
+<p><strong>Root cause identified</strong>: Our assertion for the <code>amount</code> argument was incorrect.
+<strong>Why the current approach can't solve this</strong>: The test itself is fine; the <em>assertion data</em> is wrong. This failure proves our test is working correctly—it caught a discrepancy.
+<strong>What we need</strong>: To fix the test, we simply need to update the assertion to reflect the correct, expected arguments.</p>
+<h3 id="the-solution">The Solution</h3>
+<p>Let's fix the assertion and rerun the test.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_orders_mocked.py (fixed test)</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">patch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.orders</span><span class="w"> </span><span class="kn">import</span> <span class="n">process_order</span>
+
+<span class="nd">@patch</span><span class="p">(</span><span class="s1">&#39;src.orders.PaymentGateway&#39;</span><span class="p">)</span>
+<span class="nd">@patch</span><span class="p">(</span><span class="s1">&#39;src.orders.NotificationService&#39;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_order_success_with_assertions_fixed</span><span class="p">(</span><span class="n">mock_notifier_class</span><span class="p">,</span> <span class="n">mock_gateway_class</span><span class="p">):</span>
+    <span class="c1"># Arrange</span>
+    <span class="n">mock_gateway_instance</span> <span class="o">=</span> <span class="n">mock_gateway_class</span><span class="o">.</span><span class="n">return_value</span>
+    <span class="n">mock_gateway_instance</span><span class="o">.</span><span class="n">charge</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="s2">&quot;tx_mock_456&quot;</span>
+    <span class="n">mock_notifier_instance</span> <span class="o">=</span> <span class="n">mock_notifier_class</span><span class="o">.</span><span class="n">return_value</span>
+
+    <span class="c1"># Act</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">process_order</span><span class="p">(</span>
+        <span class="n">order_id</span><span class="o">=</span><span class="s2">&quot;order_456&quot;</span><span class="p">,</span>
+        <span class="n">customer_email</span><span class="o">=</span><span class="s2">&quot;mock@example.com&quot;</span><span class="p">,</span>
+        <span class="n">card_details</span><span class="o">=</span><span class="s2">&quot;tok_mock&quot;</span><span class="p">,</span>
+        <span class="n">amount</span><span class="o">=</span><span class="mf">19.99</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Assert</span>
+    <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="s2">&quot;Order processed successfully.&quot;</span>
+    <span class="n">mock_gateway_instance</span><span class="o">.</span><span class="n">charge</span><span class="o">.</span><span class="n">assert_called_once_with</span><span class="p">(</span><span class="s2">&quot;tok_mock&quot;</span><span class="p">,</span> <span class="mf">19.99</span><span class="p">)</span> <span class="c1"># CORRECTED</span>
+    <span class="n">mock_notifier_instance</span><span class="o">.</span><span class="n">send_receipt</span><span class="o">.</span><span class="n">assert_called_once_with</span><span class="p">(</span>
+        <span class="s2">&quot;mock@example.com&quot;</span><span class="p">,</span> <span class="s2">&quot;tx_mock_456&quot;</span>
+    <span class="p">)</span>
+</code></pre></div>
+
+<p>Running this test now passes, and we have much higher confidence in its correctness. We've verified the final output <em>and</em> the internal interactions with its dependencies.</p>
+<h2 id="mock-side-effects-and-return-values">Mock Side Effects and Return Values</h2>
+<h2 id="controlling-mock-behavior">Controlling Mock Behavior</h2>
+<p>So far, we've used <code>return_value</code> to specify what a mock method should return. This is the most common way to configure a mock. But what if we need to simulate more complex behavior, like an error?</p>
+<h3 id="iteration-3-testing-failure-paths">Iteration 3: Testing Failure Paths</h3>
+<p><strong>Current Limitation:</strong> We've only tested the "happy path" where the payment succeeds. A robust test suite must also cover failure scenarios.</p>
+<p><strong>New Scenario:</strong> What happens if the payment gateway declines the charge? Our <code>process_order</code> function should return "Payment failed." and should <em>not</em> call the notification service.</p>
+<p>To test this, we need to configure our mock gateway's <code>charge</code> method to simulate a failure. In our real <code>PaymentGateway</code>, a failed charge returns an empty string. Let's simulate that.</p>
+<p>We can also use another powerful attribute: <code>side_effect</code>. The <code>side_effect</code> argument can be used to raise exceptions or to return different values on subsequent calls.</p>
+<ul>
+<li><code>mock.method.side_effect = Exception("Boom!")</code>: Calling <code>mock.method()</code> will now raise <code>Exception("Boom!")</code>.</li>
+<li><code>mock.method.side_effect = [val1, val2, val3]</code>: The first call will return <code>val1</code>, the second <code>val2</code>, etc.</li>
+</ul>
+<p>Let's write two new tests: one for a declined payment and one for a gateway exception.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_orders_mocked.py (new tests for failure paths)</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">patch</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.orders</span><span class="w"> </span><span class="kn">import</span> <span class="n">process_order</span>
+
+<span class="c1"># We&#39;ll need a custom exception for one of our tests</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">GatewayError</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="k">pass</span>
+
+<span class="nd">@patch</span><span class="p">(</span><span class="s1">&#39;src.orders.PaymentGateway&#39;</span><span class="p">)</span>
+<span class="nd">@patch</span><span class="p">(</span><span class="s1">&#39;src.orders.NotificationService&#39;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_order_payment_declined</span><span class="p">(</span><span class="n">mock_notifier_class</span><span class="p">,</span> <span class="n">mock_gateway_class</span><span class="p">):</span>
+    <span class="c1"># Arrange: Configure the gateway to simulate a declined payment (returns empty string)</span>
+    <span class="n">mock_gateway_instance</span> <span class="o">=</span> <span class="n">mock_gateway_class</span><span class="o">.</span><span class="n">return_value</span>
+    <span class="n">mock_gateway_instance</span><span class="o">.</span><span class="n">charge</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span> <span class="c1"># Simulate failure</span>
+    <span class="n">mock_notifier_instance</span> <span class="o">=</span> <span class="n">mock_notifier_class</span><span class="o">.</span><span class="n">return_value</span>
+
+    <span class="c1"># Act</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">process_order</span><span class="p">(</span><span class="s2">&quot;order_789&quot;</span><span class="p">,</span> <span class="s2">&quot;fail@example.com&quot;</span><span class="p">,</span> <span class="s2">&quot;tok_declined&quot;</span><span class="p">,</span> <span class="mf">100.00</span><span class="p">)</span>
+
+    <span class="c1"># Assert</span>
+    <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="s2">&quot;Payment failed.&quot;</span>
+    <span class="n">mock_gateway_instance</span><span class="o">.</span><span class="n">charge</span><span class="o">.</span><span class="n">assert_called_once_with</span><span class="p">(</span><span class="s2">&quot;tok_declined&quot;</span><span class="p">,</span> <span class="mf">100.00</span><span class="p">)</span>
+
+    <span class="c1"># Crucially, assert the notifier was *not* called</span>
+    <span class="n">mock_notifier_instance</span><span class="o">.</span><span class="n">send_receipt</span><span class="o">.</span><span class="n">assert_not_called</span><span class="p">()</span>
+
+<span class="nd">@patch</span><span class="p">(</span><span class="s1">&#39;src.orders.PaymentGateway&#39;</span><span class="p">)</span>
+<span class="nd">@patch</span><span class="p">(</span><span class="s1">&#39;src.orders.NotificationService&#39;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_order_gateway_error</span><span class="p">(</span><span class="n">mock_notifier_class</span><span class="p">,</span> <span class="n">mock_gateway_class</span><span class="p">):</span>
+    <span class="c1"># Arrange: Configure the gateway to raise an exception</span>
+    <span class="n">mock_gateway_instance</span> <span class="o">=</span> <span class="n">mock_gateway_class</span><span class="o">.</span><span class="n">return_value</span>
+    <span class="n">mock_gateway_instance</span><span class="o">.</span><span class="n">charge</span><span class="o">.</span><span class="n">side_effect</span> <span class="o">=</span> <span class="n">GatewayError</span><span class="p">(</span><span class="s2">&quot;Connection timed out&quot;</span><span class="p">)</span>
+    <span class="n">mock_notifier_instance</span> <span class="o">=</span> <span class="n">mock_notifier_class</span><span class="o">.</span><span class="n">return_value</span>
+
+    <span class="c1"># Act &amp; Assert: Use pytest.raises to check for the exception</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">GatewayError</span><span class="p">,</span> <span class="n">match</span><span class="o">=</span><span class="s2">&quot;Connection timed out&quot;</span><span class="p">):</span>
+        <span class="n">process_order</span><span class="p">(</span><span class="s2">&quot;order_999&quot;</span><span class="p">,</span> <span class="s2">&quot;error@example.com&quot;</span><span class="p">,</span> <span class="s2">&quot;tok_error&quot;</span><span class="p">,</span> <span class="mf">200.00</span><span class="p">)</span>
+
+    <span class="c1"># Assert that the notifier was not called in this case either</span>
+    <span class="n">mock_notifier_instance</span><span class="o">.</span><span class="n">send_receipt</span><span class="o">.</span><span class="n">assert_not_called</span><span class="p">()</span>
+</code></pre></div>
+
+<p>These tests now pass and give us confidence that our <code>process_order</code> function correctly handles two critical failure modes. Mocks made this trivial to test; trying to test this with a real payment gateway would be nearly impossible.</p>
+<h2 id="combining-mocks-and-fixtures">Combining Mocks and Fixtures</h2>
+<h2 id="the-pytest-way-mocks-as-fixtures">The Pytest Way: Mocks as Fixtures</h2>
+<p>Using multiple <code>@patch</code> decorators on every test function works, but it has some drawbacks:
+-   <strong>Verbosity:</strong> The decorators stack up, adding boilerplate to each test.
+-   <strong>Repetition:</strong> If many tests need the same mock setup, you're repeating the <code>@patch</code> lines everywhere.
+-   <strong>Argument Ordering:</strong> You have to remember the reverse order of arguments (<code>@patch('A')</code>, <code>@patch('B')</code> means the test signature is <code>def test(mock_B, mock_A):</code>). This is a common source of bugs.</p>
+<p>Pytest's fixture system provides a much cleaner and more maintainable way to manage mocks. We can move the patching logic inside a fixture. The <code>patch</code> object can also be used as a context manager, which is perfect for fixtures.</p>
+<h3 id="iteration-4-refactoring-to-fixtures">Iteration 4: Refactoring to Fixtures</h3>
+<p><strong>Current Limitation:</strong> Our tests are becoming repetitive with multiple <code>@patch</code> decorators.</p>
+<p><strong>Goal:</strong> Encapsulate the mock setup into reusable fixtures to make tests cleaner and more declarative.</p>
+<p>Let's create two fixtures, <code>mock_gateway</code> and <code>mock_notifier</code>, in our test file.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_orders_fixtures.py</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">patch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.orders</span><span class="w"> </span><span class="kn">import</span> <span class="n">process_order</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">mock_gateway</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fixture to mock the PaymentGateway.&quot;&quot;&quot;</span>
+    <span class="k">with</span> <span class="n">patch</span><span class="p">(</span><span class="s1">&#39;src.orders.PaymentGateway&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">mock_gateway_class</span><span class="p">:</span>
+        <span class="n">mock_instance</span> <span class="o">=</span> <span class="n">mock_gateway_class</span><span class="o">.</span><span class="n">return_value</span>
+        <span class="k">yield</span> <span class="n">mock_instance</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">mock_notifier</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fixture to mock the NotificationService.&quot;&quot;&quot;</span>
+    <span class="k">with</span> <span class="n">patch</span><span class="p">(</span><span class="s1">&#39;src.orders.NotificationService&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">mock_notifier_class</span><span class="p">:</span>
+        <span class="n">mock_instance</span> <span class="o">=</span> <span class="n">mock_notifier_class</span><span class="o">.</span><span class="n">return_value</span>
+        <span class="k">yield</span> <span class="n">mock_instance</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_order_success_with_fixtures</span><span class="p">(</span><span class="n">mock_gateway</span><span class="p">,</span> <span class="n">mock_notifier</span><span class="p">):</span>
+    <span class="c1"># Arrange</span>
+    <span class="n">mock_gateway</span><span class="o">.</span><span class="n">charge</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="s2">&quot;tx_fixture_123&quot;</span>
+
+    <span class="c1"># Act</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">process_order</span><span class="p">(</span>
+        <span class="n">order_id</span><span class="o">=</span><span class="s2">&quot;order_fixture&quot;</span><span class="p">,</span>
+        <span class="n">customer_email</span><span class="o">=</span><span class="s2">&quot;fixture@example.com&quot;</span><span class="p">,</span>
+        <span class="n">card_details</span><span class="o">=</span><span class="s2">&quot;tok_fixture&quot;</span><span class="p">,</span>
+        <span class="n">amount</span><span class="o">=</span><span class="mf">50.00</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Assert</span>
+    <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="s2">&quot;Order processed successfully.&quot;</span>
+    <span class="n">mock_gateway</span><span class="o">.</span><span class="n">charge</span><span class="o">.</span><span class="n">assert_called_once_with</span><span class="p">(</span><span class="s2">&quot;tok_fixture&quot;</span><span class="p">,</span> <span class="mf">50.00</span><span class="p">)</span>
+    <span class="n">mock_notifier</span><span class="o">.</span><span class="n">send_receipt</span><span class="o">.</span><span class="n">assert_called_once_with</span><span class="p">(</span>
+        <span class="s2">&quot;fixture@example.com&quot;</span><span class="p">,</span> <span class="s2">&quot;tx_fixture_123&quot;</span>
+    <span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_order_payment_declined_with_fixtures</span><span class="p">(</span><span class="n">mock_gateway</span><span class="p">,</span> <span class="n">mock_notifier</span><span class="p">):</span>
+    <span class="c1"># Arrange</span>
+    <span class="n">mock_gateway</span><span class="o">.</span><span class="n">charge</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span> <span class="c1"># Simulate failure</span>
+
+    <span class="c1"># Act</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">process_order</span><span class="p">(</span><span class="s2">&quot;order_fail&quot;</span><span class="p">,</span> <span class="s2">&quot;fail_fixture@example.com&quot;</span><span class="p">,</span> <span class="s2">&quot;tok_declined&quot;</span><span class="p">,</span> <span class="mf">75.00</span><span class="p">)</span>
+
+    <span class="c1"># Assert</span>
+    <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="s2">&quot;Payment failed.&quot;</span>
+    <span class="n">mock_gateway</span><span class="o">.</span><span class="n">charge</span><span class="o">.</span><span class="n">assert_called_once_with</span><span class="p">(</span><span class="s2">&quot;tok_declined&quot;</span><span class="p">,</span> <span class="mf">75.00</span><span class="p">)</span>
+    <span class="n">mock_notifier</span><span class="o">.</span><span class="n">send_receipt</span><span class="o">.</span><span class="n">assert_not_called</span><span class="p">()</span>
+</code></pre></div>
+
+<p>This is a significant improvement.
+-   <strong>Declarative:</strong> The test function now clearly states its dependencies: <code>mock_gateway</code> and <code>mock_notifier</code>.
+-   <strong>Clean:</strong> The test body contains only the logic relevant to that specific test case (Arrange, Act, Assert). The boilerplate of patching is hidden in the fixtures.
+-   <strong>Reusable:</strong> These fixtures can be used by any test in the file. If you move them to a <code>conftest.py</code> file, they can be used by your entire test suite.</p>
+<p>This pattern of wrapping <code>patch</code> in a fixture is the idiomatic way to use <code>unittest.mock</code> with pytest.</p>
+<h3 id="synthesis-the-complete-journey">Synthesis: The Complete Journey</h3>
+<p>Let's review our progress. We started with a slow, unreliable integration test and progressively refined it into a fast, robust, and maintainable suite of unit tests.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Iteration</th>
+<th style="text-align: left;">Failure Mode / Limitation</th>
+<th style="text-align: left;">Technique Applied</th>
+<th style="text-align: left;">Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">0</td>
+<td style="text-align: left;">Test is slow (~3s) and unreliable.</td>
+<td style="text-align: left;">None (direct call to real services)</td>
+<td style="text-align: left;">An integration test, not a unit test.</td>
+</tr>
+<tr>
+<td style="text-align: left;">1</td>
+<td style="text-align: left;">Slowness and unreliability.</td>
+<td style="text-align: left;"><code>@patch</code> decorator</td>
+<td style="text-align: left;">Test is fast (~0.02s) but doesn't verify interactions.</td>
+</tr>
+<tr>
+<td style="text-align: left;">2</td>
+<td style="text-align: left;">Test passes but doesn't prove correctness.</td>
+<td style="text-align: left;"><code>assert_called_with</code></td>
+<td style="text-align: left;">Test now verifies that dependencies are called with correct arguments.</td>
+</tr>
+<tr>
+<td style="text-align: left;">3</td>
+<td style="text-align: left;">Only the "happy path" is tested.</td>
+<td style="text-align: left;"><code>return_value</code> and <code>side_effect</code> for failures</td>
+<td style="text-align: left;">Test suite now covers success, decline, and exception scenarios.</td>
+</tr>
+<tr>
+<td style="text-align: left;">4</td>
+<td style="text-align: left;">Test setup is verbose and repetitive (<code>@patch</code> stack).</td>
+<td style="text-align: left;"><code>patch</code> as a context manager inside fixtures</td>
+<td style="text-align: left;">Tests are clean, declarative, and setup logic is reusable.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="final-implementation">Final Implementation</h3>
+<p>Here is what a final, production-ready test file for our <code>process_order</code> function might look like, using all the techniques we've learned.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/final/test_orders.py</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">patch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.orders</span><span class="w"> </span><span class="kn">import</span> <span class="n">process_order</span>
+
+<span class="c1"># A custom exception for testing error paths</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">GatewayError</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="k">pass</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">mock_gateway</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fixture to mock the PaymentGateway, returning the instance.&quot;&quot;&quot;</span>
+    <span class="c1"># Using autospec=True is a best practice. It ensures the mock has the same</span>
+    <span class="c1"># API as the real object. If you try to call a non-existent method,</span>
+    <span class="c1"># your test will fail.</span>
+    <span class="k">with</span> <span class="n">patch</span><span class="p">(</span><span class="s1">&#39;src.orders.PaymentGateway&#39;</span><span class="p">,</span> <span class="n">autospec</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">as</span> <span class="n">mock_gateway_class</span><span class="p">:</span>
+        <span class="n">mock_instance</span> <span class="o">=</span> <span class="n">mock_gateway_class</span><span class="o">.</span><span class="n">return_value</span>
+        <span class="k">yield</span> <span class="n">mock_instance</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">mock_notifier</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fixture to mock the NotificationService, returning the instance.&quot;&quot;&quot;</span>
+    <span class="k">with</span> <span class="n">patch</span><span class="p">(</span><span class="s1">&#39;src.orders.NotificationService&#39;</span><span class="p">,</span> <span class="n">autospec</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">as</span> <span class="n">mock_notifier_class</span><span class="p">:</span>
+        <span class="n">mock_instance</span> <span class="o">=</span> <span class="n">mock_notifier_class</span><span class="o">.</span><span class="n">return_value</span>
+        <span class="k">yield</span> <span class="n">mock_instance</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_order_success</span><span class="p">(</span><span class="n">mock_gateway</span><span class="p">,</span> <span class="n">mock_notifier</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests the successful order processing path.&quot;&quot;&quot;</span>
+    <span class="c1"># Arrange</span>
+    <span class="n">mock_gateway</span><span class="o">.</span><span class="n">charge</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="s2">&quot;tx_final_123&quot;</span>
+
+    <span class="c1"># Act</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">process_order</span><span class="p">(</span><span class="s2">&quot;order_final&quot;</span><span class="p">,</span> <span class="s2">&quot;final@example.com&quot;</span><span class="p">,</span> <span class="s2">&quot;tok_final&quot;</span><span class="p">,</span> <span class="mf">99.99</span><span class="p">)</span>
+
+    <span class="c1"># Assert</span>
+    <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="s2">&quot;Order processed successfully.&quot;</span>
+    <span class="n">mock_gateway</span><span class="o">.</span><span class="n">charge</span><span class="o">.</span><span class="n">assert_called_once_with</span><span class="p">(</span><span class="s2">&quot;tok_final&quot;</span><span class="p">,</span> <span class="mf">99.99</span><span class="p">)</span>
+    <span class="n">mock_notifier</span><span class="o">.</span><span class="n">send_receipt</span><span class="o">.</span><span class="n">assert_called_once_with</span><span class="p">(</span><span class="s2">&quot;final@example.com&quot;</span><span class="p">,</span> <span class="s2">&quot;tx_final_123&quot;</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_order_payment_declined</span><span class="p">(</span><span class="n">mock_gateway</span><span class="p">,</span> <span class="n">mock_notifier</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests the path where payment is declined.&quot;&quot;&quot;</span>
+    <span class="c1"># Arrange</span>
+    <span class="n">mock_gateway</span><span class="o">.</span><span class="n">charge</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+
+    <span class="c1"># Act</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">process_order</span><span class="p">(</span><span class="s2">&quot;order_declined&quot;</span><span class="p">,</span> <span class="s2">&quot;declined@example.com&quot;</span><span class="p">,</span> <span class="s2">&quot;tok_declined&quot;</span><span class="p">,</span> <span class="mf">150.00</span><span class="p">)</span>
+
+    <span class="c1"># Assert</span>
+    <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="s2">&quot;Payment failed.&quot;</span>
+    <span class="n">mock_gateway</span><span class="o">.</span><span class="n">charge</span><span class="o">.</span><span class="n">assert_called_once_with</span><span class="p">(</span><span class="s2">&quot;tok_declined&quot;</span><span class="p">,</span> <span class="mf">150.00</span><span class="p">)</span>
+    <span class="n">mock_notifier</span><span class="o">.</span><span class="n">send_receipt</span><span class="o">.</span><span class="n">assert_not_called</span><span class="p">()</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_order_gateway_exception</span><span class="p">(</span><span class="n">mock_gateway</span><span class="p">,</span> <span class="n">mock_notifier</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests that an exception from the gateway is propagated.&quot;&quot;&quot;</span>
+    <span class="c1"># Arrange</span>
+    <span class="n">mock_gateway</span><span class="o">.</span><span class="n">charge</span><span class="o">.</span><span class="n">side_effect</span> <span class="o">=</span> <span class="n">GatewayError</span><span class="p">(</span><span class="s2">&quot;Gateway is down&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Act &amp; Assert</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">GatewayError</span><span class="p">,</span> <span class="n">match</span><span class="o">=</span><span class="s2">&quot;Gateway is down&quot;</span><span class="p">):</span>
+        <span class="n">process_order</span><span class="p">(</span><span class="s2">&quot;order_error&quot;</span><span class="p">,</span> <span class="s2">&quot;error@example.com&quot;</span><span class="p">,</span> <span class="s2">&quot;tok_error&quot;</span><span class="p">,</span> <span class="mf">250.00</span><span class="p">)</span>
+
+    <span class="n">mock_notifier</span><span class="o">.</span><span class="n">send_receipt</span><span class="o">.</span><span class="n">assert_not_called</span><span class="p">()</span>
+</code></pre></div>
         </div>
         <div class="footer">
-            Generated on 2025-11-22 17:25:04 | Made with ❤️ by GitHub Pages Generator
+            Generated on 2025-11-24 14:31:15 | Made with ❤️ by GitHub Pages Generator
         </div>
     </div>
     <script>

@@ -360,582 +360,555 @@
             <h1 id="chapter-4-fixturesthe-foundation-of-pytest">Chapter 4: Fixtures—The Foundation of Pytest</h1>
 <h2 id="what-are-fixtures">What Are Fixtures?</h2>
 <h2 id="what-are-fixtures_1">What Are Fixtures?</h2>
-<p>In the world of testing, we often find ourselves writing the same setup and cleanup code over and over again. Imagine testing a user management system. For each test, you might need to:</p>
+<p>In the world of testing, a "test fixture" is a standardized context in which tests are run. It's everything your test needs to be in place <em>before</em> it can execute and be cleaned up <em>after</em> it finishes. This includes:</p>
+<ul>
+<li><strong>Data</strong>: Loading a specific dataset from a file or database.</li>
+<li><strong>Objects</strong>: Creating instances of classes your test will interact with.</li>
+<li><strong>Connections</strong>: Establishing a connection to a database or a network service.</li>
+<li><strong>State</strong>: Putting the system into a known state, like logging in a user.</li>
+<li><strong>Resources</strong>: Creating temporary files or directories.</li>
+</ul>
+<p>Without a fixture system, you would have to manually write setup and teardown code for every single test function. This leads to two major problems:</p>
 <ol>
-<li>Connect to a database.</li>
-<li>Create a sample user.</li>
-<li>Perform the test action (e.g., update the user's email).</li>
-<li>Verify the result.</li>
-<li>Remove the sample user.</li>
-<li>Close the database connection.</li>
+<li><strong>Repetition</strong>: You end up copy-pasting the same setup code over and over again.</li>
+<li><strong>Brittleness</strong>: If the setup logic needs to change, you have to find and update it in dozens of places.</li>
 </ol>
-<p>Repeating steps 1, 2, 5, and 6 for every single test is tedious, error-prone, and makes your tests hard to read. This is the exact problem fixtures are designed to solve.</p>
-<p>A <strong>fixture</strong> is a function that provides a reliable, repeatable context for your tests. It handles the setup before a test runs and the cleanup after it finishes. Think of it as a service that prepares the stage for your test and cleans up the props afterward.</p>
-<h3 id="the-pain-of-repetitive-setup">The Pain of Repetitive Setup</h3>
-<p>Let's look at a simple example without fixtures. We have a <code>Wallet</code> class and we want to test adding and spending cash.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># src/wallet.py</span>
-
-<span class="k">class</span><span class="w"> </span><span class="nc">InsufficientAmount</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
-    <span class="k">pass</span>
-
-<span class="k">class</span><span class="w"> </span><span class="nc">Wallet</span><span class="p">:</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">initial_amount</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">=</span> <span class="n">initial_amount</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">spend_cash</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">amount</span><span class="p">):</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">&lt;</span> <span class="n">amount</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="n">InsufficientAmount</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Not enough available to spend </span><span class="si">{</span><span class="n">amount</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">-=</span> <span class="n">amount</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">add_cash</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">amount</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">+=</span> <span class="n">amount</span>
-</code></pre></div>
-
-<p>Now, let's write some tests. Notice the repetition in creating a <code>Wallet</code> instance for each test.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_wallet_no_fixtures.py</span>
-
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.wallet</span><span class="w"> </span><span class="kn">import</span> <span class="n">Wallet</span><span class="p">,</span> <span class="n">InsufficientAmount</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_default_initial_amount</span><span class="p">():</span>
-    <span class="c1"># Setup</span>
-    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">()</span>
-    <span class="c1"># Assert</span>
-    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">0</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_setting_initial_amount</span><span class="p">():</span>
-    <span class="c1"># Setup</span>
-    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span>
-    <span class="c1"># Assert</span>
-    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">100</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_wallet_add_cash</span><span class="p">():</span>
-    <span class="c1"># Setup</span>
-    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
-    <span class="c1"># Action</span>
-    <span class="n">wallet</span><span class="o">.</span><span class="n">add_cash</span><span class="p">(</span><span class="mi">80</span><span class="p">)</span>
-    <span class="c1"># Assert</span>
-    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">100</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_wallet_spend_cash</span><span class="p">():</span>
-    <span class="c1"># Setup</span>
-    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
-    <span class="c1"># Action</span>
-    <span class="n">wallet</span><span class="o">.</span><span class="n">spend_cash</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
-    <span class="c1"># Assert</span>
-    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">10</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_wallet_spend_cash_raises_exception_on_insufficient_amount</span><span class="p">():</span>
-    <span class="c1"># Setup</span>
-    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">()</span>
-    <span class="c1"># Action &amp; Assert</span>
-    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">InsufficientAmount</span><span class="p">):</span>
-        <span class="n">wallet</span><span class="o">.</span><span class="n">spend_cash</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span>
-</code></pre></div>
-
-<p>This works, but the <code>wallet = Wallet(...)</code> line is repeated in every test. If the <code>Wallet</code> initialization became more complex (e.g., requiring a database connection or a configuration object), changing it in every test would be a nightmare.</p>
-<h3 id="the-fixture-philosophy-dependency-injection">The Fixture Philosophy: Dependency Injection</h3>
-<p>Pytest fixtures introduce a powerful concept from software engineering called <strong>dependency injection</strong>. Instead of creating objects inside your test functions, your test functions <em>declare</em> what they need as arguments. Pytest sees these arguments, finds the corresponding fixtures, runs them, and "injects" the results into your test.</p>
-<p>The test says, "I need a wallet to run." Pytest says, "I know how to make a wallet. Here you go."</p>
-<p>This approach has profound benefits:
-1.  <strong>Decoupling</strong>: Your test logic is separated from the setup logic. The test cares about <em>what</em> it's testing, not <em>how</em> the object is created.
-2.  <strong>Reusability</strong>: The same fixture can be used by hundreds of tests across your entire project.
-3.  <strong>Maintainability</strong>: If the <code>Wallet</code> initialization changes, you only need to update the fixture in one place.</p>
-<p>Fixtures are the backbone of a clean, scalable, and maintainable pytest suite. They are more than just setup/teardown helpers; they are a powerful system for managing the resources and state your tests depend on.</p>
+<p>Pytest's fixture system is its most powerful and distinctive feature. It solves these problems by providing a modular, reusable, and elegant way to manage the context of your tests.</p>
+<h3 id="the-philosophy-composition-over-inheritance">The Philosophy: Composition over Inheritance</h3>
+<p>Unlike older testing frameworks (like Python's built-in <code>unittest</code>) that rely on <code>setUp</code> and <code>tearDown</code> methods within large test classes, pytest encourages a different approach. Pytest fixtures are standalone functions that you "request" by name in your test's arguments.</p>
+<p>This is a shift from <strong>inheritance</strong> (where a test class inherits its setup from a base class) to <strong>composition</strong> (where a test function composes its context from the fixtures it needs).</p>
+<p>This approach has several advantages:
+-   <strong>Explicit</strong>: You can see exactly what a test needs just by looking at its signature.
+-   <strong>Modular</strong>: Fixtures are small, independent, and focused on doing one thing well.
+-   <strong>Reusable</strong>: The same fixture can be used by any number of tests across your entire test suite.
+-   <strong>Scalable</strong>: You can build complex fixtures by combining simpler ones, just like building with LEGO bricks.</p>
+<p>In this chapter, we will build a test suite for a simple data processing utility. We'll start by doing everything the "wrong" way—manually—to feel the pain. Then, we will progressively refactor our code, introducing one fixture concept at a time to solve each problem we encounter. This journey will transform our messy, repetitive tests into a clean, maintainable, and professional test suite.</p>
 <h2 id="simple-fixtures-setup-and-teardown">Simple Fixtures: Setup and Teardown</h2>
 <h2 id="simple-fixtures-setup-and-teardown_1">Simple Fixtures: Setup and Teardown</h2>
-<p>The most basic fixture provides an object or value to a test. Let's refactor our wallet tests to use one. A fixture is just a Python function decorated with <code>@pytest.fixture</code>.</p>
-<h3 id="a-basic-setup-fixture">A Basic Setup Fixture</h3>
-<p>We can create a fixture that provides an empty wallet. The name of the function (<code>wallet</code>) becomes the name of the fixture that tests can request.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_wallet_with_fixture.py</span>
+<p>Before we dive into pytest's decorator-based fixture system, let's establish our anchor example and see what testing looks like without a proper fixture system. This will help us understand the exact problems that fixtures are designed to solve.</p>
+<h3 id="the-anchor-example-a-simple-data-processor">The Anchor Example: A Simple Data Processor</h3>
+<p>Imagine we have a utility class, <code>DataProcessor</code>, that reads numerical data from a file, calculates the average, and can tell us the total number of data points.</p>
+<p>Here is the code we need to test. Save this in a file named <code>data_processor.py</code>.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># data_processor.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.wallet</span><span class="w"> </span><span class="kn">import</span> <span class="n">Wallet</span><span class="p">,</span> <span class="n">InsufficientAmount</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DataProcessor</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data_path</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Initializes the processor with the path to a data file.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">data_path</span> <span class="o">=</span> <span class="n">data_path</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">data</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_load_data</span><span class="p">()</span>
 
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">wallet</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Returns a Wallet instance with a balance of 20.&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_load_data</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Loads data from a JSON file.&quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">data_path</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">FileNotFoundError</span><span class="p">,</span> <span class="n">json</span><span class="o">.</span><span class="n">JSONDecodeError</span><span class="p">):</span>
+            <span class="k">return</span> <span class="p">[]</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_wallet_spend_cash</span><span class="p">(</span><span class="n">wallet</span><span class="p">):</span>
-    <span class="c1"># The &#39;wallet&#39; argument is automatically provided by pytest</span>
-    <span class="n">wallet</span><span class="o">.</span><span class="n">spend_cash</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">10</span>
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">record_count</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the number of records.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">)</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_wallet_add_cash</span><span class="p">(</span><span class="n">wallet</span><span class="p">):</span>
-    <span class="c1"># This test also gets its own, separate Wallet instance</span>
-    <span class="n">wallet</span><span class="o">.</span><span class="n">add_cash</span><span class="p">(</span><span class="mi">80</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">100</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">calculate_average</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">column_name</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Calculates the average of a given column.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span> <span class="ow">or</span> <span class="n">column_name</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="mi">0</span><span class="p">]:</span>
+            <span class="k">return</span> <span class="mf">0.0</span>
+
+        <span class="n">total</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">item</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">column_name</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">total</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">record_count</span>
 </code></pre></div>
 
-<p>Look at how much cleaner the tests are! They declare their need for a <code>wallet</code>, and pytest provides it. Each test gets a <em>fresh</em> <code>Wallet</code> instance created by the fixture, ensuring that tests are isolated from each other.</p>
-<h3 id="adding-teardown-with-yield">Adding Teardown with <code>yield</code></h3>
-<p>What if our setup requires a corresponding cleanup action? For example, connecting to a database requires disconnecting later. Fixtures handle this elegantly using the <code>yield</code> keyword.</p>
-<p>Code before the <code>yield</code> is the <strong>setup</strong> phase. The <code>yield</code> statement passes control to the test function, providing it with the resource. After the test function completes (whether it passes, fails, or raises an error), the code after the <code>yield</code> is executed as the <strong>teardown</strong> phase.</p>
-<p>Let's create a simple example to see this in action. We'll use <code>print</code> statements to trace the execution flow.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_fixture_teardown.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<h3 id="iteration-0-the-manual-approach">Iteration 0: The "Manual" Approach</h3>
+<p>To test this class, we need a temporary file with some known data. Our first attempt at a test might look like this. We'll create a <code>tests</code> directory and save this file as <code>tests/test_data_processor_manual.py</code>.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_data_processor_manual.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">data_processor</span><span class="w"> </span><span class="kn">import</span> <span class="n">DataProcessor</span>
 
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">setup_and_teardown</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">--- SETUP: Code before yield ---&quot;</span><span class="p">)</span>
-    <span class="n">data</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;key&quot;</span><span class="p">:</span> <span class="s2">&quot;value&quot;</span><span class="p">}</span>
-    <span class="k">yield</span> <span class="n">data</span>  <span class="c1"># This is where the test runs</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">--- TEARDOWN: Code after yield ---&quot;</span><span class="p">)</span>
-    <span class="n">data</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_record_count</span><span class="p">():</span>
+    <span class="c1"># --- Setup ---</span>
+    <span class="c1"># 1. Create a temporary directory</span>
+    <span class="n">temp_dir</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">mkdtemp</span><span class="p">()</span>
+    <span class="c1"># 2. Define the path for our temporary data file</span>
+    <span class="n">file_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s2">&quot;test_data.json&quot;</span><span class="p">)</span>
+    <span class="c1"># 3. Define our test data</span>
+    <span class="n">test_data</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="p">{</span><span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="mi">10</span><span class="p">},</span>
+        <span class="p">{</span><span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="mi">20</span><span class="p">},</span>
+        <span class="p">{</span><span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="mi">30</span><span class="p">},</span>
+    <span class="p">]</span>
+    <span class="c1"># 4. Write the data to the file</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">file_path</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">test_data</span><span class="p">,</span> <span class="n">f</span><span class="p">)</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_using_fixture</span><span class="p">(</span><span class="n">setup_and_teardown</span><span class="p">):</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&gt;&gt;&gt; RUNNING TEST: test_using_fixture &lt;&lt;&lt;&quot;</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="s2">&quot;key&quot;</span> <span class="ow">in</span> <span class="n">setup_and_teardown</span>
+    <span class="c1"># --- Test Execution ---</span>
+    <span class="c1"># 5. Create an instance of our class</span>
+    <span class="n">processor</span> <span class="o">=</span> <span class="n">DataProcessor</span><span class="p">(</span><span class="n">file_path</span><span class="p">)</span>
+    <span class="c1"># 6. Assert the behavior</span>
+    <span class="k">assert</span> <span class="n">processor</span><span class="o">.</span><span class="n">record_count</span> <span class="o">==</span> <span class="mi">3</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_another_test</span><span class="p">(</span><span class="n">setup_and_teardown</span><span class="p">):</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&gt;&gt;&gt; RUNNING TEST: test_another_test &lt;&lt;&lt;&quot;</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">setup_and_teardown</span><span class="p">[</span><span class="s2">&quot;key&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;value&quot;</span>
+    <span class="c1"># --- Teardown ---</span>
+    <span class="c1"># 7. Clean up the file and directory</span>
+    <span class="n">os</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">file_path</span><span class="p">)</span>
+    <span class="n">os</span><span class="o">.</span><span class="n">rmdir</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_calculate_average</span><span class="p">():</span>
+    <span class="c1"># --- Setup (Repetitive!) ---</span>
+    <span class="n">temp_dir</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">mkdtemp</span><span class="p">()</span>
+    <span class="n">file_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s2">&quot;test_data.json&quot;</span><span class="p">)</span>
+    <span class="n">test_data</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="p">{</span><span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="mi">10</span><span class="p">},</span>
+        <span class="p">{</span><span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="mi">20</span><span class="p">},</span>
+        <span class="p">{</span><span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="mi">30</span><span class="p">},</span>
+    <span class="p">]</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">file_path</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">test_data</span><span class="p">,</span> <span class="n">f</span><span class="p">)</span>
+
+    <span class="c1"># --- Test Execution ---</span>
+    <span class="n">processor</span> <span class="o">=</span> <span class="n">DataProcessor</span><span class="p">(</span><span class="n">file_path</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">processor</span><span class="o">.</span><span class="n">calculate_average</span><span class="p">(</span><span class="s2">&quot;value&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="mf">20.0</span>
+
+    <span class="c1"># --- Teardown (Repetitive!) ---</span>
+    <span class="n">os</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">file_path</span><span class="p">)</span>
+    <span class="n">os</span><span class="o">.</span><span class="n">rmdir</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">)</span>
 </code></pre></div>
 
-<p>Now, run this with the <code>-s</code> flag (to show print statements) and <code>-v</code> (for verbose output).</p>
-<div class="codehilite"><pre><span></span><code>pytest<span class="w"> </span>-v<span class="w"> </span>-s<span class="w"> </span>tests/test_fixture_teardown.py
-</code></pre></div>
-
-<p>The output clearly shows the execution order for each test:</p>
-<div class="codehilite"><pre><span></span><code>=========================== test session starts ============================
+<p>Let's run this:</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
 ...
-collected 2 items
+collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
 
-tests/test_fixture_teardown.py::test_using_fixture
---- SETUP: Code before yield ---
+tests/test_data_processor_manual.py::test_record_count<span class="w"> </span>PASSED<span class="w">    </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+tests/test_data_processor_manual.py::test_calculate_average<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
 
-&gt;&gt;&gt; RUNNING TEST: test_using_fixture &lt;&lt;&lt;
-PASSED
---- TEARDOWN: Code after yield ---
-
-tests/test_fixture_teardown.py::test_another_test
---- SETUP: Code before yield ---
-
-&gt;&gt;&gt; RUNNING TEST: test_another_test &lt;&lt;&lt;
-PASSED
---- TEARDOWN: Code after yield ---
-
-============================ 2 passed in ...s ==============================
+<span class="o">==========================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">==========================</span>
 </code></pre></div>
 
-<p>Notice the pattern: <strong>Setup -&gt; Test -&gt; Teardown</strong>. This cycle repeats independently for each test that uses the fixture. This is the fundamental mechanism that guarantees test isolation.</p>
+<p>The tests pass, but the code is deeply flawed.</p>
+<h3 id="current-limitation-repetition-and-fragility">Current Limitation: Repetition and Fragility</h3>
+<ol>
+<li><strong>Violation of DRY (Don't Repeat Yourself)</strong>: The setup and teardown logic is duplicated in both tests. If we need to add a third test, we'll have to copy it all again. If the data format changes, we have to update it in multiple places.</li>
+<li><strong>Fragile Teardown</strong>: What happens if the assertion in <code>test_record_count</code> fails? The test function will exit immediately, and the teardown code (<code>os.remove</code>, <code>os.rmdir</code>) will <strong>never run</strong>. This leaves orphaned temporary files on our system.</li>
+</ol>
+<p>This is the core problem that fixtures solve: providing <strong>reusable</strong> and <strong>robust</strong> setup and teardown.</p>
 <h2 id="the-pytestfixture-decorator">The @pytest.fixture Decorator</h2>
 <h2 id="the-pytestfixture-decorator_1">The @pytest.fixture Decorator</h2>
-<p>The <code>@pytest.fixture</code> decorator is the entry point to this entire system. It signals to pytest that a function is not a test, but a factory for providing resources to tests.</p>
-<p>Let's break down its role and common arguments.</p>
-<h3 id="basic-usage">Basic Usage</h3>
-<p>As we've seen, the simplest form is just the decorator itself:</p>
-<div class="codehilite"><pre><span></span><code><span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">my_data</span><span class="p">():</span>
-    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Alice&quot;</span><span class="p">,</span> <span class="s2">&quot;email&quot;</span><span class="p">:</span> <span class="s2">&quot;alice@example.com&quot;</span><span class="p">}</span>
-</code></pre></div>
-
-<p>Any test function that includes <code>my_data</code> as a parameter will receive the dictionary returned by this fixture.</p>
-<h3 id="naming-fixtures">Naming Fixtures</h3>
-<p>The name of the fixture is the name of the decorated function. It's a best practice to give fixtures descriptive names that clearly state what they provide, such as <code>db_connection</code>, <code>api_client</code>, or <code>sample_user_data</code>.</p>
-<h3 id="using-autouse-for-automatic-execution">Using <code>autouse</code> for Automatic Execution</h3>
-<p>Sometimes, you have a fixture that <em>every</em> test needs, but you don't want to add it as an argument to every single test function. A common example is a fixture that resets a database or clears a cache.</p>
-<p>For this, you can use the <code>autouse=True</code> argument.</p>
-<p>Let's create a fixture that prints a message before and after each test, without the tests needing to request it.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_autouse_fixture.py</span>
+<p>Pytest provides a simple and powerful way to extract setup and teardown logic into a reusable component: the <code>@pytest.fixture</code> decorator.</p>
+<p>A fixture is just a Python function decorated with <code>@pytest.fixture</code>. This function can perform setup, return or <code>yield</code> a value to the test, and perform teardown.</p>
+<h3 id="iteration-1-refactoring-to-a-basic-fixture">Iteration 1: Refactoring to a Basic Fixture</h3>
+<p>Let's fix the problems from our previous iteration. We will create a single fixture to handle the creation and cleanup of our temporary data file.</p>
+<p><strong>The <code>yield</code> Keyword: The Key to Teardown</strong></p>
+<p>The <code>yield</code> statement is the magic that separates setup from teardown.
+-   Everything <strong>before</strong> the <code>yield</code> is <strong>setup</strong> code.
+-   The value that is <code>yield</code>ed is what gets passed to the test function.
+-   Everything <strong>after</strong> the <code>yield</code> is <strong>teardown</strong> code. Pytest guarantees this code will run, even if the test fails.</p>
+<p>Here is the refactored code. We'll create a new file, <code>tests/test_data_processor_v1.py</code>.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_data_processor_v1.py</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">data_processor</span><span class="w"> </span><span class="kn">import</span> <span class="n">DataProcessor</span>
 
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span><span class="p">(</span><span class="n">autouse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">announce_test_start_end</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;A fixture that runs automatically for every test.&quot;&quot;&quot;</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">--- Test starting ---&quot;</span><span class="p">)</span>
-    <span class="k">yield</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">--- Test ending ---&quot;</span><span class="p">)</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">temp_data_file</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A fixture that creates a temporary data file with sample data</span>
+<span class="sd">    and cleans it up after the test.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># --- Setup ---</span>
+    <span class="n">temp_dir</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">mkdtemp</span><span class="p">()</span>
+    <span class="n">file_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s2">&quot;test_data.json&quot;</span><span class="p">)</span>
+    <span class="n">test_data</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="p">{</span><span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="mi">10</span><span class="p">},</span>
+        <span class="p">{</span><span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="mi">20</span><span class="p">},</span>
+        <span class="p">{</span><span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="mi">30</span><span class="p">},</span>
+    <span class="p">]</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">file_path</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">test_data</span><span class="p">,</span> <span class="n">f</span><span class="p">)</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_example_1</span><span class="p">():</span>
-    <span class="k">assert</span> <span class="mi">1</span> <span class="o">==</span> <span class="mi">1</span>
+    <span class="c1"># --- Yield the resource to the test ---</span>
+    <span class="k">yield</span> <span class="n">file_path</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_example_2</span><span class="p">():</span>
-    <span class="k">assert</span> <span class="s2">&quot;a&quot;</span> <span class="ow">in</span> <span class="s2">&quot;abc&quot;</span>
+    <span class="c1"># --- Teardown ---</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Cleaning up temporary file and directory...&quot;</span><span class="p">)</span>
+    <span class="n">os</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">file_path</span><span class="p">)</span>
+    <span class="n">os</span><span class="o">.</span><span class="n">rmdir</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_record_count</span><span class="p">(</span><span class="n">temp_data_file</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests that the record_count property is correct.</span>
+<span class="sd">    The &#39;temp_data_file&#39; argument tells pytest to run the fixture.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># The fixture provides the file_path</span>
+    <span class="n">processor</span> <span class="o">=</span> <span class="n">DataProcessor</span><span class="p">(</span><span class="n">temp_data_file</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">processor</span><span class="o">.</span><span class="n">record_count</span> <span class="o">==</span> <span class="mi">3</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_calculate_average</span><span class="p">(</span><span class="n">temp_data_file</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests that the calculate_average method is correct.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">processor</span> <span class="o">=</span> <span class="n">DataProcessor</span><span class="p">(</span><span class="n">temp_data_file</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">processor</span><span class="o">.</span><span class="n">calculate_average</span><span class="p">(</span><span class="s2">&quot;value&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="mf">20.0</span>
 </code></pre></div>
 
-<p>Running this with <code>pytest -s</code> shows that the fixture runs for both tests, even though they don't explicitly request it:</p>
-<div class="codehilite"><pre><span></span><code>=========================== test session starts ============================
+<h3 id="how-it-works">How It Works</h3>
+<ol>
+<li><strong>Declaration</strong>: We defined a function <code>temp_data_file</code> and decorated it with <code>@pytest.fixture</code>.</li>
+<li><strong>Requesting</strong>: Our test functions now accept an argument with the <em>exact same name</em> as the fixture function (<code>temp_data_file</code>). This is how you "request" a fixture.</li>
+<li><strong>Execution</strong>: Before running <code>test_record_count</code>, pytest sees the <code>temp_data_file</code> parameter. It finds the fixture with that name, executes it up to the <code>yield</code> statement, and passes the yielded value (<code>file_path</code>) into the test function as the argument.</li>
+<li><strong>Teardown</strong>: After <code>test_record_count</code> completes (whether it passes or fails), pytest resumes the fixture function and executes the code after the <code>yield</code> statement, ensuring our temporary file is cleaned up.</li>
+</ol>
+<p>Let's run it. The <code>-s</code> flag tells pytest to show any <code>print</code> statements.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>-s<span class="w"> </span>tests/test_data_processor_v1.py
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
 ...
-collected 2 items
+collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
 
-tests/test_autouse_fixture.py::test_example_1
---- Test starting ---
-PASSED
---- Test ending ---
+tests/test_data_processor_v1.py::test_record_count<span class="w"> </span>PASSED
+Cleaning<span class="w"> </span>up<span class="w"> </span>temporary<span class="w"> </span>file<span class="w"> </span>and<span class="w"> </span>directory...
+tests/test_data_processor_v1.py::test_calculate_average<span class="w"> </span>PASSED
+Cleaning<span class="w"> </span>up<span class="w"> </span>temporary<span class="w"> </span>file<span class="w"> </span>and<span class="w"> </span>directory...
 
-tests/test_autouse_fixture.py::test_example_2
---- Test starting ---
-PASSED
---- Test ending ---
-
-============================ 2 passed in ...s ==============================
+<span class="o">==========================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">==========================</span>
 </code></pre></div>
 
-<p><strong>A Word of Caution:</strong> Use <code>autouse=True</code> sparingly. It can make it harder to understand where a test's setup is coming from, as the dependency is no longer explicitly declared in the test's signature. It's best reserved for broad, cross-cutting concerns like logging setup, database cleaning, or performance monitoring.</p>
+<h3 id="expected-vs-actual-improvement">Expected vs. Actual Improvement</h3>
+<ul>
+<li><strong>Expected</strong>: We wanted to remove code duplication and ensure cleanup happens.</li>
+<li><strong>Actual</strong>: We have achieved exactly that. The setup/teardown logic is now in one place. The tests are clean, readable, and focused only on the "execution" and "assertion" parts. The <code>print</code> statement confirms our cleanup code ran for each test.</li>
+</ul>
+<p>This is a massive improvement, but we can already spot a new limitation.</p>
 <h2 id="fixture-scope-function-class-module-and-session">Fixture Scope: Function, Class, Module, and Session</h2>
 <h2 id="fixture-scope-function-class-module-and-session_1">Fixture Scope: Function, Class, Module, and Session</h2>
-<p>By default, a fixture is set up and torn down for <strong>every single test function</strong>. This is the <code>function</code> scope, and it provides the highest level of isolation. However, sometimes this is inefficient. If you need to connect to a database, you don't want to establish a new connection for each of the 500 tests in your suite.</p>
-<p>Pytest allows you to control the lifecycle of a fixture using the <code>scope</code> argument. This is one of the most important concepts for writing efficient test suites.</p>
-<p>The available scopes are, in order of increasing lifetime:
-1.  <code>function</code>: The default. Runs once per test function.
-2.  <code>class</code>: Runs once per test class.
-3.  <code>module</code>: Runs once per test module (i.e., per <code>.py</code> file).
-4.  <code>session</code>: Runs once per test session (i.e., once for the entire <code>pytest</code> command invocation).</p>
-<h3 id="visualizing-scopes">Visualizing Scopes</h3>
-<p>The best way to understand scopes is to see them in action. Let's create one fixture for each scope and use <code>print</code> statements to watch when they are created and destroyed.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_scopes.py</span>
+<h3 id="current-limitation-inefficient-setup">Current Limitation: Inefficient Setup</h3>
+<p>Look at the output from the last run. The line "Cleaning up temporary file and directory..." appeared twice. This means our <code>temp_data_file</code> fixture ran once for <code>test_record_count</code> and then <em>again</em> for <code>test_calculate_average</code>.</p>
+<p>For a small temporary file, this is no big deal. But what if our setup involved:
+-   Creating a large, multi-megabyte file?
+-   Connecting to a database?
+-   Starting an external service?</p>
+<p>Running this expensive setup before <em>every single test function</em> would make our test suite incredibly slow. The data in our file is read-only; both tests could have safely shared the same file.</p>
+<p>This is where <strong>fixture scope</strong> comes in. The scope controls how often a fixture is created and destroyed.</p>
+<h3 id="the-four-fixture-scopes">The Four Fixture Scopes</h3>
+<p>Pytest defines four scopes, from narrowest to broadest:</p>
+<table>
+<thead>
+<tr>
+<th>Scope</th>
+<th>Description</th>
+<th>Use Case</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>function</code></td>
+<td><strong>(Default)</strong> The fixture is set up and torn down for each individual test function.</td>
+<td>When a test needs a clean, isolated object that it might modify.</td>
+</tr>
+<tr>
+<td><code>class</code></td>
+<td>The fixture is set up once per test class. All methods in the class share the same fixture instance.</td>
+<td>Grouping tests that operate on the same expensive-to-create resource.</td>
+</tr>
+<tr>
+<td><code>module</code></td>
+<td>The fixture is set up once per module (i.e., once per <code>.py</code> file). All tests in the file share it.</td>
+<td>When all tests in a file can share a read-only resource.</td>
+</tr>
+<tr>
+<td><code>session</code></td>
+<td>The fixture is set up once at the beginning of the entire test session and torn down at the very end.</td>
+<td>A global resource like a database connection pool for the whole suite.</td>
+</tr>
+</tbody>
+</table>
+<p>You define the scope by passing the <code>scope</code> argument to the decorator: <code>@pytest.fixture(scope="module")</code>.</p>
+<h3 id="iteration-2-optimizing-with-scopemodule">Iteration 2: Optimizing with <code>scope="module"</code></h3>
+<p>Since our tests only read from the data file, they can safely share it. Let's change the scope to <code>module</code> and see the effect.</p>
+<p>Create a new file <code>tests/test_data_processor_v2.py</code>.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_data_processor_v2.py</span>
+
+<span class="c1"># ... (imports are the same) ...</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">data_processor</span><span class="w"> </span><span class="kn">import</span> <span class="n">DataProcessor</span>
 
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">&quot;session&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">session_fixture</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Setting up SESSION fixture&quot;</span><span class="p">)</span>
-    <span class="k">yield</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Tearing down SESSION fixture&quot;</span><span class="p">)</span>
+<span class="c1"># --- BEFORE: The original fixture (default function scope) ---</span>
+<span class="c1"># @pytest.fixture</span>
+<span class="c1"># def temp_data_file():</span>
+<span class="c1">#     ...</span>
 
+<span class="c1"># --- AFTER: The improved fixture with module scope ---</span>
 <span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">&quot;module&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">module_fixture</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Setting up MODULE fixture&quot;</span><span class="p">)</span>
-    <span class="k">yield</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Tearing down MODULE fixture&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">temp_data_file</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A module-scoped fixture that creates a temporary data file.</span>
+<span class="sd">    It runs only ONCE for all tests in this file.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Setting up module-scoped temporary file...&quot;</span><span class="p">)</span>
+    <span class="c1"># --- Setup ---</span>
+    <span class="n">temp_dir</span> <span class="o">=</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">mkdtemp</span><span class="p">()</span>
+    <span class="n">file_path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="s2">&quot;test_data.json&quot;</span><span class="p">)</span>
+    <span class="n">test_data</span> <span class="o">=</span> <span class="p">[</span>
+        <span class="p">{</span><span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="mi">10</span><span class="p">},</span>
+        <span class="p">{</span><span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="mi">20</span><span class="p">},</span>
+        <span class="p">{</span><span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="mi">30</span><span class="p">},</span>
+    <span class="p">]</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">file_path</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">test_data</span><span class="p">,</span> <span class="n">f</span><span class="p">)</span>
 
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">&quot;class&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">class_fixture</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Setting up CLASS fixture&quot;</span><span class="p">)</span>
-    <span class="k">yield</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Tearing down CLASS fixture&quot;</span><span class="p">)</span>
+    <span class="k">yield</span> <span class="n">file_path</span>
 
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">&quot;function&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">function_fixture</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Setting up FUNCTION fixture&quot;</span><span class="p">)</span>
-    <span class="k">yield</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Tearing down FUNCTION fixture&quot;</span><span class="p">)</span>
+    <span class="c1"># --- Teardown ---</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Cleaning up module-scoped temporary file...&quot;</span><span class="p">)</span>
+    <span class="n">os</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">file_path</span><span class="p">)</span>
+    <span class="n">os</span><span class="o">.</span><span class="n">rmdir</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">)</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_standalone</span><span class="p">(</span><span class="n">session_fixture</span><span class="p">,</span> <span class="n">module_fixture</span><span class="p">,</span> <span class="n">function_fixture</span><span class="p">):</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&gt;&gt; Running standalone test&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_record_count</span><span class="p">(</span><span class="n">temp_data_file</span><span class="p">):</span>
+    <span class="n">processor</span> <span class="o">=</span> <span class="n">DataProcessor</span><span class="p">(</span><span class="n">temp_data_file</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">processor</span><span class="o">.</span><span class="n">record_count</span> <span class="o">==</span> <span class="mi">3</span>
 
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">usefixtures</span><span class="p">(</span><span class="s2">&quot;class_fixture&quot;</span><span class="p">)</span>
-<span class="k">class</span><span class="w"> </span><span class="nc">TestClass</span><span class="p">:</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">test_method_1</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">session_fixture</span><span class="p">,</span> <span class="n">module_fixture</span><span class="p">,</span> <span class="n">function_fixture</span><span class="p">):</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&gt;&gt; Running test_method_1&quot;</span><span class="p">)</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">test_method_2</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">session_fixture</span><span class="p">,</span> <span class="n">module_fixture</span><span class="p">,</span> <span class="n">function_fixture</span><span class="p">):</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&gt;&gt; Running test_method_2&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_calculate_average</span><span class="p">(</span><span class="n">temp_data_file</span><span class="p">):</span>
+    <span class="n">processor</span> <span class="o">=</span> <span class="n">DataProcessor</span><span class="p">(</span><span class="n">temp_data_file</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">processor</span><span class="o">.</span><span class="n">calculate_average</span><span class="p">(</span><span class="s2">&quot;value&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="mf">20.0</span>
 </code></pre></div>
 
-<p>Now, run this file with <code>pytest -v -s</code>. The output is a perfect map of the fixture lifecycle.</p>
-<div class="codehilite"><pre><span></span><code>=========================== test session starts ============================
+<p>Now, let's run this version and pay close attention to the output.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>-s<span class="w"> </span>tests/test_data_processor_v2.py
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
 ...
-collected 3 items
+collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
 
-tests/test_scopes.py::test_standalone
-Setting up SESSION fixture
-Setting up MODULE fixture
-Setting up FUNCTION fixture
-&gt;&gt; Running standalone test
+tests/test_data_processor_v2.py::test_record_count
+Setting<span class="w"> </span>up<span class="w"> </span>module-scoped<span class="w"> </span>temporary<span class="w"> </span>file...
 PASSED
-Tearing down FUNCTION fixture
+tests/test_data_processor_v2.py::test_calculate_average<span class="w"> </span><span class="nv">PASSED</span>
 
-tests/test_scopes.py::TestClass::test_method_1
-Setting up CLASS fixture
-Setting up FUNCTION fixture
-&gt;&gt; Running test_method_1
-PASSED
-Tearing down FUNCTION fixture
+<span class="o">==============================</span><span class="w"> </span><span class="nv">teardown</span><span class="w"> </span><span class="o">==============================</span>
+Cleaning<span class="w"> </span>up<span class="w"> </span>module-scoped<span class="w"> </span>temporary<span class="w"> </span>file...
 
-tests/test_scopes.py::TestClass::test_method_2
-Setting up FUNCTION fixture
-&gt;&gt; Running test_method_2
-PASSED
-Tearing down FUNCTION fixture
-Tearing down CLASS fixture
-Tearing down MODULE fixture
-Tearing down SESSION fixture
-
-============================ 3 passed in ...s ==============================
+<span class="o">==========================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">==========================</span>
 </code></pre></div>
 
-<p>Let's trace the execution:
-1.  <code>session_fixture</code>: Sets up once at the very beginning. Tears down once at the very end.
-2.  <code>module_fixture</code>: Sets up once before any test in <code>test_scopes.py</code> runs. Tears down after all tests in the file are complete.
-3.  <code>class_fixture</code>: Sets up once before <code>test_method_1</code> (the first test in <code>TestClass</code>). Tears down after <code>test_method_2</code> (the last test in <code>TestClass</code>).
-4.  <code>function_fixture</code>: Sets up and tears down around <em>each</em> of the three tests.</p>
-<h3 id="choosing-the-right-scope">Choosing the Right Scope</h3>
+<h3 id="diagnostic-analysis-reading-the-output">Diagnostic Analysis: Reading the Output</h3>
+<p><strong>The output</strong>:</p>
+<div class="codehilite"><pre><span></span><code>Setting<span class="w"> </span>up<span class="w"> </span>module-scoped<span class="w"> </span>temporary<span class="w"> </span>file...
+PASSED
+PASSED
+Cleaning<span class="w"> </span>up<span class="w"> </span>module-scoped<span class="w"> </span>temporary<span class="w"> </span>file...
+</code></pre></div>
+
+<p><strong>Let's parse this</strong>:</p>
+<ol>
+<li><strong>The setup line</strong>: <code>Setting up module-scoped temporary file...</code> appears only <strong>once</strong>, before any tests are run.</li>
+<li><strong>The test results</strong>: Both tests pass as expected.</li>
+<li><strong>The teardown line</strong>: <code>Cleaning up module-scoped temporary file...</code> appears only <strong>once</strong>, after all tests in the module have completed.</li>
+</ol>
+<p><strong>Root cause identified</strong>: By changing the scope from <code>function</code> to <code>module</code>, we instructed pytest to run the setup and teardown logic only once for the entire <code>test_data_processor_v2.py</code> file.</p>
+<p><strong>Why the previous approach was inefficient</strong>: The default <code>function</code> scope is safe but can be slow if the setup is expensive and the resource can be shared.</p>
+<p><strong>What we gained</strong>: A significantly faster and more efficient test suite.</p>
+<h3 id="when-to-apply-this-solution">When to Apply This Solution</h3>
 <ul>
-<li><strong><code>function</code> (Default):</strong> Use for mutable objects that need to be reset for every test to ensure isolation (e.g., an empty list, a user object you plan to modify).</li>
-<li><strong><code>class</code>:</strong> Useful when you have a group of tests in a class that all operate on the same expensive-to-create resource, and the tests don't modify the resource in a way that would affect other tests.</li>
-<li><strong><code>module</code>:</strong> Ideal for resources that are read-only or can be shared across all tests in a file, like loading a large configuration or data file.</li>
-<li><strong><code>session</code>:</strong> Use for very expensive, globally shared resources like a database connection pool or a web server instance that can be used by the entire test suite.</li>
+<li><strong>What it optimizes for</strong>: Performance. It dramatically reduces redundant setup/teardown operations.</li>
+<li><strong>What it sacrifices</strong>: Isolation. All tests using the fixture now share the <em>same instance</em> of the resource. If one test modifies the resource (e.g., writes to the file), it will affect subsequent tests.</li>
+<li><strong>When to choose <code>module</code> or <code>session</code> scope</strong>: When the resource is read-only, or when the tests are explicitly designed to build on each other's state (which is generally an anti-pattern, but sometimes necessary).</li>
+<li><strong>When to stick with <code>function</code> scope</strong>: When each test needs a pristine, completely isolated version of the resource. This is the safest default.</li>
 </ul>
-<p><strong>Golden Rule:</strong> Use the narrowest scope you can. Start with <code>function</code> and only increase the scope (<code>class</code>, <code>module</code>, <code>session</code>) when you have a clear performance reason to do so, and you are sure that sharing the fixture won't cause tests to interfere with each other.</p>
 <h2 id="using-fixtures-in-your-tests">Using Fixtures in Your Tests</h2>
 <h2 id="using-fixtures-in-your-tests_1">Using Fixtures in Your Tests</h2>
-<p>There are two primary ways to apply a fixture to a test: by adding it as a function argument or by using a marker.</p>
-<h3 id="requesting-fixtures-as-arguments">Requesting Fixtures as Arguments</h3>
-<p>This is the most common and explicit method. By including the fixture's name as a parameter in your test function, you are telling pytest, "This test depends on this fixture." Pytest will then execute the fixture and pass its return value (or the value from <code>yield</code>) to the test.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_requesting_fixtures.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<p>We've already seen the primary way to use a fixture: by adding a parameter to your test function with the same name as the fixture.</p>
+<div class="codehilite"><pre><span></span><code><span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">my_fixture</span><span class="p">():</span>
+    <span class="k">return</span> <span class="mi">42</span>
 
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">user_data</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Provides a dictionary of user data.&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;John Doe&quot;</span><span class="p">,</span> <span class="s2">&quot;email&quot;</span><span class="p">:</span> <span class="s2">&quot;john.doe@example.com&quot;</span><span class="p">}</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_user_name</span><span class="p">(</span><span class="n">user_data</span><span class="p">):</span>
-    <span class="c1"># The `user_data` argument is filled by the fixture&#39;s return value</span>
-    <span class="k">assert</span> <span class="n">user_data</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;John Doe&quot;</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_user_email</span><span class="p">(</span><span class="n">user_data</span><span class="p">):</span>
-    <span class="k">assert</span> <span class="n">user_data</span><span class="p">[</span><span class="s2">&quot;email&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;john.doe@example.com&quot;</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_something</span><span class="p">(</span><span class="n">my_fixture</span><span class="p">):</span>  <span class="c1"># Requesting the fixture</span>
+    <span class="k">assert</span> <span class="n">my_fixture</span> <span class="o">==</span> <span class="mi">42</span>
 </code></pre></div>
 
-<p>This method is preferred because it makes the test's dependencies crystal clear just by reading its signature.</p>
-<h3 id="using-the-pytestmarkusefixtures-marker">Using the <code>@pytest.mark.usefixtures</code> Marker</h3>
-<p>Sometimes, a fixture doesn't return a value; it just performs an action (like cleaning a database). In these cases, there's nothing to pass to the test function. For this, you can use the <code>@pytest.mark.usefixtures</code> marker.</p>
-<p>This is useful for applying the same setup/teardown logic to an entire class of tests.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_usefixtures_marker.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<p>However, there are other ways to use fixtures that solve different problems.</p>
+<h3 id="using-fixtures-without-a-return-value-autouse">Using Fixtures Without a Return Value (<code>autouse</code>)</h3>
+<p>Sometimes, you have a fixture that needs to run for every test, but it doesn't return a value. For example, a fixture that resets a database connection or ensures a directory is clean. It would be tedious to add it as an argument to every single test.</p>
+<p>For this, you can use <code>autouse=True</code>.</p>
+<div class="codehilite"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
 
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">clean_database</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;A fixture that doesn&#39;t return anything, just performs actions.&quot;&quot;&quot;</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">... Cleaning database before test ...&quot;</span><span class="p">)</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span><span class="p">(</span><span class="n">autouse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">clean_directory_before_each_test</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">(AUTOUSE) Ensuring directory is clean...&quot;</span><span class="p">)</span>
+    <span class="c1"># ... logic to clean a directory ...</span>
     <span class="k">yield</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">... Cleaning database after test ...&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">(AUTOUSE) Post-test cleanup.&quot;</span><span class="p">)</span>
 
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">usefixtures</span><span class="p">(</span><span class="s2">&quot;clean_database&quot;</span><span class="p">)</span>
-<span class="k">class</span><span class="w"> </span><span class="nc">TestUserOperations</span><span class="p">:</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">test_create_user</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&gt;&gt; Running test_create_user&quot;</span><span class="p">)</span>
-        <span class="k">assert</span> <span class="kc">True</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_one</span><span class="p">():</span>
+    <span class="c1"># This test will use the autouse fixture automatically</span>
+    <span class="k">assert</span> <span class="kc">True</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">test_delete_user</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;&gt;&gt; Running test_delete_user&quot;</span><span class="p">)</span>
-        <span class="k">assert</span> <span class="kc">True</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_two</span><span class="p">():</span>
+    <span class="c1"># This one too, without needing to request it</span>
+    <span class="k">assert</span> <span class="kc">True</span>
 </code></pre></div>
 
-<p>When you run this file with <code>pytest -s</code>, you'll see the "Cleaning database" messages appear before and after each test method in the class, even though <code>clean_database</code> is not listed as an argument. The marker applies the fixture to every test within its scope (in this case, the <code>TestUserOperations</code> class).</p>
-<h3 id="discovering-available-fixtures">Discovering Available Fixtures</h3>
-<p>How does pytest even know what fixtures are available? You can ask it directly! The <code>--fixtures</code> command-line flag will list all available fixtures, including built-in ones and those you've defined.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># Run this from your project&#39;s root directory</span>
-pytest<span class="w"> </span>--fixtures
-</code></pre></div>
-
-<p>The output will be a detailed list of every fixture, where it's defined, and its docstring. This is an incredibly useful tool for understanding the testing environment and for debugging issues where a fixture might not be found.</p>
-<div class="codehilite"><pre><span></span><code>=========================== test session starts ============================
+<p>Running this with <code>-s</code> shows the autouse fixture wrapping each test:</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>-s
 ...
-======================= fixtures defined from ... ==========================
-wallet
-    tests/test_wallet_with_fixture.py:6
-    Returns a Wallet instance with a balance of 20.
+collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
 
-user_data
-    tests/test_requesting_fixtures.py:4
-    Provides a dictionary of user data.
+test_file.py::test_one
+<span class="o">(</span>AUTOUSE<span class="o">)</span><span class="w"> </span>Ensuring<span class="w"> </span>directory<span class="w"> </span>is<span class="w"> </span>clean...
+PASSED
+<span class="o">(</span>AUTOUSE<span class="o">)</span><span class="w"> </span>Post-test<span class="w"> </span>cleanup.
 
-... many built-in fixtures like capsys, tmp_path, etc. ...
+test_file.py::test_two
+<span class="o">(</span>AUTOUSE<span class="o">)</span><span class="w"> </span>Ensuring<span class="w"> </span>directory<span class="w"> </span>is<span class="w"> </span>clean...
+PASSED
+<span class="o">(</span>AUTOUSE<span class="o">)</span><span class="w"> </span>Post-test<span class="w"> </span>cleanup.
+...
 </code></pre></div>
 
-<p>This command banishes the "magic" and shows you exactly what pytest sees.</p>
+<p><strong>Warning</strong>: Use <code>autouse</code> fixtures with caution. They can make your tests harder to understand because they introduce "magic" behavior. It's no longer obvious from a test's signature what setup is being performed. They are best used for broad, cross-cutting concerns within a <code>conftest.py</code> file (which we'll cover later).</p>
+<h3 id="marking-fixtures-pytestmarkusefixtures">Marking Fixtures (<code>pytest.mark.usefixtures</code>)</h3>
+<p>An alternative to <code>autouse</code> that is more explicit is the <code>@pytest.mark.usefixtures</code> marker. This allows you to apply a fixture to a test (or class) without adding it to the function signature. This is useful for fixtures that don't return a value but where you want to be explicit about their use.</p>
+<div class="codehilite"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">non_returning_fixture</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Setting up non-returning fixture...&quot;</span><span class="p">)</span>
+    <span class="k">yield</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Tearing down non-returning fixture...&quot;</span><span class="p">)</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">usefixtures</span><span class="p">(</span><span class="s2">&quot;non_returning_fixture&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_with_marker</span><span class="p">():</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  Running test_with_marker...&quot;</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="kc">True</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">usefixtures</span><span class="p">(</span><span class="s2">&quot;non_returning_fixture&quot;</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">TestAClass</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">test_method_one</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  Running test_method_one...&quot;</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="kc">True</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">test_method_two</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  Running test_method_two...&quot;</span><span class="p">)</span>
+        <span class="k">assert</span> <span class="kc">True</span>
+</code></pre></div>
+
+<p>This approach keeps the function signature clean while still explicitly stating the test's dependencies via the marker.</p>
 <h2 id="fixture-dependencies-and-composition">Fixture Dependencies and Composition</h2>
 <h2 id="fixture-dependencies-and-composition_1">Fixture Dependencies and Composition</h2>
-<p>This is where the true power of pytest fixtures shines. <strong>Fixtures can request other fixtures.</strong> This allows you to build up complex test contexts from small, reusable, independent components. This is a classic example of the software design principle "composition over inheritance."</p>
-<h3 id="the-problem-a-fat-fixture">The Problem: A "Fat" Fixture</h3>
-<p>Imagine setting up a test that requires a logged-in user who has placed an order. A naive approach might be to create one giant fixture that does everything.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># (This is an anti-pattern example)</span>
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">fat_fixture_for_order_test</span><span class="p">():</span>
-    <span class="c1"># 1. Connect to DB</span>
-    <span class="n">db</span> <span class="o">=</span> <span class="n">connect_to_database</span><span class="p">()</span>
-
-    <span class="c1"># 2. Create a user</span>
-    <span class="n">user</span> <span class="o">=</span> <span class="n">create_user</span><span class="p">(</span><span class="n">db</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;testuser&quot;</span><span class="p">)</span>
-
-    <span class="c1"># 3. Log the user in</span>
-    <span class="n">api_client</span> <span class="o">=</span> <span class="n">APIClient</span><span class="p">()</span>
-    <span class="n">api_client</span><span class="o">.</span><span class="n">login</span><span class="p">(</span><span class="n">user</span><span class="p">)</span>
-
-    <span class="c1"># 4. Create an order for the user</span>
-    <span class="n">order</span> <span class="o">=</span> <span class="n">create_order</span><span class="p">(</span><span class="n">db</span><span class="p">,</span> <span class="n">user</span><span class="p">,</span> <span class="n">items</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;item1&quot;</span><span class="p">,</span> <span class="s2">&quot;item2&quot;</span><span class="p">])</span>
-
-    <span class="k">yield</span> <span class="n">api_client</span><span class="p">,</span> <span class="n">order</span>
-
-    <span class="c1"># Teardown in reverse</span>
-    <span class="n">db</span><span class="o">.</span><span class="n">disconnect</span><span class="p">()</span>
-</code></pre></div>
-
-<p>This is hard to read, hard to maintain, and impossible to reuse. What if you need just a database connection? Or just a logged-in client? You'd have to duplicate code.</p>
-<h3 id="the-solution-composable-fixtures">The Solution: Composable Fixtures</h3>
-<p>Let's refactor this into small, focused fixtures that depend on each other.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_composition.py</span>
+<h3 id="current-limitation-the-monolithic-fixture">Current Limitation: The Monolithic Fixture</h3>
+<p>Our <code>temp_data_file</code> fixture is doing okay, but it's not very modular. It's responsible for:
+1.  Creating a temporary directory.
+2.  Constructing a file path.
+3.  Defining test data.
+4.  Writing the data to the file.</p>
+<p>What if another test needs just an empty temporary directory? Or what if we want to test our <code>DataProcessor</code> with different sets of data? Our current fixture is a monolith; it's all or nothing.</p>
+<p>The true power of pytest fixtures is that they can <strong>request other fixtures</strong>, just like tests can. This allows you to build a dependency graph of small, single-purpose fixtures that compose into a complex test context.</p>
+<h3 id="iteration-3-decomposing-into-composable-fixtures">Iteration 3: Decomposing into Composable Fixtures</h3>
+<p>Let's break down our monolithic fixture into smaller, more reusable parts.</p>
+<ol>
+<li>A <code>temp_dir</code> fixture: <code>session</code>-scoped, as we can probably use the same temp directory for the whole run.</li>
+<li>A <code>sample_data</code> fixture: A simple fixture that just returns the data dictionary. This makes it easy to override for other tests.</li>
+<li>A <code>temp_data_file</code> fixture: This will now <em>depend on</em> <code>temp_dir</code> and <code>sample_data</code> to do its job.</li>
+<li>A <code>data_processor</code> fixture: This is the highest level. It will depend on <code>temp_data_file</code> and give our tests a ready-to-use <code>DataProcessor</code> instance.</li>
+</ol>
+<p>Here is the new, beautifully composed implementation in <code>tests/test_data_processor_v3.py</code>.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_data_processor_v3.py</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">tempfile</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">data_processor</span><span class="w"> </span><span class="kn">import</span> <span class="n">DataProcessor</span>
 
-<span class="c1"># Fixture 1: The base resource (e.g., a database connection)</span>
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">&quot;module&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">db_connection</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">(Connecting to database...)&quot;</span><span class="p">)</span>
-    <span class="n">connection</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;connected&quot;</span><span class="p">}</span> <span class="c1"># Fake connection object</span>
-    <span class="k">yield</span> <span class="n">connection</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">(Disconnecting from database...)&quot;</span><span class="p">)</span>
-    <span class="n">connection</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;disconnected&quot;</span>
-
-<span class="c1"># Fixture 2: Depends on db_connection</span>
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">api_client</span><span class="p">(</span><span class="n">db_connection</span><span class="p">):</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">(Creating API client with </span><span class="si">{</span><span class="n">db_connection</span><span class="p">[</span><span class="s1">&#39;status&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2"> DB)&quot;</span><span class="p">)</span>
-    <span class="c1"># This fixture can use the db_connection</span>
-    <span class="k">assert</span> <span class="n">db_connection</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;connected&quot;</span>
-    <span class="n">client</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;user&quot;</span><span class="p">:</span> <span class="kc">None</span><span class="p">}</span>
-    <span class="k">yield</span> <span class="n">client</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">(Tearing down API client)&quot;</span><span class="p">)</span>
-
-<span class="c1"># Fixture 3: Depends on api_client</span>
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">logged_in_client</span><span class="p">(</span><span class="n">api_client</span><span class="p">):</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">(Logging in client...)&quot;</span><span class="p">)</span>
-    <span class="n">api_client</span><span class="p">[</span><span class="s2">&quot;user&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;testuser&quot;</span>
-    <span class="k">yield</span> <span class="n">api_client</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">(Logging out client...)&quot;</span><span class="p">)</span>
-    <span class="n">api_client</span><span class="p">[</span><span class="s2">&quot;user&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
-
-<span class="c1"># The test requests the final, most complex fixture it needs.</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_user_profile</span><span class="p">(</span><span class="n">logged_in_client</span><span class="p">):</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&gt;&gt; Running test_user_profile&quot;</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">logged_in_client</span><span class="p">[</span><span class="s2">&quot;user&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;testuser&quot;</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_guest_access</span><span class="p">(</span><span class="n">api_client</span><span class="p">):</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&gt;&gt; Running test_guest_access&quot;</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">api_client</span><span class="p">[</span><span class="s2">&quot;user&quot;</span><span class="p">]</span> <span class="ow">is</span> <span class="kc">None</span>
-</code></pre></div>
-
-<p>Now, run this with <code>pytest -v -s</code>. Pay close attention to the setup order for <code>test_user_profile</code>.</p>
-<div class="codehilite"><pre><span></span><code>=========================== test session starts ============================
-...
-collected 2 items
-
-tests/test_composition.py::test_user_profile
-(Connecting to database...)
-(Creating API client with connected DB)
-(Logging in client...)
-
-&gt;&gt; Running test_user_profile
-PASSED
-(Logging out client...)
-
-(Tearing down API client)
-
-tests/test_composition.py::test_guest_access
-(Creating API client with connected DB)
-
-&gt;&gt; Running test_guest_access
-PASSED
-(Tearing down API client)
-
-(Disconnecting from database...)
-
-============================ 2 passed in ...s ==============================
-</code></pre></div>
-
-<p>Notice the elegant dependency resolution:
-1.  <code>test_user_profile</code> needs <code>logged_in_client</code>.
-2.  <code>logged_in_client</code> needs <code>api_client</code>.
-3.  <code>api_client</code> needs <code>db_connection</code>.
-4.  Pytest executes them in the correct order: <code>db_connection</code> -&gt; <code>api_client</code> -&gt; <code>logged_in_client</code> -&gt; test.
-5.  The teardown happens in the exact reverse order.</p>
-<p>For <code>test_guest_access</code>, which only needs <code>api_client</code>, pytest is smart enough to only run the <code>db_connection</code> and <code>api_client</code> fixtures.</p>
-<p>This compositional pattern is the key to building a powerful and maintainable test suite. You create a library of building blocks (fixtures) and each test simply requests the final assembled product it needs.</p>
-<h2 id="sharing-fixtures-across-files-conftestpy">Sharing Fixtures Across Files (conftest.py)</h2>
-<h2 id="sharing-fixtures-across-files-conftestpy_1">Sharing Fixtures Across Files (conftest.py)</h2>
-<p>As your test suite grows, you'll find that many fixtures are useful across multiple test files. For example, a <code>db_connection</code> fixture is likely needed by tests for users, products, and orders. Copying and pasting this fixture into every file would violate the DRY (Don't Repeat Yourself) principle.</p>
-<p>Pytest solves this with a special file named <code>conftest.py</code>.</p>
-<h3 id="the-role-of-conftestpy">The Role of <code>conftest.py</code></h3>
-<p>When pytest runs, it searches for <code>conftest.py</code> files in the test directories. Any fixtures (and hooks, which we'll cover later) defined in a <code>conftest.py</code> file become automatically available to all tests in that directory and any of its subdirectories, without needing to be imported.</p>
-<p>It acts as a local plugin or a shared utility module for your tests.</p>
-<h3 id="example-a-shared-data-fixture">Example: A Shared <code>data</code> Fixture</h3>
-<p>Let's set up a project structure like this:</p>
-<div class="codehilite"><pre><span></span><code>project/
-├── conftest.py
-└── tests/
-    ├── test_alpha.py
-    └── subdir/
-        └── test_beta.py
-</code></pre></div>
-
-<p>First, we define a shared fixture in the root <code>conftest.py</code>.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># conftest.py</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-
+<span class="c1"># Fixture 1: Lowest level - a session-scoped temporary directory</span>
 <span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">&quot;session&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">shared_data</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;A session-scoped fixture available to all tests.&quot;&quot;&quot;</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">(Setting up shared_data fixture)&quot;</span><span class="p">)</span>
-    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;items&quot;</span><span class="p">:</span> <span class="p">[]}</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">temp_dir</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A session-scoped temporary directory.&quot;&quot;&quot;</span>
+    <span class="k">with</span> <span class="n">tempfile</span><span class="o">.</span><span class="n">TemporaryDirectory</span><span class="p">()</span> <span class="k">as</span> <span class="n">tempdir</span><span class="p">:</span>
+        <span class="k">yield</span> <span class="n">Path</span><span class="p">(</span><span class="n">tempdir</span><span class="p">)</span>
+
+<span class="c1"># Fixture 2: Just returns data, easy to override</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">sample_data</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Sample data for testing.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="p">[</span>
+        <span class="p">{</span><span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="mi">10</span><span class="p">},</span>
+        <span class="p">{</span><span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="mi">20</span><span class="p">},</span>
+        <span class="p">{</span><span class="s2">&quot;value&quot;</span><span class="p">:</span> <span class="mi">30</span><span class="p">},</span>
+    <span class="p">]</span>
+
+<span class="c1"># Fixture 3: Depends on temp_dir and sample_data</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">&quot;module&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">temp_data_file</span><span class="p">(</span><span class="n">temp_dir</span><span class="p">,</span> <span class="n">sample_data</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A module-scoped file, built from other fixtures.&quot;&quot;&quot;</span>
+    <span class="n">file_path</span> <span class="o">=</span> <span class="n">temp_dir</span> <span class="o">/</span> <span class="s2">&quot;test_data.json&quot;</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">file_path</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="n">sample_data</span><span class="p">,</span> <span class="n">f</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">file_path</span>
+
+<span class="c1"># Fixture 4: The highest level, depends on temp_data_file</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">data_processor</span><span class="p">(</span><span class="n">temp_data_file</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A DataProcessor instance ready for testing.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">DataProcessor</span><span class="p">(</span><span class="n">temp_data_file</span><span class="p">)</span>
+
+<span class="c1"># --- The tests are now incredibly simple and readable ---</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_record_count</span><span class="p">(</span><span class="n">data_processor</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;The test now requests the high-level object it needs.&quot;&quot;&quot;</span>
+    <span class="k">assert</span> <span class="n">data_processor</span><span class="o">.</span><span class="n">record_count</span> <span class="o">==</span> <span class="mi">3</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_calculate_average</span><span class="p">(</span><span class="n">data_processor</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;The complexity is hidden in the composed fixtures.&quot;&quot;&quot;</span>
+    <span class="k">assert</span> <span class="n">data_processor</span><span class="o">.</span><span class="n">calculate_average</span><span class="p">(</span><span class="s2">&quot;value&quot;</span><span class="p">)</span> <span class="o">==</span> <span class="mf">20.0</span>
 </code></pre></div>
 
-<p>Now, we can use this fixture in <code>test_alpha.py</code> without importing anything.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_alpha.py</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_alpha_uses_shared_data</span><span class="p">(</span><span class="n">shared_data</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;This test can access shared_data directly.&quot;&quot;&quot;</span>
-    <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">shared_data</span><span class="p">[</span><span class="s2">&quot;items&quot;</span><span class="p">],</span> <span class="nb">list</span><span class="p">)</span>
-    <span class="n">shared_data</span><span class="p">[</span><span class="s2">&quot;items&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;alpha&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&gt;&gt; test_alpha: shared_data is </span><span class="si">{</span><span class="n">shared_data</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-</code></pre></div>
-
-<p>And we can also use it in a test file in a subdirectory.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/subdir/test_beta.py</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_beta_uses_shared_data</span><span class="p">(</span><span class="n">shared_data</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;This test, in a subdirectory, can also access it.&quot;&quot;&quot;</span>
-    <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">shared_data</span><span class="p">[</span><span class="s2">&quot;items&quot;</span><span class="p">],</span> <span class="nb">list</span><span class="p">)</span>
-    <span class="n">shared_data</span><span class="p">[</span><span class="s2">&quot;items&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;beta&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&gt;&gt; test_beta: shared_data is </span><span class="si">{</span><span class="n">shared_data</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-</code></pre></div>
-
-<p>Finally, let's add one more test to see the final state of our session-scoped fixture.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_final_state.py</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_final_state_of_shared_data</span><span class="p">(</span><span class="n">shared_data</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Checks the state after other tests have run.&quot;&quot;&quot;</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&gt;&gt; test_final_state: shared_data is </span><span class="si">{</span><span class="n">shared_data</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="s2">&quot;alpha&quot;</span> <span class="ow">in</span> <span class="n">shared_data</span><span class="p">[</span><span class="s2">&quot;items&quot;</span><span class="p">]</span>
-    <span class="k">assert</span> <span class="s2">&quot;beta&quot;</span> <span class="ow">in</span> <span class="n">shared_data</span><span class="p">[</span><span class="s2">&quot;items&quot;</span><span class="p">]</span>
-</code></pre></div>
-
-<p>Run <code>pytest -v -s</code>. The output will show that the same <code>shared_data</code> dictionary instance was passed to all tests.</p>
-<div class="codehilite"><pre><span></span><code>=========================== test session starts ============================
+<h3 id="banish-magic-visualizing-the-dependency-graph">Banish Magic: Visualizing the Dependency Graph</h3>
+<p>How does pytest figure this out? It builds a dependency graph and executes fixtures in the correct order. We can ask pytest to show us this setup plan using the <code>--setup-show</code> flag.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>tests/test_data_processor_v3.py<span class="w"> </span>--setup-show
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
 ...
-collected 3 items
+collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
 
-(Setting up shared_data fixture)
+tests/test_data_processor_v3.py
+SETUP<span class="w">    </span>S<span class="w"> </span>temp_dir<span class="w"> </span><span class="o">(</span>session<span class="o">)</span>
+<span class="w">        </span>SETUP<span class="w">    </span>M<span class="w"> </span>temp_data_file<span class="w"> </span><span class="o">(</span>module<span class="o">)</span>
+<span class="w">                </span>SETUP<span class="w">    </span>F<span class="w"> </span>sample_data<span class="w"> </span><span class="o">(</span><span class="k">function</span><span class="o">)</span>
+<span class="w">                </span>SETUP<span class="w">    </span>F<span class="w"> </span>data_processor<span class="w"> </span><span class="o">(</span><span class="k">function</span><span class="o">)</span>
+<span class="w">                        </span>tests/test_data_processor_v3.py::test_record_count<span class="w"> </span><span class="o">(</span>fixtures<span class="w"> </span>used:<span class="w"> </span>data_processor,<span class="w"> </span>sample_data,<span class="w"> </span>temp_data_file,<span class="w"> </span>temp_dir<span class="o">)</span>
+<span class="w">                </span>TEARDOWN<span class="w"> </span>F<span class="w"> </span>data_processor
+<span class="w">                </span>TEARDOWN<span class="w"> </span>F<span class="w"> </span>sample_data
+<span class="w">                </span>SETUP<span class="w">    </span>F<span class="w"> </span>sample_data<span class="w"> </span><span class="o">(</span><span class="k">function</span><span class="o">)</span>
+<span class="w">                </span>SETUP<span class="w">    </span>F<span class="w"> </span>data_processor<span class="w"> </span><span class="o">(</span><span class="k">function</span><span class="o">)</span>
+<span class="w">                        </span>tests/test_data_processor_v3.py::test_calculate_average<span class="w"> </span><span class="o">(</span>fixtures<span class="w"> </span>used:<span class="w"> </span>data_processor,<span class="w"> </span>sample_data,<span class="w"> </span>temp_data_file,<span class="w"> </span>temp_dir<span class="o">)</span>
+<span class="w">                </span>TEARDOWN<span class="w"> </span>F<span class="w"> </span>data_processor
+<span class="w">                </span>TEARDOWN<span class="w"> </span>F<span class="w"> </span>sample_data
+<span class="w">        </span>TEARDOWN<span class="w"> </span>M<span class="w"> </span>temp_data_file
+TEARDOWN<span class="w"> </span>S<span class="w"> </span><span class="nv">temp_dir</span>
 
-tests/test_alpha.py::test_alpha_uses_shared_data
-&gt;&gt; test_alpha: shared_data is {&#39;items&#39;: [&#39;alpha&#39;]}
-PASSED
-
-tests/subdir/test_beta.py::test_beta_uses_shared_data
-&gt;&gt; test_beta: shared_data is {&#39;items&#39;: [&#39;alpha&#39;, &#39;beta&#39;]}
-PASSED
-
-tests/test_final_state.py::test_final_state_of_shared_data
-&gt;&gt; test_final_state: shared_data is {&#39;items&#39;: [&#39;alpha&#39;, &#39;beta&#39;]}
-PASSED
-
-============================ 3 passed in ...s ==============================
+<span class="o">==========================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">==========================</span>
 </code></pre></div>
 
-<p>This demonstrates both the power and the danger of higher-scoped fixtures. The <code>session</code> scope allowed us to share state, but it also means the tests are no longer perfectly isolated. <code>test_final_state</code> passes only because the other two tests ran first and modified the shared object. This is often undesirable, but <code>conftest.py</code> is the mechanism that enables it.</p>
-<h3 id="best-practices-for-conftestpy">Best Practices for <code>conftest.py</code></h3>
+<h3 id="analysis-of-setup-show">Analysis of <code>--setup-show</code></h3>
 <ul>
-<li>Place your most general, widely-used fixtures (like database connections, API clients) in the root <code>conftest.py</code> of your <code>tests/</code> directory.</li>
-<li>You can have multiple <code>conftest.py</code> files. A fixture in <code>tests/api/conftest.py</code> would be available to tests in <code>tests/api/</code> but not to tests in <code>tests/db/</code>. This allows you to scope your shared fixtures to specific parts of your application.</li>
-<li><strong>Never</strong> <code>import</code> anything from a <code>conftest.py</code> file. Pytest's discovery mechanism handles it for you.</li>
+<li><code>SETUP S temp_dir</code>: The <code>session</code>-scoped <code>temp_dir</code> is set up first and only once.</li>
+<li><code>SETUP M temp_data_file</code>: The <code>module</code>-scoped <code>temp_data_file</code> is set up next, also only once. It can use <code>temp_dir</code>.</li>
+<li><code>SETUP F data_processor</code>: Before each test, the <code>function</code>-scoped <code>data_processor</code> is set up. It can use <code>temp_data_file</code>.</li>
+<li>The tests run.</li>
+<li>Teardown happens in the reverse order of setup: <code>F</code>unction -&gt; <code>M</code>odule -&gt; <code>S</code>ession.</li>
+</ul>
+<h3 id="expected-vs-actual-improvement_1">Expected vs. Actual Improvement</h3>
+<ul>
+<li><strong>Expected</strong>: We wanted more modular and reusable setup components.</li>
+<li><strong>Actual</strong>: We achieved this perfectly. Our tests are now incredibly declarative. They simply ask for the object they need (<code>data_processor</code>), and pytest handles the complex chain of dependencies required to build it. We can now easily reuse <code>temp_dir</code> or <code>sample_data</code> in other tests for different purposes.</li>
 </ul>
         </div>
         <div class="footer">
-            Generated on 2025-11-22 17:25:04 | Made with ❤️ by GitHub Pages Generator
+            Generated on 2025-11-24 14:31:15 | Made with ❤️ by GitHub Pages Generator
         </div>
     </div>
     <script>

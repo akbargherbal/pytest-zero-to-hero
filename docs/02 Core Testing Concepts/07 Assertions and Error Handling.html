@@ -359,468 +359,1037 @@
         <div class="content">
             <h1 id="chapter-7-assertions-and-error-handling">Chapter 7: Assertions and Error Handling</h1>
 <h2 id="beyond-simple-assertions">Beyond Simple Assertions</h2>
-<h2 id="beyond-simple-assertions_1">Beyond Simple Assertions</h2>
-<p>At the heart of every test is an assertion. It's the line in the sand, the statement that declares, "This must be true." In Chapter 2, you learned the basics of <code>assert</code>, but its power in pytest goes far beyond simple equality checks. Pytest's magic lies in its ability to take a standard Python <code>assert</code> statement and provide incredibly detailed feedback when it fails. This is called "assertion introspection."</p>
-<p>Let's explore the versatility of the humble <code>assert</code> statement.</p>
-<h3 id="asserting-equality-and-inequality">Asserting Equality and Inequality</h3>
-<p>The most common assertion is checking for equality with <code>==</code>.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># test_assertions.py</span>
+<h2 id="the-heart-of-the-test-the-assert-statement">The Heart of the Test: The <code>assert</code> Statement</h2>
+<p>At its core, every test performs three steps: Arrange, Act, and Assert. The assertion is the moment of truth—it's where we verify that the outcome of our action matches our expectation. Pytest is built around Python's native <code>assert</code> statement, supercharging it with a feature called "assertion introspection." This means you don't need special assertion methods like <code>self.assertEqual()</code> or <code>self.assertTrue()</code> that are common in other frameworks. A plain <code>assert</code> is all you need.</p>
+<p>This chapter is dedicated to mastering assertions. We'll start with the basics, learn how to read pytest's incredibly detailed failure reports, and then move on to advanced techniques for handling expected errors and warnings.</p>
+<h3 id="phase-1-establish-the-reference-implementation">Phase 1: Establish the Reference Implementation</h3>
+<p>To explore these concepts, we need a realistic piece of code to test. We'll build a simple <code>UserValidator</code> that checks if a user data dictionary is valid for registration. This will be our <strong>anchor example</strong> for the entire chapter.</p>
+<p>Our validator will check three things:
+1.  The user must be at least 18 years old.
+2.  The username must not be "admin".
+3.  The email must contain an "@" symbol.</p>
+<p>Here is the initial implementation of our validator and its first test.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># user_validator.py</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_equality</span><span class="p">():</span>
-    <span class="k">assert</span> <span class="mi">1</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">==</span> <span class="mi">2</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">date</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_inequality</span><span class="p">():</span>
-    <span class="k">assert</span> <span class="mi">1</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">!=</span> <span class="mi">3</span>
-</code></pre></div>
+<span class="k">class</span><span class="w"> </span><span class="nc">UserValidator</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user_data</span><span class="p">:</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">data</span> <span class="o">=</span> <span class="n">user_data</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">errors</span> <span class="o">=</span> <span class="p">{}</span>
 
-<h3 id="asserting-comparisons">Asserting Comparisons</h3>
-<p>You can use any standard comparison operator, and pytest will give you helpful output if it fails.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># test_assertions.py</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_age</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;User must be 18 or older.&quot;&quot;&quot;</span>
+        <span class="n">today</span> <span class="o">=</span> <span class="n">date</span><span class="o">.</span><span class="n">today</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">birthdate</span> <span class="o">=</span> <span class="n">date</span><span class="o">.</span><span class="n">fromisoformat</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;birthdate&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">))</span>
+            <span class="n">age</span> <span class="o">=</span> <span class="n">today</span><span class="o">.</span><span class="n">year</span> <span class="o">-</span> <span class="n">birthdate</span><span class="o">.</span><span class="n">year</span> <span class="o">-</span> <span class="p">((</span><span class="n">today</span><span class="o">.</span><span class="n">month</span><span class="p">,</span> <span class="n">today</span><span class="o">.</span><span class="n">day</span><span class="p">)</span> <span class="o">&lt;</span> <span class="p">(</span><span class="n">birthdate</span><span class="o">.</span><span class="n">month</span><span class="p">,</span> <span class="n">birthdate</span><span class="o">.</span><span class="n">day</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">age</span> <span class="o">&lt;</span> <span class="mi">18</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">errors</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;User must be 18 or older&quot;</span>
+        <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">errors</span><span class="p">[</span><span class="s2">&quot;birthdate&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;Invalid date format&quot;</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_greater_than</span><span class="p">():</span>
-    <span class="k">assert</span> <span class="mi">5</span> <span class="o">&gt;</span> <span class="mi">2</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_username</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Username cannot be &#39;admin&#39;.&quot;&quot;&quot;</span>
+        <span class="n">username</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;username&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">username</span> <span class="o">==</span> <span class="s2">&quot;admin&quot;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">errors</span><span class="p">[</span><span class="s2">&quot;username&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;Username cannot be &#39;admin&#39;&quot;</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_less_than_or_equal</span><span class="p">():</span>
-    <span class="k">assert</span> <span class="mi">3</span> <span class="o">&lt;=</span> <span class="mi">3</span>
-    <span class="k">assert</span> <span class="mi">3</span> <span class="o">&lt;=</span> <span class="mi">4</span>
-</code></pre></div>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_email</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Email must be valid.&quot;&quot;&quot;</span>
+        <span class="n">email</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;email&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="s2">&quot;@&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">email</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">errors</span><span class="p">[</span><span class="s2">&quot;email&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;Invalid email address&quot;</span>
 
-<h3 id="asserting-membership">Asserting Membership</h3>
-<p>You can check if an item is present in a collection (like a list, tuple, dictionary, or string) using the <code>in</code> keyword.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># test_assertions.py</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">is_valid</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Runs all validations and returns True if no errors.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">errors</span> <span class="o">=</span> <span class="p">{}</span> <span class="c1"># Reset errors on each run</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_age</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_username</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validate_email</span><span class="p">()</span>
+        <span class="k">return</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">errors</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_list_membership</span><span class="p">():</span>
-    <span class="n">items</span> <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;apple&quot;</span><span class="p">,</span> <span class="mf">3.14</span><span class="p">]</span>
-    <span class="k">assert</span> <span class="s2">&quot;apple&quot;</span> <span class="ow">in</span> <span class="n">items</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_validation_report</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Runs validation and returns a detailed report.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">is_valid</span><span class="p">()</span> <span class="c1"># Ensure validation has run</span>
+        <span class="k">return</span> <span class="p">{</span>
+            <span class="s2">&quot;is_valid&quot;</span><span class="p">:</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">errors</span><span class="p">,</span>
+            <span class="s2">&quot;errors&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">errors</span>
+        <span class="p">}</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_dict_key_membership</span><span class="p">():</span>
-    <span class="n">user_data</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;Alice&quot;</span><span class="p">,</span> <span class="s2">&quot;email&quot;</span><span class="p">:</span> <span class="s2">&quot;alice@example.com&quot;</span><span class="p">}</span>
-    <span class="k">assert</span> <span class="s2">&quot;name&quot;</span> <span class="ow">in</span> <span class="n">user_data</span>
+<span class="c1"># test_validator.py</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_substring</span><span class="p">():</span>
-    <span class="n">message</span> <span class="o">=</span> <span class="s2">&quot;Hello, Pytest!&quot;</span>
-    <span class="k">assert</span> <span class="s2">&quot;Pytest&quot;</span> <span class="ow">in</span> <span class="n">message</span>
-</code></pre></div>
+<span class="kn">from</span><span class="w"> </span><span class="nn">user_validator</span><span class="w"> </span><span class="kn">import</span> <span class="n">UserValidator</span>
 
-<h3 id="asserting-identity">Asserting Identity</h3>
-<p>Sometimes you need to check if two variables refer to the exact same object in memory, not just that they have the same value. For this, you use <code>is</code>. This is common when dealing with singletons or specific object instances.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># test_assertions.py</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_valid_user</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests a user with completely valid data.&quot;&quot;&quot;</span>
+    <span class="n">valid_data</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;username&quot;</span><span class="p">:</span> <span class="s2">&quot;john_doe&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;birthdate&quot;</span><span class="p">:</span> <span class="s2">&quot;2001-05-15&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;email&quot;</span><span class="p">:</span> <span class="s2">&quot;john.doe@example.com&quot;</span>
+    <span class="p">}</span>
+    <span class="n">validator</span> <span class="o">=</span> <span class="n">UserValidator</span><span class="p">(</span><span class="n">valid_data</span><span class="p">)</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_identity</span><span class="p">():</span>
-    <span class="n">a</span> <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">]</span>
-    <span class="n">b</span> <span class="o">=</span> <span class="n">a</span>  <span class="c1"># b is a reference to the same object as a</span>
-    <span class="n">c</span> <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">]</span>  <span class="c1"># c has the same value, but is a different object</span>
-
-    <span class="k">assert</span> <span class="n">b</span> <span class="ow">is</span> <span class="n">a</span>
-    <span class="k">assert</span> <span class="n">c</span> <span class="ow">is</span> <span class="ow">not</span> <span class="n">a</span>  <span class="c1"># They are not the same object</span>
-    <span class="k">assert</span> <span class="n">c</span> <span class="o">==</span> <span class="n">a</span>      <span class="c1"># But they are equal in value</span>
-</code></pre></div>
-
-<h3 id="asserting-truthiness">Asserting Truthiness</h3>
-<p>You can assert that a value is "truthy" (evaluates to <code>True</code> in a boolean context) or "falsy" (evaluates to <code>False</code>).</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># test_assertions.py</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_truthiness</span><span class="p">():</span>
-    <span class="k">assert</span> <span class="kc">True</span>
-    <span class="k">assert</span> <span class="mi">1</span>
-    <span class="k">assert</span> <span class="s2">&quot;hello&quot;</span>
-    <span class="k">assert</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">]</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_falsiness</span><span class="p">():</span>
-    <span class="k">assert</span> <span class="ow">not</span> <span class="kc">False</span>
-    <span class="k">assert</span> <span class="ow">not</span> <span class="mi">0</span>
-    <span class="k">assert</span> <span class="ow">not</span> <span class="s2">&quot;&quot;</span>
-    <span class="k">assert</span> <span class="ow">not</span> <span class="p">[]</span>
-</code></pre></div>
-
-<p>The key takeaway is that you don't need special functions like <code>assertEqual()</code> or <code>assertTrue()</code> from other frameworks. You can use plain, idiomatic Python expressions, and pytest will do the hard work of figuring out what went wrong when an assertion fails. We'll see exactly how it does that next.</p>
-<h2 id="assertion-introspection-reading-failure-messages">Assertion Introspection: Reading Failure Messages</h2>
-<h2 id="assertion-introspection-reading-failure-messages_1">Assertion Introspection: Reading Failure Messages</h2>
-<p>This is where pytest truly shines and one of the main reasons developers love it. When an <code>assert</code> statement fails, pytest doesn't just tell you <code>AssertionError</code>. It "introspects" the expression, meaning it looks inside the objects being compared and gives you a detailed, human-readable report of the difference.</p>
-<p>A test failure is not an error; it's data. Learning to read this data is one of the most critical skills in testing.</p>
-<h3 id="the-problem-a-failing-test-with-complex-data">The Problem: A Failing Test with Complex Data</h3>
-<p>Imagine we have a function that processes user data and we want to test it. Let's create a test that intentionally fails so we can analyze the output.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># test_user_profile.py</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">get_processed_user_data</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;A function that returns a user profile, but with a bug.&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="p">{</span>
-        <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="mi">101</span><span class="p">,</span>
-        <span class="s2">&quot;username&quot;</span><span class="p">:</span> <span class="s2">&quot;testuser&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;email&quot;</span><span class="p">:</span> <span class="s2">&quot;test.user@example.com&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="p">{</span>
-            <span class="s2">&quot;theme&quot;</span><span class="p">:</span> <span class="s2">&quot;dark&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;notifications&quot;</span><span class="p">:</span> <span class="p">{</span>
-                <span class="s2">&quot;email&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
-                <span class="s2">&quot;sms&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>  <span class="c1"># This is the bug, it should be True</span>
-            <span class="p">},</span>
-        <span class="p">},</span>
-        <span class="s2">&quot;roles&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;editor&quot;</span><span class="p">,</span> <span class="s2">&quot;contributor&quot;</span><span class="p">],</span>
+    <span class="c1"># We expect the validation report to show success</span>
+    <span class="n">expected_report</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;is_valid&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="s2">&quot;errors&quot;</span><span class="p">:</span> <span class="p">{}</span>
     <span class="p">}</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_user_profile_processing</span><span class="p">():</span>
-    <span class="n">expected_data</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="mi">101</span><span class="p">,</span>
-        <span class="s2">&quot;username&quot;</span><span class="p">:</span> <span class="s2">&quot;testuser&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;email&quot;</span><span class="p">:</span> <span class="s2">&quot;test.user@example.com&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;profile&quot;</span><span class="p">:</span> <span class="p">{</span>
-            <span class="s2">&quot;theme&quot;</span><span class="p">:</span> <span class="s2">&quot;dark&quot;</span><span class="p">,</span>
-            <span class="s2">&quot;notifications&quot;</span><span class="p">:</span> <span class="p">{</span>
-                <span class="s2">&quot;email&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
-                <span class="s2">&quot;sms&quot;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>  <span class="c1"># We expect this to be True</span>
-            <span class="p">},</span>
-        <span class="p">},</span>
-        <span class="s2">&quot;roles&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;editor&quot;</span><span class="p">,</span> <span class="s2">&quot;contributor&quot;</span><span class="p">],</span>
-    <span class="p">}</span>
-    <span class="n">actual_data</span> <span class="o">=</span> <span class="n">get_processed_user_data</span><span class="p">()</span>
-    <span class="k">assert</span> <span class="n">actual_data</span> <span class="o">==</span> <span class="n">expected_data</span>
+    <span class="n">actual_report</span> <span class="o">=</span> <span class="n">validator</span><span class="o">.</span><span class="n">get_validation_report</span><span class="p">()</span>
+
+    <span class="k">assert</span> <span class="n">actual_report</span> <span class="o">==</span> <span class="n">expected_report</span>
 </code></pre></div>
 
-<h3 id="reading-the-failure-report">Reading the Failure Report</h3>
-<p>Now, let's run this test with <code>pytest -v</code> and carefully dissect the output.</p>
-<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>test_user_profile.py
-<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+<p>Let's run this to confirm our baseline is working.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
 ...
 collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
 
-test_user_profile.py::test_user_profile_processing<span class="w"> </span>FAILED<span class="w">          </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+test_validator.py::test_valid_user<span class="w"> </span>PASSED<span class="w">                         </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
 
-<span class="o">=================================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">=================================</span>
-______________________<span class="w"> </span>test_user_profile_processing<span class="w"> </span>______________________
-
-<span class="w">    </span>def<span class="w"> </span>test_user_profile_processing<span class="o">()</span>:
-<span class="w">        </span><span class="nv">expected_data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">{</span>
-<span class="w">            </span><span class="s2">&quot;id&quot;</span>:<span class="w"> </span><span class="m">101</span>,
-<span class="w">            </span><span class="s2">&quot;username&quot;</span>:<span class="w"> </span><span class="s2">&quot;testuser&quot;</span>,
-<span class="w">            </span><span class="s2">&quot;email&quot;</span>:<span class="w"> </span><span class="s2">&quot;test.user@example.com&quot;</span>,
-<span class="w">            </span><span class="s2">&quot;profile&quot;</span>:<span class="w"> </span><span class="o">{</span>
-<span class="w">                </span><span class="s2">&quot;theme&quot;</span>:<span class="w"> </span><span class="s2">&quot;dark&quot;</span>,
-<span class="w">                </span><span class="s2">&quot;notifications&quot;</span>:<span class="w"> </span><span class="o">{</span>
-<span class="w">                    </span><span class="s2">&quot;email&quot;</span>:<span class="w"> </span>True,
-<span class="w">                    </span><span class="s2">&quot;sms&quot;</span>:<span class="w"> </span>True,<span class="w">  </span><span class="c1"># We expect this to be True</span>
-<span class="w">                </span><span class="o">}</span>,
-<span class="w">            </span><span class="o">}</span>,
-<span class="w">            </span><span class="s2">&quot;roles&quot;</span>:<span class="w"> </span><span class="o">[</span><span class="s2">&quot;editor&quot;</span>,<span class="w"> </span><span class="s2">&quot;contributor&quot;</span><span class="o">]</span>,
-<span class="w">        </span><span class="o">}</span>
-<span class="w">        </span><span class="nv">actual_data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>get_processed_user_data<span class="o">()</span>
-&gt;<span class="w">       </span>assert<span class="w"> </span><span class="nv">actual_data</span><span class="w"> </span><span class="o">==</span><span class="w"> </span>expected_data
-E<span class="w">       </span>assert<span class="w"> </span><span class="o">{</span><span class="s1">&#39;email&#39;</span>:<span class="w"> </span><span class="s1">&#39;te... &#39;</span>testuser<span class="s1">&#39;} == {&#39;</span>email<span class="s1">&#39;: &#39;</span>te...<span class="w"> </span><span class="s1">&#39;testuser&#39;</span><span class="o">}</span>
-E<span class="w">         </span>Differing<span class="w"> </span>items:
-E<span class="w">         </span><span class="o">{</span><span class="s1">&#39;profile&#39;</span>:<span class="w"> </span><span class="o">{</span><span class="s1">&#39;notifications&#39;</span>:<span class="w"> </span><span class="o">{</span><span class="s1">&#39;sms&#39;</span>:<span class="w"> </span>False<span class="o">}}}</span><span class="w"> </span>!<span class="o">=</span><span class="w"> </span><span class="o">{</span><span class="s1">&#39;profile&#39;</span>:<span class="w"> </span><span class="o">{</span><span class="s1">&#39;notifications&#39;</span>:<span class="w"> </span><span class="o">{</span><span class="s1">&#39;sms&#39;</span>:<span class="w"> </span>True<span class="o">}}}</span>
-E<span class="w">         </span>Full<span class="w"> </span>diff:
-E<span class="w">         </span>-<span class="w"> </span><span class="o">{</span><span class="s1">&#39;email&#39;</span>:<span class="w"> </span><span class="s1">&#39;test.user@example.com&#39;</span>,
-E<span class="w">         </span>-<span class="w">  </span><span class="s1">&#39;id&#39;</span>:<span class="w"> </span><span class="m">101</span>,
-E<span class="w">         </span>-<span class="w">  </span><span class="s1">&#39;profile&#39;</span>:<span class="w"> </span><span class="o">{</span><span class="s1">&#39;notifications&#39;</span>:<span class="w"> </span><span class="o">{</span><span class="s1">&#39;email&#39;</span>:<span class="w"> </span>True,<span class="w"> </span><span class="s1">&#39;sms&#39;</span>:<span class="w"> </span>True<span class="o">}</span>,<span class="w"> </span><span class="s1">&#39;theme&#39;</span>:<span class="w"> </span><span class="s1">&#39;dark&#39;</span><span class="o">}</span>,
-E<span class="w">         </span>?<span class="w">                                                      </span>^^^^
-E<span class="w">         </span>+<span class="w"> </span><span class="o">{</span><span class="s1">&#39;email&#39;</span>:<span class="w"> </span><span class="s1">&#39;test.user@example.com&#39;</span>,
-E<span class="w">         </span>+<span class="w">  </span><span class="s1">&#39;id&#39;</span>:<span class="w"> </span><span class="m">101</span>,
-E<span class="w">         </span>+<span class="w">  </span><span class="s1">&#39;profile&#39;</span>:<span class="w"> </span><span class="o">{</span><span class="s1">&#39;notifications&#39;</span>:<span class="w"> </span><span class="o">{</span><span class="s1">&#39;email&#39;</span>:<span class="w"> </span>True,<span class="w"> </span><span class="s1">&#39;sms&#39;</span>:<span class="w"> </span>False<span class="o">}</span>,<span class="w"> </span><span class="s1">&#39;theme&#39;</span>:<span class="w"> </span><span class="s1">&#39;dark&#39;</span><span class="o">}</span>,
-E<span class="w">         </span>?<span class="w">                                                      </span>^^^^^
-E<span class="w">         </span>-<span class="w">  </span><span class="s1">&#39;roles&#39;</span>:<span class="w"> </span><span class="o">[</span><span class="s1">&#39;editor&#39;</span>,<span class="w"> </span><span class="s1">&#39;contributor&#39;</span><span class="o">]</span>,
-E<span class="w">         </span>-<span class="w">  </span><span class="s1">&#39;username&#39;</span>:<span class="w"> </span><span class="s1">&#39;testuser&#39;</span><span class="o">}</span>
-E<span class="w">         </span>+<span class="w">  </span><span class="s1">&#39;roles&#39;</span>:<span class="w"> </span><span class="o">[</span><span class="s1">&#39;editor&#39;</span>,<span class="w"> </span><span class="s1">&#39;contributor&#39;</span><span class="o">]</span>,
-E<span class="w">         </span>+<span class="w">  </span><span class="s1">&#39;username&#39;</span>:<span class="w"> </span><span class="s1">&#39;testuser&#39;</span><span class="o">}</span>
-
-test_user_profile.py:28:<span class="w"> </span><span class="nv">AssertionError</span>
-<span class="o">=========================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>failed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">===========================</span>
+<span class="o">==========================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">==========================</span>
 </code></pre></div>
 
-<p>Let's break this down piece by piece:</p>
+<p>Great. Now, let's write a test for an invalid user who is underage. This will expose our first assertion failure and set the stage for learning how to read pytest's output.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_validator.py (added test)</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">user_validator</span><span class="w"> </span><span class="kn">import</span> <span class="n">UserValidator</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">date</span><span class="p">,</span> <span class="n">timedelta</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_valid_user</span><span class="p">():</span>
+    <span class="c1"># ... (same as before) ...</span>
+    <span class="k">pass</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_underage_user</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests a user who is younger than 18.&quot;&quot;&quot;</span>
+    <span class="c1"># A birthdate exactly 17 years ago</span>
+    <span class="n">underage_birthdate</span> <span class="o">=</span> <span class="p">(</span><span class="n">date</span><span class="o">.</span><span class="n">today</span><span class="p">()</span> <span class="o">-</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">days</span><span class="o">=</span><span class="mi">17</span><span class="o">*</span><span class="mi">365</span><span class="p">))</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span>
+
+    <span class="n">invalid_data</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;username&quot;</span><span class="p">:</span> <span class="s2">&quot;jane_doe&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;birthdate&quot;</span><span class="p">:</span> <span class="n">underage_birthdate</span><span class="p">,</span>
+        <span class="s2">&quot;email&quot;</span><span class="p">:</span> <span class="s2">&quot;jane.doe@example.com&quot;</span>
+    <span class="p">}</span>
+    <span class="n">validator</span> <span class="o">=</span> <span class="n">UserValidator</span><span class="p">(</span><span class="n">invalid_data</span><span class="p">)</span>
+
+    <span class="n">expected_report</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;is_valid&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="s2">&quot;errors&quot;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">&quot;age&quot;</span><span class="p">:</span> <span class="s2">&quot;User must be 18 or older&quot;</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="n">actual_report</span> <span class="o">=</span> <span class="n">validator</span><span class="o">.</span><span class="n">get_validation_report</span><span class="p">()</span>
+
+    <span class="k">assert</span> <span class="n">actual_report</span> <span class="o">==</span> <span class="n">expected_report</span>
+</code></pre></div>
+
+<p>This test seems correct. We create a user who is clearly underage and assert that the validation report reflects this specific error. Let's run it.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+...
+collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
+
+test_validator.py::test_valid_user<span class="w"> </span>PASSED<span class="w">                         </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+test_validator.py::test_underage_user<span class="w"> </span>FAILED<span class="w">                      </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">===============================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">===============================</span>
+__________________________<span class="w"> </span>test_underage_user<span class="w"> </span>__________________________
+
+<span class="w">    </span>def<span class="w"> </span>test_underage_user<span class="o">()</span>:
+<span class="w">        </span><span class="s2">&quot;&quot;&quot;Tests a user who is younger than 18.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="c1"># A birthdate exactly 17 years ago</span>
+<span class="w">        </span><span class="nv">underage_birthdate</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">(</span>date.today<span class="o">()</span><span class="w"> </span>-<span class="w"> </span>timedelta<span class="o">(</span><span class="nv">days</span><span class="o">=</span><span class="m">17</span>*365<span class="o">))</span>.isoformat<span class="o">()</span>
+
+<span class="w">        </span><span class="nv">invalid_data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">{</span>
+<span class="w">            </span><span class="s2">&quot;username&quot;</span>:<span class="w"> </span><span class="s2">&quot;jane_doe&quot;</span>,
+<span class="w">            </span><span class="s2">&quot;birthdate&quot;</span>:<span class="w"> </span>underage_birthdate,
+<span class="w">            </span><span class="s2">&quot;email&quot;</span>:<span class="w"> </span><span class="s2">&quot;jane.doe@example.com&quot;</span>
+<span class="w">        </span><span class="o">}</span>
+<span class="w">        </span><span class="nv">validator</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>UserValidator<span class="o">(</span>invalid_data<span class="o">)</span>
+
+<span class="w">        </span><span class="nv">expected_report</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">{</span>
+<span class="w">            </span><span class="s2">&quot;is_valid&quot;</span>:<span class="w"> </span>False,
+<span class="w">            </span><span class="s2">&quot;errors&quot;</span>:<span class="w"> </span><span class="o">{</span>
+<span class="w">                </span><span class="s2">&quot;age&quot;</span>:<span class="w"> </span><span class="s2">&quot;User must be 18 or older&quot;</span>
+<span class="w">            </span><span class="o">}</span>
+<span class="w">        </span><span class="o">}</span>
+
+<span class="w">        </span><span class="nv">actual_report</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>validator.get_validation_report<span class="o">()</span>
+
+&gt;<span class="w">       </span>assert<span class="w"> </span><span class="nv">actual_report</span><span class="w"> </span><span class="o">==</span><span class="w"> </span>expected_report
+E<span class="w">       </span>AssertionError:<span class="w"> </span>assert<span class="w"> </span><span class="o">{</span><span class="s1">&#39;errors&#39;</span>:<span class="w"> </span><span class="o">{</span><span class="s1">&#39;...id&#39;</span>:<span class="w"> </span>False<span class="o">}</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="o">{</span><span class="s1">&#39;errors&#39;</span>:<span class="w"> </span><span class="o">{</span><span class="s1">&#39;...id&#39;</span>:<span class="w"> </span>False<span class="o">}</span>
+E<span class="w">         </span>Differing<span class="w"> </span>items:
+E<span class="w">         </span><span class="o">{</span><span class="s1">&#39;errors&#39;</span>:<span class="w"> </span><span class="o">{</span><span class="s1">&#39;age&#39;</span>:<span class="w"> </span><span class="s1">&#39;User must be 18 or older&#39;</span><span class="o">}}</span><span class="w"> </span>!<span class="o">=</span><span class="w"> </span><span class="o">{</span><span class="s1">&#39;errors&#39;</span>:<span class="w"> </span><span class="o">{</span><span class="s1">&#39;age&#39;</span>:<span class="w"> </span><span class="s1">&#39;User must be at least 18&#39;</span><span class="o">}}</span>
+E<span class="w">         </span>Full<span class="w"> </span>diff:
+E<span class="w">         </span>-<span class="w"> </span><span class="o">{</span><span class="s1">&#39;errors&#39;</span>:<span class="w"> </span><span class="o">{</span><span class="s1">&#39;age&#39;</span>:<span class="w"> </span><span class="s1">&#39;User must be at least 18&#39;</span><span class="o">}</span>,<span class="w"> </span><span class="s1">&#39;is_valid&#39;</span>:<span class="w"> </span>False<span class="o">}</span>
+E<span class="w">         </span>?<span class="w">                                  </span>---------
+E<span class="w">         </span>+<span class="w"> </span><span class="o">{</span><span class="s1">&#39;errors&#39;</span>:<span class="w"> </span><span class="o">{</span><span class="s1">&#39;age&#39;</span>:<span class="w"> </span><span class="s1">&#39;User must be 18 or older&#39;</span><span class="o">}</span>,<span class="w"> </span><span class="s1">&#39;is_valid&#39;</span>:<span class="w"> </span>False<span class="o">}</span>
+E<span class="w">         </span>?<span class="w">                                  </span>^^^^^^^^
+
+test_validator.py:36:<span class="w"> </span><span class="nv">AssertionError</span>
+<span class="o">=======================</span><span class="w"> </span>short<span class="w"> </span><span class="nb">test</span><span class="w"> </span>summary<span class="w"> </span><span class="nv">info</span><span class="w"> </span><span class="o">========================</span>
+FAILED<span class="w"> </span>test_validator.py::test_underage_user<span class="w"> </span>-<span class="w"> </span>AssertionError:<span class="w"> </span>assert...
+<span class="o">=====================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>failed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">=====================</span>
+</code></pre></div>
+
+<p>It failed! This is perfect. The failure isn't due to a complex logical bug, but a simple typo in our test's expectation. This provides an ideal opportunity to learn how to dissect pytest's rich failure reports.</p>
+<h2 id="assertion-introspection-reading-failure-messages">Assertion Introspection: Reading Failure Messages</h2>
+<h2 id="diagnostic-analysis-reading-the-failure">Diagnostic Analysis: Reading the Failure</h2>
+<p>A failing test is not a dead end; it's a map that tells you exactly where your code deviates from your expectations. Learning to read this map is one of the most critical skills in testing. Pytest's output is dense with information, so let's break down the failure from the previous section piece by piece.</p>
+<p><strong>The complete output</strong>:</p>
+<div class="codehilite"><pre><span></span><code><span class="o">===============================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">===============================</span>
+__________________________<span class="w"> </span>test_underage_user<span class="w"> </span>__________________________
+
+<span class="w">    </span>def<span class="w"> </span>test_underage_user<span class="o">()</span>:
+<span class="w">        </span><span class="s2">&quot;&quot;&quot;Tests a user who is younger than 18.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="c1"># ... (code omitted for brevity) ...</span>
+
+<span class="w">        </span><span class="nv">actual_report</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>validator.get_validation_report<span class="o">()</span>
+
+&gt;<span class="w">       </span>assert<span class="w"> </span><span class="nv">actual_report</span><span class="w"> </span><span class="o">==</span><span class="w"> </span>expected_report
+E<span class="w">       </span>AssertionError:<span class="w"> </span>assert<span class="w"> </span><span class="o">{</span><span class="s1">&#39;errors&#39;</span>:<span class="w"> </span><span class="o">{</span><span class="s1">&#39;...id&#39;</span>:<span class="w"> </span>False<span class="o">}</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="o">{</span><span class="s1">&#39;errors&#39;</span>:<span class="w"> </span><span class="o">{</span><span class="s1">&#39;...id&#39;</span>:<span class="w"> </span>False<span class="o">}</span>
+E<span class="w">         </span>Differing<span class="w"> </span>items:
+E<span class="w">         </span><span class="o">{</span><span class="s1">&#39;errors&#39;</span>:<span class="w"> </span><span class="o">{</span><span class="s1">&#39;age&#39;</span>:<span class="w"> </span><span class="s1">&#39;User must be 18 or older&#39;</span><span class="o">}}</span><span class="w"> </span>!<span class="o">=</span><span class="w"> </span><span class="o">{</span><span class="s1">&#39;errors&#39;</span>:<span class="w"> </span><span class="o">{</span><span class="s1">&#39;age&#39;</span>:<span class="w"> </span><span class="s1">&#39;User must be at least 18&#39;</span><span class="o">}}</span>
+E<span class="w">         </span>Full<span class="w"> </span>diff:
+E<span class="w">         </span>-<span class="w"> </span><span class="o">{</span><span class="s1">&#39;errors&#39;</span>:<span class="w"> </span><span class="o">{</span><span class="s1">&#39;age&#39;</span>:<span class="w"> </span><span class="s1">&#39;User must be at least 18&#39;</span><span class="o">}</span>,<span class="w"> </span><span class="s1">&#39;is_valid&#39;</span>:<span class="w"> </span>False<span class="o">}</span>
+E<span class="w">         </span>?<span class="w">                                  </span>---------
+E<span class="w">         </span>+<span class="w"> </span><span class="o">{</span><span class="s1">&#39;errors&#39;</span>:<span class="w"> </span><span class="o">{</span><span class="s1">&#39;age&#39;</span>:<span class="w"> </span><span class="s1">&#39;User must be 18 or older&#39;</span><span class="o">}</span>,<span class="w"> </span><span class="s1">&#39;is_valid&#39;</span>:<span class="w"> </span>False<span class="o">}</span>
+E<span class="w">         </span>?<span class="w">                                  </span>^^^^^^^^
+
+test_validator.py:36:<span class="w"> </span>AssertionError
+</code></pre></div>
+
+<p><strong>Let's parse this section by section</strong>:</p>
 <ol>
-<li><strong><code>&gt; assert actual_data == expected_data</code></strong>: The <code>&gt;</code> points to the exact line where the assertion failed.</li>
-<li><strong><code>E assert {'email': ...} == {'email': ...}</code></strong>: The <code>E</code> stands for "Error". Pytest shows you the assertion expression again, often abbreviating large data structures for readability.</li>
-<li><strong><code>E   Differing items:</code></strong>: This is the magic. Pytest intelligently finds the <em>smallest possible difference</em> between the two structures. It tells you exactly where the mismatch is, saving you from manually comparing two giant dictionaries.
-    <code>{'profile': {'notifications': {'sms': False}}} != {'profile': {'notifications': {'sms': True}}}</code>
-    It has drilled down through the nested dictionaries to pinpoint the exact key-value pair that differs.</li>
-<li><strong><code>E   Full diff:</code></strong>: For more context, pytest provides a full <code>diff</code> view, similar to what you'd see in version control systems like Git.<ul>
-<li>Lines starting with <code>-</code> are from the left side of the comparison (<code>actual_data</code>).</li>
-<li>Lines starting with <code>+</code> are from the right side (<code>expected_data</code>).</li>
-<li>Lines starting with <code>?</code> highlight the exact characters that differ within a line. Here, <code>^^^^</code> points to <code>True</code> and <code>^^^^^</code> points to <code>False</code>.</li>
+<li>
+<p><strong>The summary line</strong>: <code>FAILED test_validator.py::test_underage_user - AssertionError: assert...</code></p>
+<ul>
+<li><strong>What this tells us</strong>: The test named <code>test_underage_user</code> in the file <code>test_validator.py</code> failed. The reason for the failure was an <code>AssertionError</code>, which means the condition in an <code>assert</code> statement evaluated to <code>False</code>.</li>
+</ul>
+</li>
+<li>
+<p><strong>The traceback</strong>:
+    <code>python
+    &gt;       assert actual_report == expected_report
+    test_validator.py:36: AssertionError</code></p>
+<ul>
+<li><strong>What this tells us</strong>: This points to the exact line of code that failed. The <code>&gt;</code> character highlights line 36 in <code>test_validator.py</code>. This is the most important piece of information for locating the problem.</li>
+</ul>
+</li>
+<li>
+<p><strong>The assertion introspection</strong>:
+    <code>E       AssertionError: assert {'errors': {'...id': False} == {'errors': {'...id': False}
+    E         Differing items:
+    E         {'errors': {'age': 'User must be 18 or older'}} != {'errors': {'age': 'User must be at least 18'}}
+    E         Full diff:
+    E         - {'errors': {'age': 'User must be at least 18'}, 'is_valid': False}
+    E         ?                                  ---------
+    E         + {'errors': {'age': 'User must be 18 or older'}, 'is_valid': False}
+    E         ?                                  ^^^^^^^^</code></p>
+<ul>
+<li><strong>What this tells us</strong>: This is pytest's magic. It "introspects" the objects involved in the failed assertion and provides a detailed, human-readable diff.<ul>
+<li>The first line shows the assertion that failed, with large data structures abbreviated (<code>...</code>).</li>
+<li><code>Differing items:</code> gets to the heart of the matter. It isolates the exact key-value pair in the dictionary that didn't match. We can clearly see the string for the <code>'age'</code> error is different.</li>
+<li><code>Full diff:</code> provides a standard <code>diff</code> format. Lines starting with <code>-</code> are from the left side of the <code>==</code> (the expected value in our case), and lines with <code>+</code> are from the right side (the actual value). The <code>?</code> lines highlight the precise characters that differ.</li>
+</ul>
+</li>
 </ul>
 </li>
 </ol>
-<p>Without assertion introspection, you would just get <code>AssertionError</code>, and you'd have to manually print both dictionaries and stare at them until you found the difference. Pytest's detailed output turns minutes of frustrating debugging into seconds of clear insight.</p>
-<h2 id="custom-assertion-messages">Custom Assertion Messages</h2>
-<h2 id="custom-assertion-messages_1">Custom Assertion Messages</h2>
-<p>Python's <code>assert</code> statement allows for an optional message that will be displayed if the assertion fails.</p>
-<p>The syntax is: <code>assert &lt;expression&gt;, &lt;message&gt;</code></p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># test_custom_message.py</span>
+<p><strong>Root cause identified</strong>: We have a typo in our test. The <code>UserValidator</code> produces the error message <code>"User must be 18 or older"</code>, but our test <em>expected</em> <code>"User must be at least 18"</code>.</p>
+<p><strong>Why the current approach can't solve this</strong>: The approach is fine, but our data is wrong. The introspection gave us all the information we needed to spot the mistake instantly.</p>
+<p><strong>What we need</strong>: We need to fix the expected string in our test to match the actual implementation.</p>
+<p>Let's apply the fix.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_validator.py (fixed)</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_account_balance</span><span class="p">():</span>
-    <span class="n">account</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="s2">&quot;acc_123&quot;</span><span class="p">,</span> <span class="s2">&quot;balance&quot;</span><span class="p">:</span> <span class="o">-</span><span class="mi">50</span><span class="p">}</span>
-    <span class="c1"># This assertion will fail</span>
-    <span class="k">assert</span> <span class="n">account</span><span class="p">[</span><span class="s2">&quot;balance&quot;</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Account </span><span class="si">{</span><span class="n">account</span><span class="p">[</span><span class="s1">&#39;id&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2"> has a negative balance!&quot;</span>
+<span class="c1"># ... (imports and test_valid_user are the same) ...</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_underage_user</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests a user who is younger than 18.&quot;&quot;&quot;</span>
+    <span class="n">underage_birthdate</span> <span class="o">=</span> <span class="p">(</span><span class="n">date</span><span class="o">.</span><span class="n">today</span><span class="p">()</span> <span class="o">-</span> <span class="n">timedelta</span><span class="p">(</span><span class="n">days</span><span class="o">=</span><span class="mi">17</span><span class="o">*</span><span class="mi">365</span><span class="p">))</span><span class="o">.</span><span class="n">isoformat</span><span class="p">()</span>
+
+    <span class="n">invalid_data</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;username&quot;</span><span class="p">:</span> <span class="s2">&quot;jane_doe&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;birthdate&quot;</span><span class="p">:</span> <span class="n">underage_birthdate</span><span class="p">,</span>
+        <span class="s2">&quot;email&quot;</span><span class="p">:</span> <span class="s2">&quot;jane.doe@example.com&quot;</span>
+    <span class="p">}</span>
+    <span class="n">validator</span> <span class="o">=</span> <span class="n">UserValidator</span><span class="p">(</span><span class="n">invalid_data</span><span class="p">)</span>
+
+    <span class="c1"># BEFORE: The expected message was wrong</span>
+    <span class="c1"># expected_report = {</span>
+    <span class="c1">#     &quot;is_valid&quot;: False,</span>
+    <span class="c1">#     &quot;errors&quot;: {</span>
+    <span class="c1">#         &quot;age&quot;: &quot;User must be at least 18&quot;</span>
+    <span class="c1">#     }</span>
+    <span class="c1"># }</span>
+
+    <span class="c1"># AFTER: The expected message now matches the implementation</span>
+    <span class="n">expected_report</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;is_valid&quot;</span><span class="p">:</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="s2">&quot;errors&quot;</span><span class="p">:</span> <span class="p">{</span>
+            <span class="s2">&quot;age&quot;</span><span class="p">:</span> <span class="s2">&quot;User must be 18 or older&quot;</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="n">actual_report</span> <span class="o">=</span> <span class="n">validator</span><span class="o">.</span><span class="n">get_validation_report</span><span class="p">()</span>
+
+    <span class="k">assert</span> <span class="n">actual_report</span> <span class="o">==</span> <span class="n">expected_report</span>
 </code></pre></div>
 
-<p>When we run this test, the custom message is included in the output.</p>
-<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>test_custom_message.py
-<span class="o">=================================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">=================================</span>
-_________________________<span class="w"> </span>test_account_balance<span class="w"> </span>_________________________
-
-<span class="w">    </span>def<span class="w"> </span>test_account_balance<span class="o">()</span>:
-<span class="w">        </span><span class="nv">account</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">{</span><span class="s2">&quot;id&quot;</span>:<span class="w"> </span><span class="s2">&quot;acc_123&quot;</span>,<span class="w"> </span><span class="s2">&quot;balance&quot;</span>:<span class="w"> </span>-50<span class="o">}</span>
-<span class="w">        </span><span class="c1"># This assertion will fail</span>
-&gt;<span class="w">       </span>assert<span class="w"> </span>account<span class="o">[</span><span class="s2">&quot;balance&quot;</span><span class="o">]</span><span class="w"> </span>&gt;<span class="o">=</span><span class="w"> </span><span class="m">0</span>,<span class="w"> </span>f<span class="s2">&quot;Account {account[&#39;id&#39;]} has a negative balance!&quot;</span>
-E<span class="w">       </span>AssertionError:<span class="w"> </span>Account<span class="w"> </span>acc_123<span class="w"> </span>has<span class="w"> </span>a<span class="w"> </span>negative<span class="w"> </span>balance!
-E<span class="w">       </span>assert<span class="w"> </span>-50<span class="w"> </span>&gt;<span class="o">=</span><span class="w"> </span><span class="m">0</span>
-
-test_custom_message.py:6:<span class="w"> </span><span class="nv">AssertionError</span>
-<span class="o">=========================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>failed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">===========================</span>
-</code></pre></div>
-
-<h3 id="to-use-or-not-to-use">To Use or Not to Use?</h3>
-<p>While custom messages can be useful, a common pytest philosophy is to <strong>rely on assertion introspection first</strong>. Pytest's automatic diffing is often more informative than a manually written message.</p>
-<p><strong>When to use custom messages:</strong></p>
-<ol>
-<li><strong>When the expression isn't self-explanatory:</strong> If the assertion involves complex logic, a message can clarify the <em>intent</em> of the test.</li>
-<li><strong>When testing business rules:</strong> A message can describe the business rule that was violated, which is helpful for non-technical stakeholders.</li>
-<li><strong>When looping:</strong> If an assertion is inside a loop, the message can include the loop variable to identify which iteration failed.</li>
-</ol>
-<p><strong>When to avoid them:</strong></p>
-<ol>
-<li><strong>When comparing simple values:</strong> <code>assert x == y</code> provides a great failure message on its own. A custom message like <code>assert x == y, "x should be equal to y"</code> is redundant and adds noise.</li>
-<li><strong>When comparing data structures:</strong> Pytest's diffing is almost always superior to any message you could write.</li>
-</ol>
-<p><strong>Guideline:</strong> Write your assertion first. If the failure message from pytest isn't clear enough, then consider adding a custom message to provide more context.</p>
-<h2 id="testing-exceptions-with-pytestraises">Testing Exceptions with pytest.raises()</h2>
-<h2 id="testing-exceptions-with-pytestraises_1">Testing Exceptions with pytest.raises()</h2>
-<p>A crucial part of robust software is handling errors gracefully. This means your code should raise exceptions when it receives invalid input or encounters an error state. Your tests must verify that the correct exceptions are raised under the right circumstances.</p>
-<h3 id="the-wrong-way-tryexcept">The Wrong Way: <code>try...except</code></h3>
-<p>A beginner might be tempted to write a test like this:</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># test_exceptions_wrong.py</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">divide</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
-    <span class="k">if</span> <span class="n">b</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Cannot divide by zero&quot;</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">a</span> <span class="o">/</span> <span class="n">b</span>
-
-<span class="c1"># This is NOT the recommended way to test exceptions in pytest</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_divide_by_zero_wrong</span><span class="p">():</span>
-    <span class="k">try</span><span class="p">:</span>
-        <span class="n">divide</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
-    <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
-        <span class="c1"># The exception was raised, so the test passes.</span>
-        <span class="k">pass</span>
-    <span class="k">else</span><span class="p">:</span>
-        <span class="c1"># If no exception was raised, the test should fail.</span>
-        <span class="k">assert</span> <span class="kc">False</span><span class="p">,</span> <span class="s2">&quot;ValueError was not raised&quot;</span>
-</code></pre></div>
-
-<p>This approach has several problems:
--   It's verbose and boilerplate-heavy.
--   It can accidentally catch the wrong exception if the <code>try</code> block is too large.
--   The test will pass if a <code>ValueError</code> is raised for the <em>wrong reason</em> inside the <code>try</code> block.
--   It doesn't provide a clean way to inspect the exception message or attributes.</p>
-<h3 id="the-pytest-way-pytestraises">The Pytest Way: <code>pytest.raises</code></h3>
-<p>Pytest provides a clean, expressive, and safe way to assert that a block of code raises an exception: the <code>pytest.raises</code> context manager.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># test_exceptions_right.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">divide</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
-    <span class="k">if</span> <span class="n">b</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Cannot divide by zero&quot;</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">a</span> <span class="o">/</span> <span class="n">b</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_divide_by_zero</span><span class="p">():</span>
-    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">):</span>
-        <span class="n">divide</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_divide_by_zero_fails_if_no_exception</span><span class="p">():</span>
-    <span class="c1"># This test will fail because no exception is raised</span>
-    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">):</span>
-        <span class="n">divide</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
-</code></pre></div>
-
-<p>This is much cleaner. The <code>with pytest.raises(ValueError):</code> block tells pytest: "I expect the code inside this block to raise a <code>ValueError</code>. If it does, the test passes. If it raises a different exception or no exception at all, the test fails."</p>
-<p>Running the file above produces a clear failure for the second test:</p>
-<div class="codehilite"><pre><span></span><code>_________________ test_divide_by_zero_fails_if_no_exception __________________
+<p>Now, running pytest shows both tests passing.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
 ...
-Failed: DID NOT RAISE &lt;class &#39;ValueError&#39;&gt;
+collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
+
+test_validator.py::test_valid_user<span class="w"> </span>PASSED<span class="w">                         </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+test_validator.py::test_underage_user<span class="w"> </span>PASSED<span class="w">                      </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">==========================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">==========================</span>
 </code></pre></div>
 
-<h3 id="inspecting-the-exception">Inspecting the Exception</h3>
-<p>Often, you need to check not only that an exception was raised, but also that it has the correct error message. You can capture the exception info using <code>as excinfo</code>.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># test_exceptions_right.py</span>
+<p>This simple exercise demonstrates the power of assertion introspection. Without it, we would have just seen <code>AssertionError</code> and would have had to manually print both dictionaries to find the difference. Pytest saves you that step, accelerating the debug cycle.</p>
+<h2 id="custom-assertion-messages">Custom Assertion Messages</h2>
+<h2 id="iteration-1-adding-context-with-custom-messages">Iteration 1: Adding Context with Custom Messages</h2>
+<p>Pytest's introspection is fantastic for comparing two objects, but sometimes the failure isn't about a difference between <code>a</code> and <code>b</code>. Sometimes, the failure is that a single value isn't what you expect it to be, and the reason <em>why</em> you expect it isn't obvious from the code.</p>
+<h3 id="current-limitation">Current Limitation</h3>
+<p>Our tests are good at checking the final <code>report</code> dictionary. But what if we wanted to test a property of the validator itself? Let's add a feature to count the number of validation rules.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># user_validator.py (updated)</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">UserValidator</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user_data</span><span class="p">:</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">data</span> <span class="o">=</span> <span class="n">user_data</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">errors</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="c1"># A list of all validation methods</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validations</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_age</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_username</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_email</span>
+        <span class="p">]</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">validation_rule_count</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_validations</span><span class="p">)</span>
+
+    <span class="c1"># ... (_validate methods are the same) ...</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">is_valid</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Runs all validations and returns True if no errors.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">errors</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">validation_func</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validations</span><span class="p">:</span>
+            <span class="n">validation_func</span><span class="p">()</span>
+        <span class="k">return</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">errors</span>
+
+    <span class="c1"># ... (get_validation_report is the same) ...</span>
+</code></pre></div>
+
+<p>Now, let's write a test to ensure we always have exactly three validation rules. This acts as a safeguard against someone accidentally removing a rule.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_validator.py (added test)</span>
+
+<span class="c1"># ... (other tests) ...</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_validation_rule_count</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Ensures the number of validation rules is correct.&quot;&quot;&quot;</span>
+    <span class="n">validator</span> <span class="o">=</span> <span class="n">UserValidator</span><span class="p">({})</span> <span class="c1"># Data doesn&#39;t matter for this test</span>
+    <span class="k">assert</span> <span class="n">validator</span><span class="o">.</span><span class="n">validation_rule_count</span> <span class="o">==</span> <span class="mi">3</span>
+</code></pre></div>
+
+<p>This test passes. But now, let's simulate a future change where a developer <em>removes</em> a validation rule, causing our safeguard test to fail.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># user_validator.py (temporarily broken)</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">UserValidator</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user_data</span><span class="p">:</span> <span class="nb">dict</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">data</span> <span class="o">=</span> <span class="n">user_data</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">errors</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="c1"># A developer accidentally removed a validation!</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_validations</span> <span class="o">=</span> <span class="p">[</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_age</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">_validate_username</span><span class="p">,</span>
+            <span class="c1"># self._validate_email is missing!</span>
+        <span class="p">]</span>
+    <span class="c1"># ... (rest of the class) ...</span>
+</code></pre></div>
+
+<h3 id="failure-demonstration">Failure Demonstration</h3>
+<p>Let's run pytest now.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+...
+collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items
+
+test_validator.py::test_valid_user<span class="w"> </span>PASSED<span class="w">                         </span><span class="o">[</span><span class="w"> </span><span class="m">33</span>%<span class="o">]</span>
+test_validator.py::test_underage_user<span class="w"> </span>PASSED<span class="w">                      </span><span class="o">[</span><span class="w"> </span><span class="m">66</span>%<span class="o">]</span>
+test_validator.py::test_validation_rule_count<span class="w"> </span>FAILED<span class="w">              </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">===============================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">===============================</span>
+______________________<span class="w"> </span>test_validation_rule_count<span class="w"> </span>______________________
+
+<span class="w">    </span>def<span class="w"> </span>test_validation_rule_count<span class="o">()</span>:
+<span class="w">        </span><span class="s2">&quot;&quot;&quot;Ensures the number of validation rules is correct.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="nv">validator</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>UserValidator<span class="o">({})</span><span class="w"> </span><span class="c1"># Data doesn&#39;t matter for this test</span>
+&gt;<span class="w">       </span>assert<span class="w"> </span>validator.validation_rule_count<span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">3</span>
+E<span class="w">       </span>assert<span class="w"> </span><span class="nv">2</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">3</span>
+E<span class="w">        </span>+<span class="w">  </span>where<span class="w"> </span><span class="nv">2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>&lt;user_validator.UserValidator<span class="w"> </span>object<span class="w"> </span>at<span class="w"> </span>0x...&gt;.validation_rule_count
+
+test_validator.py:42:<span class="w"> </span><span class="nv">AssertionError</span>
+<span class="o">=======================</span><span class="w"> </span>short<span class="w"> </span><span class="nb">test</span><span class="w"> </span>summary<span class="w"> </span><span class="nv">info</span><span class="w"> </span><span class="o">========================</span>
+FAILED<span class="w"> </span>test_validator.py::test_validation_rule_count<span class="w"> </span>-<span class="w"> </span>assert<span class="w"> </span><span class="nv">2</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nv">3</span>
+<span class="o">=====================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>failed,<span class="w"> </span><span class="m">2</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">=====================</span>
+</code></pre></div>
+
+<h3 id="diagnostic-analysis-reading-the-failure_1">Diagnostic Analysis: Reading the Failure</h3>
+<p><strong>The complete output</strong>: (Shown above)</p>
+<p><strong>Let's parse this section by section</strong>:</p>
+<ol>
+<li>
+<p><strong>The summary line</strong>: <code>FAILED test_validator.py::test_validation_rule_count - assert 2 == 3</code></p>
+<ul>
+<li><strong>What this tells us</strong>: The test failed because an assertion expected <code>3</code> but got <code>2</code>.</li>
+</ul>
+</li>
+<li>
+<p><strong>The traceback</strong>:
+    <code>python
+    &gt;       assert validator.validation_rule_count == 3
+    test_validator.py:42: AssertionError</code></p>
+<ul>
+<li><strong>What this tells us</strong>: The failure is on line 42.</li>
+</ul>
+</li>
+<li>
+<p><strong>The assertion introspection</strong>:
+    <code>E       assert 2 == 3
+    E        +  where 2 = &lt;user_validator.UserValidator object at 0x...&gt;.validation_rule_count</code></p>
+<ul>
+<li><strong>What this tells us</strong>: Pytest does its best. It shows that the value <code>2</code> came from the property <code>validation_rule_count</code>. This is helpful, but it doesn't explain the <em>business logic</em> behind the number <code>3</code>. Why was <code>3</code> the magic number?</li>
+</ul>
+</li>
+</ol>
+<p><strong>Root cause identified</strong>: The number of validation rules has changed from 3 to 2.
+<strong>Why the current approach is limited</strong>: The failure message is technically correct but lacks context. A developer seeing <code>assert 2 == 3</code> might not immediately understand the significance.
+<strong>What we need</strong>: A way to add a human-readable message to the failure output to explain the <em>intent</em> of the assertion.</p>
+<h3 id="technique-custom-assertion-messages">Technique: Custom Assertion Messages</h3>
+<p>Python's <code>assert</code> statement has a second, optional argument: a message to display if the assertion fails.</p>
+<div class="codehilite"><pre><span></span><code><span class="k">assert</span> <span class="o">&lt;</span><span class="n">condition</span><span class="o">&gt;</span><span class="p">,</span> <span class="s2">&quot;This is the message that will be shown on failure.&quot;</span>
+</code></pre></div>
+
+<p>Let's add a descriptive message to our test.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_validator.py (improved test)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_validation_rule_count</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Ensures the number of validation rules is correct.&quot;&quot;&quot;</span>
+    <span class="n">validator</span> <span class="o">=</span> <span class="n">UserValidator</span><span class="p">({})</span>
+
+    <span class="c1"># BEFORE</span>
+    <span class="c1"># assert validator.validation_rule_count == 3</span>
+
+    <span class="c1"># AFTER</span>
+    <span class="n">message</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="s2">&quot;The number of validation rules has changed. &quot;</span>
+        <span class="s2">&quot;If this was intentional, update the test. &quot;</span>
+        <span class="s2">&quot;Rules should cover: age, username, email.&quot;</span>
+    <span class="p">)</span>
+    <span class="k">assert</span> <span class="n">validator</span><span class="o">.</span><span class="n">validation_rule_count</span> <span class="o">==</span> <span class="mi">3</span><span class="p">,</span> <span class="n">message</span>
+</code></pre></div>
+
+<h3 id="verification">Verification</h3>
+<p>Now, let's run the test again with our broken <code>UserValidator</code> (that still has only 2 rules).</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+...
+collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items
+
+test_validator.py::test_valid_user<span class="w"> </span>PASSED<span class="w">                         </span><span class="o">[</span><span class="w"> </span><span class="m">33</span>%<span class="o">]</span>
+test_validator.py::test_underage_user<span class="w"> </span>PASSED<span class="w">                      </span><span class="o">[</span><span class="w"> </span><span class="m">66</span>%<span class="o">]</span>
+test_validator.py::test_validation_rule_count<span class="w"> </span>FAILED<span class="w">              </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">===============================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">===============================</span>
+______________________<span class="w"> </span>test_validation_rule_count<span class="w"> </span>______________________
+
+<span class="w">    </span>def<span class="w"> </span>test_validation_rule_count<span class="o">()</span>:
+<span class="w">        </span><span class="s2">&quot;&quot;&quot;Ensures the number of validation rules is correct.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="nv">validator</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>UserValidator<span class="o">({})</span>
+
+<span class="w">        </span><span class="nv">message</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">(</span>
+<span class="w">            </span><span class="s2">&quot;The number of validation rules has changed. &quot;</span>
+<span class="w">            </span><span class="s2">&quot;If this was intentional, update the test. &quot;</span>
+<span class="w">            </span><span class="s2">&quot;Rules should cover: age, username, email.&quot;</span>
+<span class="w">        </span><span class="o">)</span>
+&gt;<span class="w">       </span>assert<span class="w"> </span>validator.validation_rule_count<span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">3</span>,<span class="w"> </span>message
+E<span class="w">       </span>AssertionError:<span class="w"> </span>The<span class="w"> </span>number<span class="w"> </span>of<span class="w"> </span>validation<span class="w"> </span>rules<span class="w"> </span>has<span class="w"> </span>changed.<span class="w"> </span>If<span class="w"> </span>this<span class="w"> </span>was<span class="w"> </span>intentional,<span class="w"> </span>update<span class="w"> </span>the<span class="w"> </span>test.<span class="w"> </span>Rules<span class="w"> </span>should<span class="w"> </span>cover:<span class="w"> </span>age,<span class="w"> </span>username,<span class="w"> </span>email.
+E<span class="w">       </span>assert<span class="w"> </span><span class="nv">2</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">3</span>
+E<span class="w">        </span>+<span class="w">  </span>where<span class="w"> </span><span class="nv">2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>&lt;user_validator.UserValidator<span class="w"> </span>object<span class="w"> </span>at<span class="w"> </span>0x...&gt;.validation_rule_count
+
+test_validator.py:50:<span class="w"> </span><span class="nv">AssertionError</span>
+<span class="o">=======================</span><span class="w"> </span>short<span class="w"> </span><span class="nb">test</span><span class="w"> </span>summary<span class="w"> </span><span class="nv">info</span><span class="w"> </span><span class="o">========================</span>
+FAILED<span class="w"> </span>test_validator.py::test_validation_rule_count<span class="w"> </span>-<span class="w"> </span>AssertionError:<span class="w"> </span>The...
+<span class="o">=====================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>failed,<span class="w"> </span><span class="m">2</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">=====================</span>
+</code></pre></div>
+
+<p>Look at that! The custom message is now the first thing you see in the failure report. It immediately tells the developer what the number <code>3</code> means and what they should check. This transforms a simple <code>assert 2 == 3</code> into a rich, actionable piece of feedback.</p>
+<p>(Remember to fix the <code>UserValidator</code> class by re-adding <code>_validate_email</code> to the list before proceeding.)</p>
+<h2 id="testing-exceptions-with-pytestraises">Testing Exceptions with pytest.raises()</h2>
+<h2 id="iteration-2-handling-expected-errors">Iteration 2: Handling Expected Errors</h2>
+<p>Our current <code>UserValidator</code> is polite. When it finds invalid data, it adds an error to a dictionary. This is a valid design pattern, but often, invalid input should be treated more severely by raising an exception. This signals a programming error—the caller should have sanitized the data <em>before</em> passing it to the object.</p>
+<p>Let's refactor our validator. Instead of collecting errors, the <code>_validate_age</code> method will now raise a <code>ValueError</code> if the birthdate format is wrong.</p>
+<h3 id="current-limitation_1">Current Limitation</h3>
+<p>Our tests are designed to check the state of the <code>errors</code> dictionary. They have no mechanism to handle or expect exceptions.</p>
+<h3 id="new-scenario-invalid-date-format">New Scenario: Invalid Date Format</h3>
+<p>Let's change <code>_validate_age</code> to be stricter.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># user_validator.py (refactored)</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">date</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">UserValidator</span><span class="p">:</span>
+    <span class="c1"># ... (__init__ and other _validate methods are the same for now) ...</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_age</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;User must be 18 or older. Raises ValueError on bad date format.&quot;&quot;&quot;</span>
+        <span class="n">today</span> <span class="o">=</span> <span class="n">date</span><span class="o">.</span><span class="n">today</span><span class="p">()</span>
+        <span class="n">birthdate_str</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;birthdate&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">birthdate_str</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">errors</span><span class="p">[</span><span class="s2">&quot;birthdate&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;Birthdate is required&quot;</span>
+            <span class="k">return</span>
+
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">birthdate</span> <span class="o">=</span> <span class="n">date</span><span class="o">.</span><span class="n">fromisoformat</span><span class="p">(</span><span class="n">birthdate_str</span><span class="p">)</span>
+            <span class="n">age</span> <span class="o">=</span> <span class="n">today</span><span class="o">.</span><span class="n">year</span> <span class="o">-</span> <span class="n">birthdate</span><span class="o">.</span><span class="n">year</span> <span class="o">-</span> <span class="p">((</span><span class="n">today</span><span class="o">.</span><span class="n">month</span><span class="p">,</span> <span class="n">today</span><span class="o">.</span><span class="n">day</span><span class="p">)</span> <span class="o">&lt;</span> <span class="p">(</span><span class="n">birthdate</span><span class="o">.</span><span class="n">month</span><span class="p">,</span> <span class="n">birthdate</span><span class="o">.</span><span class="n">day</span><span class="p">))</span>
+            <span class="k">if</span> <span class="n">age</span> <span class="o">&lt;</span> <span class="mi">18</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">errors</span><span class="p">[</span><span class="s2">&quot;age&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;User must be 18 or older&quot;</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="c1"># This is the new behavior!</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid date format for birthdate: &#39;</span><span class="si">{</span><span class="n">birthdate_str</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
+
+    <span class="c1"># ... (rest of the class) ...</span>
+</code></pre></div>
+
+<p>How do we test this? A naive approach might be to write a test that calls the validator with a bad date and see what happens.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_validator.py (added test)</span>
+
+<span class="c1"># ... (other tests) ...</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_invalid_date_format_raises_exception</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests that a malformed birthdate string raises a ValueError.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">invalid_data</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;username&quot;</span><span class="p">:</span> <span class="s2">&quot;test_user&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;birthdate&quot;</span><span class="p">:</span> <span class="s2">&quot;2000-13-01&quot;</span><span class="p">,</span> <span class="c1"># Invalid month</span>
+        <span class="s2">&quot;email&quot;</span><span class="p">:</span> <span class="s2">&quot;test@example.com&quot;</span>
+    <span class="p">}</span>
+    <span class="n">validator</span> <span class="o">=</span> <span class="n">UserValidator</span><span class="p">(</span><span class="n">invalid_data</span><span class="p">)</span>
+
+    <span class="c1"># How do we assert that an exception is raised?</span>
+    <span class="c1"># This line will crash the test.</span>
+    <span class="n">validator</span><span class="o">.</span><span class="n">is_valid</span><span class="p">()</span>
+</code></pre></div>
+
+<h3 id="failure-demonstration_1">Failure Demonstration</h3>
+<p>Running this new test results in an <code>ERROR</code>, not a <code>FAIL</code>. This is a crucial distinction. A <code>FAIL</code> means an assertion was proven false. An <code>ERROR</code> means the test itself crashed due to an unhandled exception.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+...
+collected<span class="w"> </span><span class="m">4</span><span class="w"> </span>items
+
+test_validator.py::test_valid_user<span class="w"> </span>PASSED<span class="w">                         </span><span class="o">[</span><span class="w"> </span><span class="m">25</span>%<span class="o">]</span>
+test_validator.py::test_underage_user<span class="w"> </span>PASSED<span class="w">                      </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+test_validator.py::test_validation_rule_count<span class="w"> </span>PASSED<span class="w">              </span><span class="o">[</span><span class="w"> </span><span class="m">75</span>%<span class="o">]</span>
+test_validator.py::test_invalid_date_format_raises_exception<span class="w"> </span>ERROR<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">================================</span><span class="w"> </span><span class="nv">ERRORS</span><span class="w"> </span><span class="o">================================</span>
+ERROR<span class="w"> </span>at<span class="w"> </span>setup<span class="w"> </span>of<span class="w"> </span>test_invalid_date_format_raises_exception
+...
+<span class="w">    </span>def<span class="w"> </span>test_invalid_date_format_raises_exception<span class="o">()</span>:
+<span class="w">        </span><span class="c1"># ...</span>
+<span class="w">        </span><span class="nv">validator</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>UserValidator<span class="o">(</span>invalid_data<span class="o">)</span>
+
+<span class="w">        </span><span class="c1"># This line will crash the test.</span>
+&gt;<span class="w">       </span>validator.is_valid<span class="o">()</span>
+
+test_validator.py:59:<span class="w"> </span>
+_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>
+user_validator.py:22:<span class="w"> </span><span class="k">in</span><span class="w"> </span>is_valid
+<span class="w">    </span>validation_func<span class="o">()</span>
+user_validator.py:36:<span class="w"> </span><span class="k">in</span><span class="w"> </span>_validate_age
+<span class="w">    </span>raise<span class="w"> </span>ValueError<span class="o">(</span>f<span class="s2">&quot;Invalid date format for birthdate: &#39;{birthdate_str}&#39;&quot;</span><span class="o">)</span>
+E<span class="w">   </span>ValueError:<span class="w"> </span>Invalid<span class="w"> </span>date<span class="w"> </span>format<span class="w"> </span><span class="k">for</span><span class="w"> </span>birthdate:<span class="w"> </span><span class="s1">&#39;2000-13-01&#39;</span>
+<span class="o">=======================</span><span class="w"> </span>short<span class="w"> </span><span class="nb">test</span><span class="w"> </span>summary<span class="w"> </span><span class="nv">info</span><span class="w"> </span><span class="o">========================</span>
+ERROR<span class="w"> </span>test_validator.py::test_invalid_date_format_raises_exception
+<span class="o">=====================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>error,<span class="w"> </span><span class="m">3</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">======================</span>
+</code></pre></div>
+
+<h3 id="diagnostic-analysis-reading-the-failure_2">Diagnostic Analysis: Reading the Failure</h3>
+<p><strong>The complete output</strong>: (Shown above)</p>
+<ol>
+<li>
+<p><strong>The summary line</strong>: <code>ERROR test_validator.py::test_invalid_date_format_raises_exception</code></p>
+<ul>
+<li><strong>What this tells us</strong>: The test didn't fail an assertion; it crashed. This is an uncontrolled error.</li>
+</ul>
+</li>
+<li>
+<p><strong>The traceback</strong>:
+    <code>user_validator.py:36: in _validate_age
+        raise ValueError(f"Invalid date format for birthdate: '{birthdate_str}'")
+    E   ValueError: Invalid date format for birthdate: '2000-13-01'</code></p>
+<ul>
+<li><strong>What this tells us</strong>: The traceback clearly shows a <code>ValueError</code> was raised from within our <code>_validate_age</code> method, exactly as we designed. The problem is that our test didn't catch it.</li>
+</ul>
+</li>
+</ol>
+<p><strong>Root cause identified</strong>: The test code does not handle the <code>ValueError</code> that the application code correctly raises.
+<strong>Why the current approach can't solve this</strong>: A test function, by default, is expected to run to completion without raising exceptions. An unhandled exception is always an error.
+<strong>What we need</strong>: A way to tell pytest, "I expect this specific block of code to raise this specific exception. If it does, the test passes. If it doesn't, or if it raises a different exception, the test fails."</p>
+<h3 id="technique-the-pytestraises-context-manager">Technique: The <code>pytest.raises</code> Context Manager</h3>
+<p>Pytest provides a clean, expressive context manager for this exact purpose: <code>pytest.raises</code>.</p>
+<p>You use it like this:</p>
+<div class="codehilite"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_something_that_raises</span><span class="p">():</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">ExpectedException</span><span class="p">):</span>
+        <span class="c1"># Code that is expected to raise ExpectedException</span>
+        <span class="n">call_my_function</span><span class="p">()</span>
+</code></pre></div>
+
+<p>If <code>call_my_function()</code> raises <code>ExpectedException</code>, the <code>with</code> block catches it, and the test passes. If it raises a different exception or no exception at all, the test fails.</p>
+<p>Let's fix our test using this pattern.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_validator.py (fixed with pytest.raises)</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="c1"># ... (other imports and tests) ...</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">divide</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
-    <span class="k">if</span> <span class="n">b</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Cannot divide by zero&quot;</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">a</span> <span class="o">/</span> <span class="n">b</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_invalid_date_format_raises_exception</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests that a malformed birthdate string raises a ValueError.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">invalid_data</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;username&quot;</span><span class="p">:</span> <span class="s2">&quot;test_user&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;birthdate&quot;</span><span class="p">:</span> <span class="s2">&quot;2000-13-01&quot;</span><span class="p">,</span> <span class="c1"># Invalid month</span>
+        <span class="s2">&quot;email&quot;</span><span class="p">:</span> <span class="s2">&quot;test@example.com&quot;</span>
+    <span class="p">}</span>
+    <span class="n">validator</span> <span class="o">=</span> <span class="n">UserValidator</span><span class="p">(</span><span class="n">invalid_data</span><span class="p">)</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_divide_by_zero_with_message_check</span><span class="p">():</span>
+    <span class="c1"># BEFORE: This crashed the test</span>
+    <span class="c1"># validator.is_valid()</span>
+
+    <span class="c1"># AFTER: We wrap the call in pytest.raises</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">):</span>
+        <span class="n">validator</span><span class="o">.</span><span class="n">is_valid</span><span class="p">()</span>
+</code></pre></div>
+
+<h3 id="verification_1">Verification</h3>
+<p>Running pytest now shows all tests passing.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+...
+collected<span class="w"> </span><span class="m">4</span><span class="w"> </span>items
+
+test_validator.py::test_valid_user<span class="w"> </span>PASSED<span class="w">                         </span><span class="o">[</span><span class="w"> </span><span class="m">25</span>%<span class="o">]</span>
+test_validator.py::test_underage_user<span class="w"> </span>PASSED<span class="w">                      </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+test_validator.py::test_validation_rule_count<span class="w"> </span>PASSED<span class="w">              </span><span class="o">[</span><span class="w"> </span><span class="m">75</span>%<span class="o">]</span>
+test_validator.py::test_invalid_date_format_raises_exception<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">==========================</span><span class="w"> </span><span class="m">4</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">==========================</span>
+</code></pre></div>
+
+<h3 id="asserting-on-exception-details">Asserting on Exception Details</h3>
+<p>Passing is good, but we can be more specific. What if the function raises a <code>ValueError</code> for the wrong reason? The <code>pytest.raises</code> context manager can give you access to the exception object itself.</p>
+<p>You can capture it using <code>as excinfo</code>:</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_validator.py (enhanced test)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_invalid_date_format_raises_exception_with_message</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests that a malformed birthdate string raises a ValueError</span>
+<span class="sd">    with a specific error message.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">bad_date</span> <span class="o">=</span> <span class="s2">&quot;2000-13-01&quot;</span>
+    <span class="n">invalid_data</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;username&quot;</span><span class="p">:</span> <span class="s2">&quot;test_user&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;birthdate&quot;</span><span class="p">:</span> <span class="n">bad_date</span><span class="p">,</span>
+        <span class="s2">&quot;email&quot;</span><span class="p">:</span> <span class="s2">&quot;test@example.com&quot;</span>
+    <span class="p">}</span>
+    <span class="n">validator</span> <span class="o">=</span> <span class="n">UserValidator</span><span class="p">(</span><span class="n">invalid_data</span><span class="p">)</span>
+
     <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">)</span> <span class="k">as</span> <span class="n">excinfo</span><span class="p">:</span>
-        <span class="n">divide</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+        <span class="n">validator</span><span class="o">.</span><span class="n">is_valid</span><span class="p">()</span>
 
     <span class="c1"># excinfo is an ExceptionInfo object</span>
-    <span class="c1"># excinfo.value is the actual exception instance</span>
-    <span class="k">assert</span> <span class="s2">&quot;Cannot divide by zero&quot;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">excinfo</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+    <span class="c1"># .value is the actual exception instance</span>
+    <span class="k">assert</span> <span class="n">bad_date</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">excinfo</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="s2">&quot;Invalid date format&quot;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">excinfo</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
+
+    <span class="c1"># A more convenient way is to use the match parameter</span>
+    <span class="n">match_str</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Invalid date format for birthdate: &#39;</span><span class="si">{</span><span class="n">bad_date</span><span class="si">}</span><span class="s2">&#39;&quot;</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="n">match</span><span class="o">=</span><span class="n">match_str</span><span class="p">):</span>
+        <span class="n">validator</span><span class="o">.</span><span class="n">is_valid</span><span class="p">()</span>
 </code></pre></div>
 
-<p>The <code>excinfo</code> object is a wrapper around the actual exception. It gives you access to:
--   <code>excinfo.type</code>: The type of the exception (e.g., <code>ValueError</code>).
--   <code>excinfo.value</code>: The exception instance itself.
--   <code>excinfo.traceback</code>: The traceback object.</p>
-<h3 id="using-match-for-cleaner-message-checks">Using <code>match</code> for Cleaner Message Checks</h3>
-<p>Checking the message with <code>str(excinfo.value)</code> works, but pytest provides an even more convenient way: the <code>match</code> parameter. It asserts that the exception message matches a regular expression.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># test_exceptions_right.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<p>The <code>match</code> parameter is particularly useful. It checks the exception's string representation against a regular expression. This makes your test more robust and readable.</p>
+<h3 id="common-failure-modes-and-their-signatures">Common Failure Modes and Their Signatures</h3>
+<h4 id="symptom-the-expected-exception-was-never-raised">Symptom: The expected exception was never raised.</h4>
+<p><strong>Pytest output pattern</strong>:</p>
+<div class="codehilite"><pre><span></span><code><span class="k">&gt; </span><span class="ge">      with pytest.raises(ValueError):</span>
+E       Failed: DID NOT RAISE &lt;class &#39;ValueError&#39;&gt;
 
-<span class="k">def</span><span class="w"> </span><span class="nf">divide</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
-    <span class="k">if</span> <span class="n">b</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Cannot divide by zero&quot;</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">a</span> <span class="o">/</span> <span class="n">b</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_divide_by_zero_with_match</span><span class="p">():</span>
-    <span class="c1"># The match parameter accepts a regex pattern.</span>
-    <span class="c1"># &#39;zero&#39; will match &quot;Cannot divide by zero&quot;</span>
-    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="n">match</span><span class="o">=</span><span class="s2">&quot;divide by zero&quot;</span><span class="p">):</span>
-        <span class="n">divide</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span>
+test_validator.py:65: Failed
 </code></pre></div>
 
-<p>Using <code>match</code> is often preferred because it's more concise and directly states the expectation in the <code>pytest.raises</code> call. It makes the test's intent clearer at a glance.</p>
+<p><strong>Diagnostic clues</strong>: The output explicitly says <code>DID NOT RAISE</code>.
+<strong>Root cause</strong>: The code inside the <code>with</code> block completed without raising the specified exception. This indicates a bug in your application code—it's not failing when it should.
+<strong>Solution</strong>: Debug the application code to find out why the exception isn't being raised under the test conditions.</p>
+<h4 id="symptom-a-different-exception-was-raised">Symptom: A different exception was raised.</h4>
+<p><strong>Pytest output pattern</strong>:</p>
+<div class="codehilite"><pre><span></span><code><span class="o">&gt;</span><span class="w">       </span><span class="nv">with</span><span class="w"> </span><span class="nv">pytest</span>.<span class="nv">raises</span><span class="ss">(</span><span class="nv">ValueError</span><span class="ss">)</span>:
+<span class="o">&gt;</span><span class="w">           </span><span class="nv">raise</span><span class="w"> </span><span class="nv">TypeError</span><span class="ss">(</span><span class="s2">&quot;Something else went wrong&quot;</span><span class="ss">)</span>
+<span class="nv">E</span><span class="w">       </span><span class="nv">TypeError</span>:<span class="w"> </span><span class="nv">Something</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="nv">went</span><span class="w"> </span><span class="nv">wrong</span>
+
+...
+<span class="nv">During</span><span class="w"> </span><span class="nv">handling</span><span class="w"> </span><span class="nv">of</span><span class="w"> </span><span class="nv">the</span><span class="w"> </span><span class="nv">above</span><span class="w"> </span><span class="nv">exception</span>,<span class="w"> </span><span class="nv">another</span><span class="w"> </span><span class="nv">exception</span><span class="w"> </span><span class="nv">occurred</span>:
+...
+<span class="nv">E</span><span class="w">       </span><span class="nv">Failed</span>:<span class="w"> </span><span class="nv">DID</span><span class="w"> </span><span class="nv">NOT</span><span class="w"> </span><span class="nv">RAISE</span><span class="w"> </span><span class="o">&lt;</span><span class="nv">class</span><span class="w"> </span><span class="s1">&#39;ValueError&#39;</span><span class="o">&gt;</span>
+</code></pre></div>
+
+<p><strong>Diagnostic clues</strong>: You'll see the traceback for the <em>unexpected</em> exception (<code>TypeError</code> in this case), followed by the <code>Failed: DID NOT RAISE &lt;class 'ValueError'&gt;</code> message.
+<strong>Root cause</strong>: The code raised an exception, but not the one you were expecting. This could be a bug in your application or a mistake in your test's expectation.
+<strong>Solution</strong>: Analyze the unexpected exception. Is it the correct behavior? If so, update your test to expect <code>TypeError</code>. If not, fix the application code to raise <code>ValueError</code> as intended.</p>
 <h2 id="testing-warnings-with-pytestwarns">Testing Warnings with pytest.warns()</h2>
-<h2 id="testing-warnings-with-pytestwarns_1">Testing Warnings with pytest.warns()</h2>
-<p>Warnings are a way for libraries to inform users about deprecated features, potential bugs, or upcoming changes without raising a full exception. Like exceptions, it's important to test that your code emits the correct warnings when it should.</p>
-<p>Pytest provides <code>pytest.warns</code>, which works almost identically to <code>pytest.raises</code>.</p>
-<h3 id="a-function-that-emits-a-warning">A Function That Emits a Warning</h3>
-<p>Let's create a function that uses Python's built-in <code>warnings</code> module.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># test_warnings.py</span>
+<h2 id="iteration-3-capturing-expected-warnings">Iteration 3: Capturing Expected Warnings</h2>
+<p>Exceptions are for errors, but what about conditions that aren't errors yet but might be in the future? Python has a built-in warning system for this, commonly used for deprecation notices.</p>
+<p>Let's evolve our <code>UserValidator</code>. Suppose we decide that the <code>username</code> field is being deprecated in favor of using the <code>email</code> as the primary identifier. We want to keep the username validation for now, but we want to warn the user whenever it's being validated.</p>
+<h3 id="current-limitation_2">Current Limitation</h3>
+<p>Our tests check for return values and exceptions, but they are completely blind to warnings. A test would pass, and the warning would be printed to the console, but it wouldn't be programmatically verified.</p>
+<h3 id="new-scenario-deprecated-username-validation">New Scenario: Deprecated Username Validation</h3>
+<p>Let's modify <code>_validate_username</code> to issue a <code>DeprecationWarning</code>.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># user_validator.py (updated)</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="c1"># ...</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">old_function</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;This is a deprecated function.&quot;&quot;&quot;</span>
-    <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s2">&quot;old_function() is deprecated, use new_function() instead.&quot;</span><span class="p">,</span> <span class="ne">DeprecationWarning</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">x</span> <span class="o">*</span> <span class="mi">2</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">new_function</span><span class="p">(</span><span class="n">x</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;This is the new function.&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="n">x</span> <span class="o">*</span> <span class="mi">2</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">UserValidator</span><span class="p">:</span>
+    <span class="c1"># ...</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_validate_username</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Username cannot be &#39;admin&#39;. Issues a warning.&quot;&quot;&quot;</span>
+        <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span>
+            <span class="s2">&quot;&#39;username&#39; is a deprecated field.&quot;</span><span class="p">,</span>
+            <span class="ne">DeprecationWarning</span>
+        <span class="p">)</span>
+        <span class="n">username</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;username&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">username</span> <span class="o">==</span> <span class="s2">&quot;admin&quot;</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">errors</span><span class="p">[</span><span class="s2">&quot;username&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;Username cannot be &#39;admin&#39;&quot;</span>
+    <span class="c1"># ...</span>
 </code></pre></div>
 
-<h3 id="testing-for-a-specific-warning">Testing for a Specific Warning</h3>
-<p>We can use <code>pytest.warns</code> as a context manager to assert that code inside the <code>with</code> block triggers a specific type of warning.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># test_warnings.py</span>
-<span class="c1"># ... (previous code) ...</span>
+<p>If we run our existing tests, they will pass, but we'll see a <code>DeprecationWarning</code> in the output. This is okay, but it's not a guarantee. We want a test that <em>fails</em> if this warning is <em>not</em> issued.</p>
+<h3 id="failure-demonstration_2">Failure Demonstration</h3>
+<p>How can we make a test fail if a warning isn't present? A common CI/CD practice is to treat warnings as errors to keep the codebase clean. We can simulate this using the <code>-W error</code> pytest flag.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>-W<span class="w"> </span><span class="nv">error</span>
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+...
+collected<span class="w"> </span><span class="m">5</span><span class="w"> </span>items
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_old_function_emits_warning</span><span class="p">():</span>
-    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">warns</span><span class="p">(</span><span class="ne">DeprecationWarning</span><span class="p">):</span>
-        <span class="n">old_function</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
+test_validator.py::test_valid_user<span class="w"> </span>FAILED<span class="w">                         </span><span class="o">[</span><span class="w"> </span><span class="m">20</span>%<span class="o">]</span>
+test_validator.py::test_underage_user<span class="w"> </span>FAILED<span class="w">                      </span><span class="o">[</span><span class="w"> </span><span class="m">40</span>%<span class="o">]</span>
+test_validator.py::test_validation_rule_count<span class="w"> </span>PASSED<span class="w">              </span><span class="o">[</span><span class="w"> </span><span class="m">60</span>%<span class="o">]</span>
+test_validator.py::test_invalid_date_format_raises_exception_with_message<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">80</span>%<span class="o">]</span>
+test_validator.py::test_invalid_date_format_raises_exception<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_new_function_does_not_emit_warning</span><span class="p">():</span>
-    <span class="c1"># This will fail if any warning is emitted</span>
-    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">warns</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span> <span class="k">as</span> <span class="n">record</span><span class="p">:</span>
-        <span class="n">new_function</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
-
-    <span class="c1"># Assert that the &#39;record&#39; list is empty</span>
-    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">record</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span>
+<span class="o">===============================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">===============================</span>
+____________________________<span class="w"> </span>test_valid_user<span class="w"> </span>___________________________
+...
+&gt;<span class="w">       </span>validator.is_valid<span class="o">()</span>
+E<span class="w">       </span>DeprecationWarning:<span class="w"> </span><span class="s1">&#39;username&#39;</span><span class="w"> </span>is<span class="w"> </span>a<span class="w"> </span>deprecated<span class="w"> </span>field.
+...
+<span class="o">=======================</span><span class="w"> </span>short<span class="w"> </span><span class="nb">test</span><span class="w"> </span>summary<span class="w"> </span><span class="nv">info</span><span class="w"> </span><span class="o">========================</span>
+FAILED<span class="w"> </span>test_validator.py::test_valid_user<span class="w"> </span>-<span class="w"> </span>DeprecationWarning:<span class="w"> </span><span class="s1">&#39;user...</span>
+<span class="s1">FAILED test_validator.py::test_underage_user - DeprecationWarning: &#39;</span>u...
+<span class="o">=====================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>failed,<span class="w"> </span><span class="m">3</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">=====================</span>
 </code></pre></div>
 
-<p>If the code inside <code>pytest.warns(DeprecationWarning)</code> does not raise that specific warning, the test will fail with a clear message, just like <code>pytest.raises</code>.</p>
-<h3 id="inspecting-the-warning-message">Inspecting the Warning Message</h3>
-<p>Just like <code>pytest.raises</code>, you can use the <code>match</code> parameter to check the warning's message.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># test_warnings.py</span>
-<span class="c1"># ... (previous code) ...</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_old_function_warning_message</span><span class="p">():</span>
-    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">warns</span><span class="p">(</span><span class="ne">DeprecationWarning</span><span class="p">,</span> <span class="n">match</span><span class="o">=</span><span class="s2">&quot;is deprecated, use new_function()&quot;</span><span class="p">):</span>
-        <span class="n">old_function</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
-</code></pre></div>
-
-<p>You can also capture the warning objects into a list for more detailed inspection. This is useful if a block of code is expected to emit multiple warnings.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># test_warnings.py</span>
-<span class="c1"># ... (previous code) ...</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">function_with_multiple_warnings</span><span class="p">():</span>
-    <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s2">&quot;First warning&quot;</span><span class="p">,</span> <span class="ne">UserWarning</span><span class="p">)</span>
-    <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s2">&quot;Second warning&quot;</span><span class="p">,</span> <span class="ne">RuntimeWarning</span><span class="p">)</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_multiple_warnings</span><span class="p">():</span>
-    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">warns</span><span class="p">(</span><span class="ne">UserWarning</span><span class="p">)</span> <span class="k">as</span> <span class="n">record</span><span class="p">:</span>
-        <span class="n">function_with_multiple_warnings</span><span class="p">()</span>
-
-    <span class="c1"># The test only passes if at least one UserWarning was caught.</span>
-    <span class="c1"># The record contains only the captured warnings of the specified type.</span>
-    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">record</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
-    <span class="k">assert</span> <span class="s2">&quot;First warning&quot;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">record</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">message</span><span class="p">)</span>
-</code></pre></div>
-
-<p>Using <code>pytest.warns</code> ensures that your application's communication about deprecations and potential issues remains correct and reliable as your codebase evolves.</p>
-<h2 id="context-managers-for-advanced-assertions">Context Managers for Advanced Assertions</h2>
-<h2 id="context-managers-for-advanced-assertions_1">Context Managers for Advanced Assertions</h2>
-<p>You've already seen two powerful examples of context managers used for assertions: <code>pytest.raises</code> and <code>pytest.warns</code>. This pattern—using a <code>with</code> statement to assert something about the code block inside it—is incredibly powerful and can be extended for custom, complex assertions.</p>
-<p>A context manager is any object in Python that defines <code>__enter__</code> and <code>__exit__</code> methods, allowing it to be used with the <code>with</code> statement. This is perfect for "setup" and "teardown" logic around a piece of code. In testing, we can use the "teardown" part (<code>__exit__</code>) to perform assertions about what happened during the "setup" part (<code>__enter__</code> and the <code>with</code> block).</p>
-<h3 id="example-asserting-on-log-messages">Example: Asserting on Log Messages</h3>
-<p>Imagine you want to test that a specific log message is emitted by a function. You could redirect <code>stdout</code> or mock the logging framework, but a custom context manager provides a much cleaner, reusable solution.</p>
-<p>Let's build an <code>assert_logs</code> context manager.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># test_advanced_assertions.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">logging</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">contextlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">contextmanager</span>
-
-<span class="c1"># This is our custom context manager</span>
-<span class="nd">@contextmanager</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">assert_logs</span><span class="p">(</span><span class="n">logger</span><span class="p">,</span> <span class="n">level</span><span class="p">,</span> <span class="n">expected_message</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;A context manager to assert that a logger emits a specific message.&quot;&quot;&quot;</span>
-    <span class="c1"># Setup: Capture logs</span>
-    <span class="kn">from</span><span class="w"> </span><span class="nn">io</span><span class="w"> </span><span class="kn">import</span> <span class="n">StringIO</span>
-    <span class="n">log_capture_string</span> <span class="o">=</span> <span class="n">StringIO</span><span class="p">()</span>
-    <span class="n">handler</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">StreamHandler</span><span class="p">(</span><span class="n">log_capture_string</span><span class="p">)</span>
-    <span class="n">logger</span><span class="o">.</span><span class="n">addHandler</span><span class="p">(</span><span class="n">handler</span><span class="p">)</span>
-
-    <span class="c1"># Store original level and set the desired one</span>
-    <span class="n">original_level</span> <span class="o">=</span> <span class="n">logger</span><span class="o">.</span><span class="n">level</span>
-    <span class="n">logger</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">level</span><span class="p">)</span>
-
-    <span class="k">yield</span>  <span class="c1"># The code inside the &#39;with&#39; block runs here</span>
-
-    <span class="c1"># Teardown: Perform assertions</span>
-    <span class="n">logger</span><span class="o">.</span><span class="n">removeHandler</span><span class="p">(</span><span class="n">handler</span><span class="p">)</span>
-    <span class="n">logger</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">original_level</span><span class="p">)</span>
-
-    <span class="n">log_contents</span> <span class="o">=</span> <span class="n">log_capture_string</span><span class="o">.</span><span class="n">getvalue</span><span class="p">()</span>
-    <span class="k">assert</span> <span class="n">expected_message</span> <span class="ow">in</span> <span class="n">log_contents</span>
-
-<span class="c1"># --- Code to be tested ---</span>
-<span class="n">app_logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;my_app&quot;</span><span class="p">)</span>
-<span class="n">app_logger</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">)</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">process_data</span><span class="p">(</span><span class="n">data</span><span class="p">):</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">data</span><span class="p">:</span>
-        <span class="n">app_logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="s2">&quot;Received empty data payload.&quot;</span><span class="p">)</span>
-        <span class="k">return</span>
-    <span class="n">app_logger</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Processing data: </span><span class="si">{</span><span class="n">data</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="c1"># ... processing logic ...</span>
-
-<span class="c1"># --- The Test ---</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_process_data_logs_warning_for_empty_payload</span><span class="p">():</span>
-    <span class="k">with</span> <span class="n">assert_logs</span><span class="p">(</span><span class="n">app_logger</span><span class="p">,</span> <span class="n">logging</span><span class="o">.</span><span class="n">WARNING</span><span class="p">,</span> <span class="s2">&quot;Received empty data payload.&quot;</span><span class="p">):</span>
-        <span class="n">process_data</span><span class="p">(</span><span class="kc">None</span><span class="p">)</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_process_data_logs_info</span><span class="p">():</span>
-    <span class="k">with</span> <span class="n">assert_logs</span><span class="p">(</span><span class="n">app_logger</span><span class="p">,</span> <span class="n">logging</span><span class="o">.</span><span class="n">INFO</span><span class="p">,</span> <span class="s2">&quot;Processing data: {&#39;id&#39;: 1}&quot;</span><span class="p">):</span>
-        <span class="n">process_data</span><span class="p">({</span><span class="s1">&#39;id&#39;</span><span class="p">:</span> <span class="mi">1</span><span class="p">})</span>
-</code></pre></div>
-
-<h3 id="how-it-works">How It Works</h3>
+<h3 id="diagnostic-analysis-reading-the-failure_3">Diagnostic Analysis: Reading the Failure</h3>
+<p><strong>The complete output</strong>: (Shown above)</p>
 <ol>
-<li><strong><code>@contextmanager</code></strong>: This decorator from Python's standard library lets us write a generator-based context manager, which is simpler than writing a full class.</li>
-<li><strong>Setup (<code>__enter__</code>)</strong>: Everything before the <code>yield</code> is the setup. We create an in-memory text stream (<code>StringIO</code>), add a handler to our logger to redirect its output to our stream, and set the logging level.</li>
-<li><strong><code>yield</code></strong>: This is where control is passed back to the <code>with</code> block in the test. The <code>process_data()</code> function runs at this point.</li>
-<li><strong>Teardown (<code>__exit__</code>)</strong>: Everything after the <code>yield</code> is the teardown. We remove our custom handler to stop capturing logs and restore the logger's original level. This cleanup is critical to avoid interfering with other tests.</li>
-<li><strong>Assertion</strong>: Finally, we get the captured log content from our stream and assert that our expected message is present.</li>
+<li>
+<p><strong>The summary line</strong>: <code>FAILED test_validator.py::test_valid_user - DeprecationWarning: ...</code></p>
+<ul>
+<li><strong>What this tells us</strong>: The test failed because it encountered a <code>DeprecationWarning</code>, which we told pytest to treat as an error.</li>
+</ul>
+</li>
+<li>
+<p><strong>The traceback</strong>:
+    <code>&gt;       validator.is_valid()
+    E       DeprecationWarning: 'username' is a deprecated field.</code></p>
+<ul>
+<li><strong>What this tells us</strong>: The warning was triggered by the call to <code>validator.is_valid()</code>.</li>
+</ul>
+</li>
 </ol>
-<p>This pattern is extremely powerful. You can create context managers to assert on all kinds of behavior:
--   That a database transaction was committed or rolled back.
--   That a file was created or deleted.
--   That a cache was written to or cleared.
--   That a certain number of API calls were made.</p>
-<p>While you won't write custom assertion context managers every day, understanding this pattern helps you recognize the power of <code>pytest.raises</code> and <code>pytest.warns</code> and gives you a tool for creating highly expressive and reusable assertions for complex scenarios.</p>
+<p><strong>Root cause identified</strong>: Our code is correctly issuing a warning, but our tests aren't explicitly handling it. When running in a strict mode (<code>-W error</code>), this unhandled warning becomes a failure.
+<strong>Why the current approach can't solve this</strong>: We have no mechanism to declare "this warning is expected and should be ignored for this specific test."
+<strong>What we need</strong>: A tool similar to <code>pytest.raises</code> but for warnings.</p>
+<h3 id="technique-the-pytestwarns-context-manager">Technique: The <code>pytest.warns</code> Context Manager</h3>
+<p>Unsurprisingly, pytest provides <code>pytest.warns</code>, which has an almost identical API to <code>pytest.raises</code>.</p>
+<div class="codehilite"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_something_that_warns</span><span class="p">():</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">warns</span><span class="p">(</span><span class="n">ExpectedWarning</span><span class="p">,</span> <span class="n">match</span><span class="o">=</span><span class="s2">&quot;...&quot;</span><span class="p">):</span>
+        <span class="c1"># Code that is expected to issue ExpectedWarning</span>
+        <span class="n">call_my_function</span><span class="p">()</span>
+</code></pre></div>
+
+<p>This block will catch the expected warning, allowing the test to pass (even with <code>-W error</code>), and fail if the warning is not issued.</p>
+<p>Let's write a new test specifically for this warning.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_validator.py (added test)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="c1"># ...</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_username_validation_issues_deprecation_warning</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests that validating a user with a username issues a DeprecationWarning.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;username&quot;</span><span class="p">:</span> <span class="s2">&quot;test_user&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;birthdate&quot;</span><span class="p">:</span> <span class="s2">&quot;2000-01-01&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;email&quot;</span><span class="p">:</span> <span class="s2">&quot;test@example.com&quot;</span>
+    <span class="p">}</span>
+    <span class="n">validator</span> <span class="o">=</span> <span class="n">UserValidator</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">warns</span><span class="p">(</span><span class="ne">DeprecationWarning</span><span class="p">,</span> <span class="n">match</span><span class="o">=</span><span class="s2">&quot;&#39;username&#39; is a deprecated field.&quot;</span><span class="p">):</span>
+        <span class="n">validator</span><span class="o">.</span><span class="n">is_valid</span><span class="p">()</span>
+</code></pre></div>
+
+<h3 id="verification_2">Verification</h3>
+<p>Now, when we run pytest, this new test will pass, and importantly, we can update our other tests to ignore this specific warning if needed, though it's often better to have a dedicated test for the warning and ensure other tests use data that doesn't trigger it.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+...
+collected<span class="w"> </span><span class="m">6</span><span class="w"> </span>items
+
+...
+test_validator.py::test_username_validation_issues_deprecation_warning<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">===================</span><span class="w"> </span><span class="m">5</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>skipped<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">====================</span>
+<span class="o">(</span>Note:<span class="w"> </span>Previous<span class="w"> </span>tests<span class="w"> </span>might<span class="w"> </span>show<span class="w"> </span>warnings<span class="w"> </span><span class="k">in</span><span class="w"> </span>the<span class="w"> </span>output<span class="w"> </span><span class="k">if</span><span class="w"> </span>not<span class="w"> </span>run<span class="w"> </span>with<span class="w"> </span>-W<span class="w"> </span>error,<span class="w"> </span>but<span class="w"> </span>the<span class="w"> </span>new<span class="w"> </span><span class="nb">test</span><span class="w"> </span>passes<span class="w"> </span>cleanly<span class="o">)</span>
+</code></pre></div>
+
+<h3 id="common-failure-modes-and-their-signatures_1">Common Failure Modes and Their Signatures</h3>
+<h4 id="symptom-the-expected-warning-was-not-issued">Symptom: The expected warning was not issued.</h4>
+<p><strong>Pytest output pattern</strong>:</p>
+<div class="codehilite"><pre><span></span><code><span class="k">&gt; </span><span class="ge">      with pytest.warns(DeprecationWarning):</span>
+E       Failed: DID NOT WARN.
+
+test_my_code.py:10: Failed
+</code></pre></div>
+
+<p><strong>Diagnostic clues</strong>: The output is a very clear <code>DID NOT WARN</code>.
+<strong>Root cause</strong>: The code inside the <code>with</code> block completed without issuing any warnings of the specified type.
+<strong>Solution</strong>: Debug the application code to see why the <code>warnings.warn()</code> call is not being reached.</p>
+<h2 id="context-managers-for-advanced-assertions">Context Managers for Advanced Assertions</h2>
+<h2 id="beyond-built-ins-custom-assertion-contexts">Beyond Built-ins: Custom Assertion Contexts</h2>
+<p>We've seen how <code>pytest.raises</code> and <code>pytest.warns</code> are powerful tools. They work by wrapping a piece of code in a context manager (<code>with ...:</code>) and asserting something about the <em>behavior</em> of that code block—did it raise? did it warn?</p>
+<p>This pattern is not limited to pytest's built-in tools. You can create your own assertion context managers to verify complex behaviors that are difficult to check with a simple <code>assert</code> on a return value. This is an advanced technique, but it demonstrates the power and extensibility of Python's testing patterns.</p>
+<h3 id="scenario-asserting-on-side-effects">Scenario: Asserting on Side Effects</h3>
+<p>Let's imagine our <code>UserValidator</code> has a new requirement: when a user is successfully validated, their email must be added to a "welcome list" in a database.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># user_validator.py (final version)</span>
+<span class="c1"># ... (imports)</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">MockDB</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A fake database for demonstration purposes.&quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">welcome_list</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_to_welcome_list</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">email</span><span class="p">):</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Adding </span><span class="si">{</span><span class="n">email</span><span class="si">}</span><span class="s2"> to welcome list.&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">welcome_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">email</span><span class="p">)</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">UserValidator</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user_data</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">db</span><span class="p">:</span> <span class="n">MockDB</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">data</span> <span class="o">=</span> <span class="n">user_data</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">db</span> <span class="o">=</span> <span class="n">db</span>
+        <span class="c1"># ... (rest of __init__)</span>
+
+    <span class="c1"># ... (other methods) ...</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">is_valid</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Runs all validations. If successful, adds user email to the</span>
+<span class="sd">        welcome list.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">errors</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">for</span> <span class="n">validation_func</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_validations</span><span class="p">:</span>
+            <span class="n">validation_func</span><span class="p">()</span>
+
+        <span class="n">is_successful</span> <span class="o">=</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">errors</span>
+        <span class="k">if</span> <span class="n">is_successful</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">db</span><span class="o">.</span><span class="n">add_to_welcome_list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;email&quot;</span><span class="p">))</span>
+
+        <span class="k">return</span> <span class="n">is_successful</span>
+</code></pre></div>
+
+<p>How do we test this? We could do this:</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_validator.py (a simple test for the side effect)</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">user_validator</span><span class="w"> </span><span class="kn">import</span> <span class="n">MockDB</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_valid_user_is_added_to_welcome_list</span><span class="p">():</span>
+    <span class="n">db</span> <span class="o">=</span> <span class="n">MockDB</span><span class="p">()</span>
+    <span class="n">valid_data</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;username&quot;</span><span class="p">:</span> <span class="s2">&quot;john_doe&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;birthdate&quot;</span><span class="p">:</span> <span class="s2">&quot;2001-05-15&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;email&quot;</span><span class="p">:</span> <span class="s2">&quot;john.doe@example.com&quot;</span>
+    <span class="p">}</span>
+    <span class="n">validator</span> <span class="o">=</span> <span class="n">UserValidator</span><span class="p">(</span><span class="n">valid_data</span><span class="p">,</span> <span class="n">db</span><span class="p">)</span>
+
+    <span class="n">validator</span><span class="o">.</span><span class="n">is_valid</span><span class="p">()</span>
+
+    <span class="k">assert</span> <span class="s2">&quot;john.doe@example.com&quot;</span> <span class="ow">in</span> <span class="n">db</span><span class="o">.</span><span class="n">welcome_list</span>
+</code></pre></div>
+
+<p>This works, but what if we want to create a more general and expressive assertion? For example, "I assert that executing this block of code adds exactly one user to the welcome list."</p>
+<h3 id="technique-creating-a-custom-assertion-context-manager">Technique: Creating a Custom Assertion Context Manager</h3>
+<p>We can build our own context manager that checks the state of the database <em>before</em> and <em>after</em> the code block runs.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_validator.py (with a custom context manager)</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">contextlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">contextmanager</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">user_validator</span><span class="w"> </span><span class="kn">import</span> <span class="n">UserValidator</span><span class="p">,</span> <span class="n">MockDB</span>
+
+<span class="nd">@contextmanager</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">assert_adds_to_welcome_list</span><span class="p">(</span><span class="n">db</span><span class="p">:</span> <span class="n">MockDB</span><span class="p">,</span> <span class="n">expected_count</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A context manager to assert that a block of code adds a specific</span>
+<span class="sd">    number of users to the welcome list.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># ARRANGE: Get the state *before* the action</span>
+    <span class="n">initial_count</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">db</span><span class="o">.</span><span class="n">welcome_list</span><span class="p">)</span>
+
+    <span class="c1"># ACT: Yield to let the code inside the &#39;with&#39; block run</span>
+    <span class="k">yield</span>
+
+    <span class="c1"># ASSERT: Get the state *after* and compare</span>
+    <span class="n">final_count</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">db</span><span class="o">.</span><span class="n">welcome_list</span><span class="p">)</span>
+    <span class="n">added_count</span> <span class="o">=</span> <span class="n">final_count</span> <span class="o">-</span> <span class="n">initial_count</span>
+
+    <span class="k">assert</span> <span class="n">added_count</span> <span class="o">==</span> <span class="n">expected_count</span><span class="p">,</span> <span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;Expected to add </span><span class="si">{</span><span class="n">expected_count</span><span class="si">}</span><span class="s2"> user(s) to welcome list, &quot;</span>
+        <span class="sa">f</span><span class="s2">&quot;but added </span><span class="si">{</span><span class="n">added_count</span><span class="si">}</span><span class="s2">.&quot;</span>
+    <span class="p">)</span>
+
+<span class="c1"># New test using the context manager</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_valid_user_is_added_to_welcome_list_with_context_manager</span><span class="p">():</span>
+    <span class="n">db</span> <span class="o">=</span> <span class="n">MockDB</span><span class="p">()</span>
+    <span class="n">valid_data</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;username&quot;</span><span class="p">:</span> <span class="s2">&quot;john_doe&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;birthdate&quot;</span><span class="p">:</span> <span class="s2">&quot;2001-05-15&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;email&quot;</span><span class="p">:</span> <span class="s2">&quot;john.doe@example.com&quot;</span>
+    <span class="p">}</span>
+    <span class="n">validator</span> <span class="o">=</span> <span class="n">UserValidator</span><span class="p">(</span><span class="n">valid_data</span><span class="p">,</span> <span class="n">db</span><span class="p">)</span>
+
+    <span class="k">with</span> <span class="n">assert_adds_to_welcome_list</span><span class="p">(</span><span class="n">db</span><span class="p">,</span> <span class="n">expected_count</span><span class="o">=</span><span class="mi">1</span><span class="p">):</span>
+        <span class="n">validator</span><span class="o">.</span><span class="n">is_valid</span><span class="p">()</span>
+
+<span class="c1"># A test for the negative case</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_invalid_user_is_not_added_to_welcome_list</span><span class="p">():</span>
+    <span class="n">db</span> <span class="o">=</span> <span class="n">MockDB</span><span class="p">()</span>
+    <span class="n">invalid_data</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;username&quot;</span><span class="p">:</span> <span class="s2">&quot;admin&quot;</span><span class="p">}</span> <span class="c1"># This will fail validation</span>
+    <span class="n">validator</span> <span class="o">=</span> <span class="n">UserValidator</span><span class="p">(</span><span class="n">invalid_data</span><span class="p">,</span> <span class="n">db</span><span class="p">)</span>
+
+    <span class="k">with</span> <span class="n">assert_adds_to_welcome_list</span><span class="p">(</span><span class="n">db</span><span class="p">,</span> <span class="n">expected_count</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+        <span class="n">validator</span><span class="o">.</span><span class="n">is_valid</span><span class="p">()</span>
+</code></pre></div>
+
+<p>This custom context manager makes the test's intent incredibly clear. It reads like a sentence: "Assert that running <code>validator.is_valid()</code> adds exactly one user to the welcome list."</p>
+<p>This pattern is extremely powerful for testing code with side effects, such as database interactions, file system changes, or API calls. It encapsulates the setup and teardown logic for the assertion, keeping the test itself clean and focused on the action. It's the same principle that makes <code>pytest.raises</code> and <code>pytest.warns</code> so effective, applied to your own application's logic.</p>
+<h3 id="the-journey-from-problem-to-solution">The Journey: From Problem to Solution</h3>
+<table>
+<thead>
+<tr>
+<th>Iteration</th>
+<th>Failure Mode</th>
+<th>Technique Applied</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>Simple assertion on a dictionary failed</td>
+<td>Assertion Introspection</td>
+<td>Pytest's diff pinpointed the exact string mismatch in our test data.</td>
+</tr>
+<tr>
+<td>1</td>
+<td><code>assert 2 == 3</code> lacked context</td>
+<td>Custom Assertion Message</td>
+<td>The failure report now explains the business logic behind the numbers.</td>
+</tr>
+<tr>
+<td>2</td>
+<td>An expected exception crashed the test</td>
+<td><code>pytest.raises()</code></td>
+<td>The test now correctly expects and catches the <code>ValueError</code>.</td>
+</tr>
+<tr>
+<td>3</td>
+<td>An expected warning was unverified</td>
+<td><code>pytest.warns()</code></td>
+<td>The test now guarantees that a <code>DeprecationWarning</code> is issued.</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Asserting on a side-effect was verbose</td>
+<td>Custom Context Manager</td>
+<td>The test's intent is now declarative and encapsulated.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="decision-framework-which-assertion-approach-when">Decision Framework: Which Assertion Approach When?</h3>
+<table>
+<thead>
+<tr>
+<th>Assertion Type</th>
+<th>Use Case</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>assert a == b</code></td>
+<td>Verifying the state or return value of an object. The most common case.</td>
+<td><code>assert user.is_active() is True</code></td>
+</tr>
+<tr>
+<td><code>assert a == b, "message"</code></td>
+<td>The <code>assert</code> is simple, but the <em>reason</em> for the expected value is not.</td>
+<td><code>assert len(items) == 5, "API should return 5 items per page"</code></td>
+</tr>
+<tr>
+<td><code>with pytest.raises(Error):</code></td>
+<td>Verifying that a specific block of code <em>must</em> raise an exception.</td>
+<td><code>with pytest.raises(KeyError): my_dict["missing"]</code></td>
+</tr>
+<tr>
+<td><code>with pytest.warns(Warning):</code></td>
+<td>Verifying that a specific block of code <em>must</em> issue a warning.</td>
+<td><code>with pytest.warns(FutureWarning): legacy_function()</code></td>
+</tr>
+<tr>
+<td>Custom Context Manager</td>
+<td>Verifying a complex side effect (e.g., DB change, file write, API call).</td>
+<td><code>with assert_db_commit(): service.save()</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="lessons-learned">Lessons Learned</h3>
+<ul>
+<li><strong>Treat every failure as data.</strong> Pytest's output is a rich report, not a simple "pass/fail." Learn to read the traceback, introspection diffs, and summary lines to diagnose problems instantly.</li>
+<li><strong>Use the right tool for the job.</strong> Don't write <code>try/except</code> blocks in your tests when <code>pytest.raises</code> exists. Use the framework's idiomatic tools to make your tests clearer and more concise.</li>
+<li><strong>Assert on intent.</strong> A good assertion verifies not just <em>what</em> happened, but that it happened for the <em>right reason</em>. Adding custom messages or using <code>pytest.raises</code> with <code>match</code> makes your tests more precise.</li>
+<li><strong>Think beyond return values.</strong> Tests should verify behavior and side effects, not just the output of a function. Context managers are the primary pattern for asserting on behavior over time.</li>
+</ul>
         </div>
         <div class="footer">
-            Generated on 2025-11-22 17:25:04 | Made with ❤️ by GitHub Pages Generator
+            Generated on 2025-11-24 14:31:15 | Made with ❤️ by GitHub Pages Generator
         </div>
     </div>
     <script>

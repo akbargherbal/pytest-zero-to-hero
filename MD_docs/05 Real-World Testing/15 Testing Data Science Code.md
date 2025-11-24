@@ -4,632 +4,812 @@
 
 ## Challenges in Data Science Testing
 
-Testing standard software is often about deterministic logic: if you provide input A, you must always get output B. A user's password hash must be exact. A sorted list must be perfectly ordered.
+Testing data science and machine learning code presents a unique set of challenges that differ significantly from traditional software engineering. While the core principles of testing remain the same—verifying correctness and preventing regressions—the nature of the code and its outputs requires specialized tools and techniques.
 
-Data science code operates in a world of statistics, probabilities, and approximations. This introduces a unique set of challenges that require a shift in our testing mindset. Before we write any code, let's understand the landscape we're navigating.
+Understanding these challenges is the first step toward writing effective tests for your data-driven applications.
 
-### 1. Floating-Point Precision
-Computers cannot represent all decimal numbers perfectly. This tiny imprecision means that calculations involving floating-point numbers (like `3.14159`) can lead to unexpected results. The classic example is `0.1 + 0.2`, which does not exactly equal `0.3` in most programming languages. For data science, where almost every calculation involves floats, direct equality checks (`==`) are a recipe for failing tests.
+### Key Challenges
 
-### 2. Large and Complex Data
-Machine learning models are trained on datasets that can be gigabytes or even terabytes in size. You cannot and should not load your entire production dataset into a unit test. Our tests must be fast and self-contained, which means we need strategies for working with small, representative samples of data that capture the essential characteristics (and edge cases) of the real thing.
+1.  **Floating-Point Precision:**
+    Machine learning algorithms are built on linear algebra and calculus, which means they operate heavily on floating-point numbers. Comparing two floats for exact equality (`a == b`) is notoriously unreliable due to the way computers represent these numbers. A tiny, insignificant difference in the 15th decimal place can cause a test to fail, even if the result is functionally correct.
 
-### 3. Stochasticity (Randomness)
-Many algorithms in data science are stochastic, meaning they involve a random element. Examples include:
--   Randomly splitting data into training and testing sets.
--   Initializing model weights randomly.
--   Algorithms like Stochastic Gradient Descent.
+2.  **Non-Determinism and Stochasticity:**
+    Many algorithms, from random forests to neural network weight initialization, have a random component. Running the same training code twice might produce two slightly different models with slightly different predictions. Tests that expect exact output values will be flaky and unreliable.
 
-If you train the same model on the same data twice, you might get two slightly different models. A test that asserts a specific prediction value will be "flaky"—sometimes passing, sometimes failing. We need to test the *behavior* of the model, not a specific random outcome.
+3.  **Large and Complex Data:**
+    Data science code operates on data, often large datasets. Unit tests should be fast and isolated, which means you can't run them on your entire 10 GB dataset. Creating small, representative, and manageable sample datasets for testing is a significant challenge in itself.
 
-### 4. Long-Running Processes
-Training a deep learning model can take hours, days, or even weeks. A core principle of a good test suite is that it runs quickly, providing feedback in seconds or minutes. We cannot include model training in our standard test suite. Instead, we often test with pre-trained models or models trained on trivial datasets that finish in milliseconds.
+4.  **"Correctness" is Fuzzy:**
+    What does it mean for a machine learning model to be "correct"? Unlike a function that sorts a list, a model's output isn't binary right or wrong. Its performance is statistical. We can't assert that `model.predict(input) == 42.5`. Instead, we need to test for properties: Are the predictions within a plausible range? Is the model's performance on a known subset of data above a certain threshold?
 
-### 5. "Correctness" is Statistical, Not Absolute
-How do you know if a prediction model is "correct"? Its performance is measured with statistical metrics like accuracy, precision, or Mean Squared Error. A model with 95% accuracy is considered "good," but it's still "wrong" 5% of the time. We cannot write a simple `assert model.predict(input) == expected_output` for every case. Our tests must focus on properties and contracts, not on getting every single prediction right.
+5.  **Long-Running Processes:**
+    Training a model can take hours or even days. You cannot include a full training run in your CI/CD pipeline's test suite. Testing strategies must be adapted to verify the training *logic* without executing the entire expensive process.
 
-### 6. The Environment and Dependencies
-Data science projects often have a fragile web of dependencies: specific versions of NumPy, Pandas, Scikit-learn, PyTorch, or TensorFlow. A minor version change in one library can subtly change numerical results, causing tests to fail. Managing this environment is a critical part of ensuring tests are reliable and reproducible.
+6.  **Coupling of Code and Data:**
+    The behavior of your code is inextricably linked to the data it processes. A data cleaning function might work perfectly until it encounters a new, unexpected category or data format. Your tests need to be robust to variations in data, and you need a way to manage the test data itself.
 
-These challenges might seem daunting, but they are all solvable. The key is to adapt our testing strategies from asserting exact outcomes to verifying stable behaviors, contracts, and properties. In the following sections, we'll tackle each of these challenges with practical patterns and tools.
+In this chapter, we will tackle these challenges head-on. We will build a small data processing and modeling pipeline and, step-by-step, introduce pytest techniques to test it robustly and effectively.
 
 ## Testing Data Processing Functions
 
 ## Testing Data Processing Functions
 
-The foundation of any data science pipeline is data processing: cleaning, transforming, and feature engineering. These functions are often pure and deterministic, making them perfect candidates for traditional unit testing. If you can ensure your data processing code is robust, you can have much higher confidence in the models that consume that data.
+The foundation of any data science project is data preparation. Functions that clean, transform, and engineer features are the most testable part of the pipeline because their behavior is often deterministic. If you provide the same input, you should get the same output.
 
-Let's imagine we have a simple function to process a dataset of house listings. It should convert a price column from a string to a number and create a new feature for the age of the house.
+This makes them the perfect place to start building our testing skills.
 
-Here's our data processing module.
+### Phase 1: Establish the Reference Implementation
+
+Let's establish our **anchor example**: a function that preprocesses a dataset of house listings. The function will take a pandas DataFrame, fill missing values in the `year_built` column with the median year, and one-hot encode the `style` column (e.g., 'Ranch', 'Colonial').
+
+Here is the initial implementation.
+
+**The code to be tested:** `data_processing.py`
 
 ```python
 # data_processing.py
 import pandas as pd
-from datetime import datetime
 
-def preprocess_housing_data(df: pd.DataFrame) -> pd.DataFrame:
+def preprocess_data(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Cleans and prepares housing data for modeling.
+    Preprocesses the housing data.
 
-    - Converts 'price' from string (e.g., "$500,000") to float.
-    - Calculates 'house_age' from 'year_built'.
-    - Drops rows with missing values.
+    - Fills missing 'year_built' with the median.
+    - One-hot encodes the 'style' column.
     """
     processed_df = df.copy()
 
-    # 1. Convert price to numeric
-    if 'price' in processed_df.columns:
-        processed_df['price'] = (
-            processed_df['price']
-            .replace({'\$': '', ',': ''}, regex=True)
-            .astype(float)
-        )
-
-    # 2. Calculate house age
+    # Fill missing year_built with the median
     if 'year_built' in processed_df.columns:
-        current_year = datetime.now().year
-        processed_df['house_age'] = current_year - processed_df['year_built']
+        median_year = processed_df['year_built'].median()
+        processed_df['year_built'].fillna(median_year, inplace=True)
 
-    # 3. Drop rows with any missing values
-    processed_df.dropna(inplace=True)
+    # One-hot encode style
+    if 'style' in processed_df.columns:
+        style_dummies = pd.get_dummies(processed_df['style'], prefix='style', dtype=float)
+        processed_df = pd.concat([processed_df, style_dummies], axis=1)
+        processed_df.drop('style', axis=1, inplace=True)
 
     return processed_df
 ```
 
-A common but flawed approach is to simply "test" this in a Jupyter notebook by running it on some data and visually inspecting the output. This is not a real test—it's not automated, not repeatable, and easily forgotten.
+### Iteration 0: The First Test
 
-Let's write a proper pytest test. The best way to compare pandas DataFrames is with the `pandas.testing.assert_frame_equal` function. It gives detailed output on exactly how two DataFrames differ.
+Our first test will verify the basic functionality. We'll create a small, representative DataFrame in the test itself, define the exact expected output, and use pandas' built-in `testing.assert_frame_equal` to compare them.
 
-Our test file will look like this:
+**The test file:** `test_data_processing.py`
 
 ```python
-# tests/test_data_processing.py
+# test_data_processing.py
 import pandas as pd
-import pytest
-from datetime import datetime
+import numpy as np
+from pandas.testing import assert_frame_equal
+from data_processing import preprocess_data
 
-from data_processing import preprocess_housing_data
-
-def test_preprocess_housing_data():
+def test_preprocess_data_basic():
     # 1. Setup: Create the input data
     raw_data = {
-        'price': ['$750,000', '$1,200,000', '$450,000', None],
-        'year_built': [2005, 2018, 1990, 2010],
-        'sq_ft': [2200, 3100, 1500, 1800]
+        'price': [200000, 350000, 275000, 500000],
+        'bedrooms': [3, 4, 3, 5],
+        'year_built': [1985.0, np.nan, 1999.0, 2010.0],
+        'style': ['Ranch', 'Colonial', 'Ranch', 'Modern']
     }
     input_df = pd.DataFrame(raw_data)
 
-    # 2. Setup: Define the expected output data
-    current_year = datetime.now().year
+    # 2. Action: Call the function under test
+    actual_df = preprocess_data(input_df)
+
+    # 3. Assertion: Define the expected outcome and compare
+    # The median of [1985, 1999, 2010] is 1999.0
     expected_data = {
-        'price': [750000.0, 1200000.0, 450000.0],
-        'year_built': [2005, 2018, 1990],
-        'sq_ft': [2200, 3100, 1500],
-        'house_age': [current_year - 2005, current_year - 2018, current_year - 1990]
+        'price': [200000, 350000, 275000, 500000],
+        'bedrooms': [3, 4, 3, 5],
+        'year_built': [1985.0, 1999.0, 1999.0, 2010.0],
+        'style_Colonial': [0.0, 1.0, 0.0, 0.0],
+        'style_Modern': [0.0, 0.0, 0.0, 1.0],
+        'style_Ranch': [1.0, 0.0, 1.0, 0.0],
     }
-    # Note: The row with the missing price is expected to be dropped.
-    # We also need to match the index after dropping.
-    expected_df = pd.DataFrame(expected_data, index=[0, 1, 2])
+    expected_df = pd.DataFrame(expected_data)
 
-    # 3. Execution: Run the function we are testing
-    actual_df = preprocess_housing_data(input_df)
-
-    # 4. Assertion: Check if the actual output matches the expected output
-    pd.testing.assert_frame_equal(actual_df, expected_df)
-
-def test_preprocess_empty_dataframe():
-    # Edge case: what happens with an empty DataFrame?
-    input_df = pd.DataFrame({'price': [], 'year_built': []})
-    expected_df = pd.DataFrame({'price': [], 'year_built': [], 'house_age': []})
-
-    actual_df = preprocess_housing_data(input_df)
-
-    # The dtypes might differ (object vs float), so check them explicitly
-    pd.testing.assert_frame_equal(actual_df, expected_df, check_dtype=False)
-```
-
-This approach is powerful because:
-1.  **It's explicit:** The `expected_df` clearly documents the function's contract.
-2.  **It's automated:** We can run this test anytime we change the `preprocess_housing_data` function to ensure we haven't broken anything.
-3.  **It's precise:** `assert_frame_equal` will tell us if a single value, a column name, a data type, or an index is incorrect, which is far more reliable than visual inspection.
-
-Testing your data processing functions is the single most effective way to build a reliable data science pipeline. Get this right, and you've eliminated a massive source of potential bugs.
-
-## Approximate Assertions with pytest-approx
-
-## Approximate Assertions with pytest-approx
-
-As we discussed, floating-point arithmetic is a major challenge in testing numerical code. Let's see this problem in action.
-
-Imagine a simple function that calculates the average rating from a list of scores.
-
-```python
-# calculations.py
-import numpy as np
-
-def calculate_average_rating(ratings):
-    if not ratings:
-        return 0.0
-    return np.mean(ratings)
-```
-
-Now, let's write a test for it. A common scenario might be calculating the average of `[1, 2, 3]`, which is `2.0`. That works fine. But what about a more complex case?
-
-```python
-# tests/test_calculations.py
-from calculations import calculate_average_rating
-
-def test_average_rating_simple():
-    assert calculate_average_rating([1, 2, 3]) == 2.0
-
-def test_average_rating_float_problem():
-    # This test will FAIL!
-    ratings = [0.1, 0.2, 0.3]
-    # The expected result of np.mean([0.1, 0.2, 0.3]) is 0.2
-    # But what if we naively expect the average of 0.1 and 0.2 to be 0.15?
-    # Let's try a different example where the sum is the issue.
-    # The sum of 0.1 + 0.2 is not exactly 0.3
-    assert 0.1 + 0.2 == 0.3
+    # Pandas provides a testing utility to compare DataFrames
+    assert_frame_equal(actual_df, expected_df)
 ```
 
 Let's run this test.
 
 ```bash
-$ pytest tests/test_calculations.py
+$ pytest
+============================= test session starts ==============================
+...
+collected 1 item
 
-=========================== FAILURES ===========================
-_________ test_average_rating_float_problem __________
+test_data_processing.py .                                                [100%]
 
-    def test_average_rating_float_problem():
-        # This test will FAIL!
-        # The sum of 0.1 + 0.2 is not exactly 0.3
->       assert 0.1 + 0.2 == 0.3
-E       assert (0.1 + 0.2) == 0.3
-E        +  where (0.1 + 0.2) = 0.30000000000000004
-===================== 1 failed in 0.12s =====================
+============================== 1 passed in ...s ===============================
 ```
 
-Pytest's excellent assertion introspection shows us the problem clearly. The result of `0.1 + 0.2` is `0.30000000000000004`. This tiny difference causes the test to fail. This is the pitfall we need to avoid.
+It passes. This test correctly verifies our initial requirements. It's clear, self-contained, and deterministic.
 
-### The Solution: `pytest.approx`
+However, data processing pipelines rarely stop here. They evolve. What happens when we add a step that introduces floating-point numbers, like feature scaling? This is where our simple, exact-match approach will break down.
 
-Pytest provides a brilliant and simple solution for this: the `pytest.approx` helper. It allows you to assert that a number is "close enough" to an expected value, within a certain tolerance.
+## Approximate Assertions with pytest-approx
 
-Let's fix our test and write a more realistic one for our function.
+## Approximate Assertions with pytest-approx
+
+Our current test works because all our outputs are integers or clean floats. The real world of data science is messy and filled with imprecise floating-point numbers. Let's see what happens when our preprocessing function evolves to handle this reality.
+
+### Iteration 1: Introducing Floating-Point Scaling
+
+**Current state recap:** Our test verifies filling missing values and one-hot encoding.
+
+**Current limitation:** The test relies on exact equality, which is fragile for numerical computations.
+
+**New scenario introduction:** Let's add a feature scaling step to our `preprocess_data` function. We'll scale the `price` column to be between 0 and 1 (a common technique called Min-Max Scaling).
+
+Here's the updated `data_processing.py`.
 
 ```python
-# tests/test_calculations.py
-import pytest
-import numpy as np
-from calculations import calculate_average_rating
+# data_processing.py (UPDATED)
+import pandas as pd
 
-def test_average_rating_simple():
-    assert calculate_average_rating([1, 2, 3]) == pytest.approx(2.0)
+def preprocess_data(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Preprocesses the housing data.
 
-def test_average_rating_with_floats():
-    # This test now PASSES
-    ratings = [0.1, 0.2, 0.3] # np.mean is 0.2
-    assert calculate_average_rating(ratings) == pytest.approx(0.2)
+    - Fills missing 'year_built' with the median.
+    - One-hot encodes the 'style' column.
+    - Min-Max scales the 'price' column.
+    """
+    processed_df = df.copy()
 
-def test_another_float_example():
-    # The average of 1/3 and 2/3 is 0.5
-    ratings = [1/3, 2/3]
-    assert calculate_average_rating(ratings) == pytest.approx(0.5)
+    # Fill missing year_built with the median
+    if 'year_built' in processed_df.columns:
+        median_year = processed_df['year_built'].median()
+        processed_df['year_built'].fillna(median_year, inplace=True)
+
+    # One-hot encode style
+    if 'style' in processed_df.columns:
+        style_dummies = pd.get_dummies(processed_df['style'], prefix='style', dtype=float)
+        processed_df = pd.concat([processed_df, style_dummies], axis=1)
+        processed_df.drop('style', axis=1, inplace=True)
+
+    # --- NEW ---
+    # Min-Max scale the price
+    if 'price' in processed_df.columns:
+        min_price = processed_df['price'].min()
+        max_price = processed_df['price'].max()
+        processed_df['price'] = (processed_df['price'] - min_price) / (max_price - min_price)
+    # --- END NEW ---
+
+    return processed_df
 ```
 
-By wrapping the expected value in `pytest.approx()`, you're changing the assertion from "is exactly equal to" to "is approximately equal to". Pytest handles the tolerance logic for you.
+Now, we must update our test to reflect this new expected output. The prices are no longer `200000`, `350000`, etc., but scaled values between 0 and 1.
 
-### Using `pytest.approx` with NumPy and Pandas
-
-The real power of `pytest.approx` is that it works seamlessly with collections like lists, NumPy arrays, and even Pandas Series/DataFrames. This makes it indispensable for data science testing.
-
-Let's imagine a function that normalizes data (scales it between 0 and 1).
+**Updated test file:** `test_data_processing.py`
 
 ```python
-# calculations.py
+# test_data_processing.py (UPDATED)
+import pandas as pd
 import numpy as np
+from pandas.testing import assert_frame_equal
+from data_processing import preprocess_data
 
-def calculate_average_rating(ratings):
-    if not ratings:
-        return 0.0
-    return np.mean(ratings)
+def test_preprocess_data_with_scaling():
+    # 1. Setup
+    raw_data = {
+        'price': [200000, 350000, 275000, 500000],
+        'bedrooms': [3, 4, 3, 5],
+        'year_built': [1985.0, np.nan, 1999.0, 2010.0],
+        'style': ['Ranch', 'Colonial', 'Ranch', 'Modern']
+    }
+    input_df = pd.DataFrame(raw_data)
 
-def normalize_data(data: np.ndarray) -> np.ndarray:
-    """Scales data to a [0, 1] range."""
-    min_val = data.min()
-    max_val = data.max()
-    if max_val == min_val:
-        return np.zeros_like(data, dtype=float)
-    return (data - min_val) / (max_val - min_val)
+    # 2. Action
+    actual_df = preprocess_data(input_df)
+
+    # 3. Assertion
+    # min=200k, max=500k.
+    # 200k -> (200-200)/(500-200) = 0.0
+    # 350k -> (350-200)/(500-200) = 150/300 = 0.5
+    # 275k -> (275-200)/(500-200) = 75/300 = 0.25
+    # 500k -> (500-200)/(500-200) = 1.0
+    expected_data = {
+        'price': [0.0, 0.5, 0.25, 1.0], # <-- Updated values
+        'bedrooms': [3, 4, 3, 5],
+        'year_built': [1985.0, 1999.0, 1999.0, 2010.0],
+        'style_Colonial': [0.0, 1.0, 0.0, 0.0],
+        'style_Modern': [0.0, 0.0, 0.0, 1.0],
+        'style_Ranch': [1.0, 0.0, 1.0, 0.0],
+    }
+    expected_df = pd.DataFrame(expected_data)
+
+    # This will fail due to floating point issues!
+    assert_frame_equal(actual_df, expected_df)
 ```
 
-Now, we can test it directly on a NumPy array.
+### Failure Demonstration
+
+Let's run this updated test. Even though our manual calculation seems correct, we get a failure.
+
+```bash
+$ pytest
+============================= test session starts ==============================
+...
+collected 1 item
+
+test_data_processing.py F                                                [100%]
+
+=================================== FAILURES ===================================
+______________________ test_preprocess_data_with_scaling _______________________
+
+    def test_preprocess_data_with_scaling():
+...
+        # This will fail due to floating point issues!
+>       assert_frame_equal(actual_df, expected_df)
+E       AssertionError: DataFrame.iloc[:, 0] (column name="price") are different
+E
+E       DataFrame.iloc[:, 0] (column name="price") values are different (25.0 %)
+E       [index]: [0, 1, 2, 3]
+E       [left]:  [0.0, 0.5, 0.25, 1.0]
+E       [right]: [0.0, 0.5, 0.25, 1.0]
+
+test_data_processing.py:35: AssertionError
+=========================== short test summary info ============================
+FAILED test_data_processing.py::test_preprocess_data_with_scaling - AssertionError...
+============================== 1 failed in ...s ================================
+```
+
+### Diagnostic Analysis: Reading the Failure
+
+This failure is subtle and classic in data science testing.
+
+**The complete output**:
+```
+FAILED test_data_processing.py::test_preprocess_data_with_scaling - AssertionError: DataFrame.iloc[:, 0] (column name="price") are different
+
+DataFrame.iloc[:, 0] (column name="price") values are different (25.0 %)
+[index]: [0, 1, 2, 3]
+[left]:  [0.0, 0.5, 0.25, 1.0]
+[right]: [0.0, 0.5, 0.25, 1.0]
+```
+
+**Let's parse this section by section**:
+
+1.  **The summary line**: `AssertionError: DataFrame.iloc[:, 0] (column name="price") are different`
+    -   What this tells us: The pandas `assert_frame_equal` function found a discrepancy. It's helpfully telling us the problem is in the first column, named "price".
+
+2.  **The assertion introspection**:
+    ```
+    [left]:  [0.0, 0.5, 0.25, 1.0]
+    [right]: [0.0, 0.5, 0.25, 1.0]
+    ```
+    -   What this tells us: This is the confusing part. The values *look identical*! This is the classic signature of a floating-point precision issue. The actual difference is likely at a very small decimal place that isn't being printed in the summary. The underlying values might be `0.5` and `0.5000000000000001`.
+
+**Root cause identified**: We are using an exact equality check (`assert_frame_equal`) on columns containing floating-point numbers, which is unreliable.
+**Why the current approach can't solve this**: `assert_frame_equal` by default demands bit-for-bit equality. It's too strict for numerical work.
+**What we need**: A way to assert that two numbers are "close enough" or approximately equal.
+
+### Technique Introduced: `pytest.approx`
+
+Pytest provides a powerful and intuitive tool for this exact problem: `pytest.approx`. It allows you to check if a number is equal to another number within a certain tolerance.
+
+You can use it like this:
+`assert actual_float == pytest.approx(expected_float)`
+
+It works with simple numbers, lists, NumPy arrays, and dictionaries of numbers.
+
+### Solution Implementation
+
+Instead of comparing the entire DataFrame at once, we can separate our checks. We'll check the non-numeric columns for exact equality and the numeric `price` column for approximate equality.
+
+**Before (in `test_data_processing.py`):**
 
 ```python
-# tests/test_calculations.py
-import pytest
-import numpy as np
-from calculations import calculate_average_rating, normalize_data
-
-# ... (previous tests) ...
-
-def test_normalize_data():
-    input_data = np.array([10, 20, 30, 40, 50])
-    expected_data = np.array([0.0, 0.25, 0.5, 0.75, 1.0])
-
-    actual_data = normalize_data(input_data)
-
-    # Use pytest.approx with a NumPy array
-    assert actual_data == pytest.approx(expected_data)
-
-def test_normalize_data_with_floats():
-    input_data = np.array([0.1, 0.2, 0.3, 0.4, 0.5])
-    # The normalization involves division, which will introduce float inaccuracies
-    expected_data = np.array([0.0, 0.25, 0.5, 0.75, 1.0])
-
-    actual_data = normalize_data(input_data)
-
-    assert actual_data == pytest.approx(expected_data)
+# ...
+    # This will fail due to floating point issues!
+    assert_frame_equal(actual_df, expected_df)
 ```
 
-Whenever your tests involve floating-point numbers, your default should be to use `pytest.approx`. It makes your tests robust against tiny, irrelevant numerical differences and focuses them on what matters: whether the calculation is fundamentally correct.
+**After (in `test_data_processing.py`):**
+
+```python
+# test_data_processing.py (FIXED)
+import pandas as pd
+import numpy as np
+from pandas.testing import assert_frame_equal
+from pytest import approx  # <-- Import approx
+from data_processing import preprocess_data
+
+def test_preprocess_data_with_scaling_and_approx():
+    # 1. Setup
+    raw_data = {
+        'price': [200000, 350000, 275000, 500000],
+        'bedrooms': [3, 4, 3, 5],
+        'year_built': [1985.0, np.nan, 1999.0, 2010.0],
+        'style': ['Ranch', 'Colonial', 'Ranch', 'Modern']
+    }
+    input_df = pd.DataFrame(raw_data)
+
+    # 2. Action
+    actual_df = preprocess_data(input_df)
+
+    # 3. Assertion
+    expected_prices = [0.0, 0.5, 0.25, 1.0]
+    expected_non_numeric_data = {
+        'bedrooms': [3, 4, 3, 5],
+        'year_built': [1985.0, 1999.0, 1999.0, 2010.0],
+        'style_Colonial': [0.0, 1.0, 0.0, 0.0],
+        'style_Modern': [0.0, 0.0, 0.0, 1.0],
+        'style_Ranch': [1.0, 0.0, 1.0, 0.0],
+    }
+    expected_non_numeric_df = pd.DataFrame(expected_non_numeric_data)
+
+    # Assert the numeric column is "close enough"
+    assert list(actual_df['price']) == approx(expected_prices)
+
+    # Assert the rest of the columns are exactly equal
+    # We need to re-order columns to match for a reliable comparison
+    actual_other_cols = actual_df[expected_non_numeric_df.columns]
+    assert_frame_equal(actual_other_cols, expected_non_numeric_df)
+```
+
+### Verification
+
+Let's run our new test.
+
+```bash
+$ pytest
+============================= test session starts ==============================
+...
+collected 1 item
+
+test_data_processing.py .                                                [100%]
+
+============================== 1 passed in ...s ===============================
+```
+
+Success! By separating the exact checks from the approximate checks, we've created a robust test that correctly verifies our logic without being sensitive to tiny floating-point inaccuracies.
+
+**Limitation preview:** This test is getting more complex. We're manually defining a lot of data inside the test function. As our pipeline grows, this will become unmanageable. We need a better way to handle test data and setup.
 
 ## Testing Machine Learning Models
 
 ## Testing Machine Learning Models
 
-This is where we truly depart from traditional software testing. We cannot assert that a model's prediction is "correct" in an absolute sense. Instead, we test the model's contract, its behavior, and its properties. Think of it like testing a car: you don't test that it can win a specific race, but you do test that the brakes work, the steering turns the wheels, and the engine doesn't explode.
+We've successfully tested our data processing function. Now we move to the next stage: training and testing a machine learning model. This is where the idea of "correctness" becomes fuzzy. We can't test for exact prediction values, but we can test the model's behavior and properties.
 
-Let's assume we have a simple classification model trained to identify spam emails. For testing, we don't want to re-train it every time. We'll assume we have a pre-trained model object that we can load.
+### Iteration 2: Introducing a Model
 
-Our tests should answer questions like:
--   Does the `predict` method run without errors? (A smoke test)
--   Does it return predictions in the format I expect?
--   Are the predictions reasonable? (e.g., probabilities are between 0 and 1)
--   Is the model deterministic if randomness is controlled?
+**Current state recap:** Our test for `preprocess_data` is robust against floating-point issues using `pytest.approx`.
 
-Here's a simple example using a dummy model for demonstration.
+**Current limitation:** We are only testing the data transformation, not the model that will use the data.
+
+**New scenario introduction:** Let's create a simple `train_and_predict` function. It will take raw data, use our `preprocess_data` function, train a basic `scikit-learn` Linear Regression model, and make predictions.
+
+**New file:** `model.py`
 
 ```python
 # model.py
-import numpy as np
-
-class SpamClassifier:
-    """A dummy model for demonstration purposes."""
-    def __init__(self, threshold=0.7):
-        self.threshold = threshold
-
-    def predict_proba(self, inputs: list[str]) -> np.ndarray:
-        """
-        Predicts the probability of each input being spam.
-        A real model would use embeddings and a neural network.
-        We'll just use a simple heuristic.
-        """
-        # A simple heuristic: if 'buy now' is in the text, high spam probability
-        probabilities = []
-        for text in inputs:
-            if "buy now" in text.lower():
-                probabilities.append(0.95)
-            elif "hello" in text.lower():
-                probabilities.append(0.1)
-            else:
-                probabilities.append(0.5)
-        return np.array(probabilities)
-
-    def predict(self, inputs: list[str]) -> np.ndarray:
-        """Predicts a class label (0 for not-spam, 1 for spam)."""
-        probabilities = self.predict_proba(inputs)
-        return (probabilities >= self.threshold).astype(int)
-
-# In a real scenario, you would load a saved model, e.g., with joblib or pickle
-# For this example, we'll just instantiate it.
-model = SpamClassifier()
-```
-
-Now, let's write tests for this model's behavior, not its accuracy on a large dataset.
-
-```python
-# tests/test_model.py
-import pytest
-import numpy as np
-from model import SpamClassifier
-
-@pytest.fixture
-def spam_model():
-    """Provides a trained SpamClassifier model instance."""
-    return SpamClassifier(threshold=0.7)
-
-def test_model_smoke_test(spam_model):
-    """
-    A simple smoke test to ensure predict() runs without crashing.
-    """
-    test_input = ["Hello, this is a friendly email."]
-    try:
-        spam_model.predict(test_input)
-    except Exception as e:
-        pytest.fail(f"Model prediction failed with an exception: {e}")
-
-def test_prediction_output_shape(spam_model):
-    """
-    The number of predictions should match the number of inputs.
-    """
-    test_input = [
-        "Hello friend",
-        "URGENT: buy now for a big discount!",
-        "Meeting at 3 PM"
-    ]
-    predictions = spam_model.predict(test_input)
-    assert len(predictions) == len(test_input)
-
-def test_prediction_output_type_and_values(spam_model):
-    """
-    Predictions should be integers (0 or 1) for classification.
-    """
-    test_input = ["Sample email 1", "Another one with buy now"]
-    predictions = spam_model.predict(test_input)
-
-    # Check data type
-    assert predictions.dtype == int
-
-    # Check that all values are either 0 or 1
-    assert np.all(np.isin(predictions, [0, 1]))
-
-def test_predict_proba_output_range(spam_model):
-    """
-    Predicted probabilities must be between 0 and 1.
-    """
-    test_input = ["A", "B", "C"]
-    probabilities = spam_model.predict_proba(test_input)
-
-    assert np.all((probabilities >= 0) & (probabilities <= 1))
-
-def test_model_known_cases(spam_model):
-    """
-    Test the model on a few examples where the outcome is obvious.
-    This checks the basic logic.
-    """
-    spam_email = ["URGENT call now to claim your prize, buy now!"]
-    not_spam_email = ["Hi Bob, just confirming our meeting. Hello!"]
-
-    assert spam_model.predict(spam_email)[0] == 1
-    assert spam_model.predict(not_spam_email)[0] == 0
-```
-
-These tests establish a contract for our model. They don't care if the model is 99% accurate or 60% accurate. They care that it behaves as expected: it doesn't crash, it returns data in the correct shape and format, and its outputs are within a valid range. These are the kinds of tests that prevent bugs in your production machine learning systems.
-
-## Fixtures for Data Pipelines
-
-## Fixtures for Data Pipelines
-
-As we've seen, data science tests require... well, data. You might be tempted to create this data inside every single test function.
-
-Let's look at the "wrong way" first.
-
-```python
-# tests/test_pipeline_bad.py
 import pandas as pd
-from data_processing import preprocess_housing_data
-from model import SpamClassifier # Pretend this is a housing model
+from sklearn.linear_model import LinearRegression
+from data_processing import preprocess_data
 
-def test_preprocessing_again():
-    # Repetitive setup
-    raw_data = {'price': ['$750,000'], 'year_built': [2005]}
-    input_df = pd.DataFrame(raw_data)
-    # ... assertions ...
+def train_and_predict(train_df: pd.DataFrame, predict_df: pd.DataFrame) -> list:
+    """
+    Trains a model on train_df and makes predictions on predict_df.
+    """
+    # Preprocess both training and prediction data
+    processed_train_df = preprocess_data(train_df)
+    processed_predict_df = preprocess_data(predict_df)
 
-def test_model_prediction_on_processed_data():
-    # Repetitive setup again!
-    raw_data = {'price': ['$750,000'], 'year_built': [2005]}
-    input_df = pd.DataFrame(raw_data)
-    processed_df = preprocess_housing_data(input_df)
-    # model = HousingPriceModel()
-    # ... assertions ...
+    # Ensure prediction data has all columns from training, fill missing with 0
+    # This handles cases where a 'style' in predict_df was not in train_df
+    train_cols = processed_train_df.columns.drop('price')
+    processed_predict_df = processed_predict_df.reindex(
+        columns=train_cols, fill_value=0
+    )
+
+    # Define features (X) and target (y)
+    X_train = processed_train_df[train_cols]
+    y_train = processed_train_df['price']
+
+    # Train the model
+    model = LinearRegression()
+    model.fit(X_train, y_train)
+
+    # Make predictions
+    X_predict = processed_predict_df[train_cols]
+    predictions = model.predict(X_predict)
+
+    return predictions.tolist()
 ```
 
-This is repetitive and hard to maintain. If you need to add a new column to your test data, you have to change it in multiple places. This is exactly the problem fixtures were designed to solve (as we learned in Chapter 4).
+### How to Test a Model?
 
-By using fixtures, we can define our data and processing steps once and reuse them across many tests. This is especially useful for creating a mini-pipeline within our test suite.
+We can't assert `prediction == 12345.67`. So what *can* we test?
 
-Let's create a `conftest.py` file in our `tests/` directory to hold our shared fixtures.
+1.  **Output Shape:** If we ask for predictions on 3 houses, we should get back 3 predictions.
+2.  **Output Type:** The predictions should be a list of floats.
+3.  **Prediction Range:** For house prices, predictions should probably be positive. A negative price is a sign something is very wrong.
+4.  **Determinism (Sanity Check):** If we train the same model on the same data twice, we should get the same predictions. (Note: This only works for deterministic models like Linear Regression. For stochastic models, you'd need to set a `random_state`).
+5.  **Performance Threshold (Advanced):** On a small, fixed dataset, the model's error (e.g., Mean Squared Error) should be below a certain value. This acts as a regression test for model performance.
+
+Let's write a test that covers the first three points.
+
+**New test file:** `test_model.py`
 
 ```python
-# tests/conftest.py
-import pytest
+# test_model.py
 import pandas as pd
-from datetime import datetime
+import numpy as np
+from model import train_and_predict
 
-from data_processing import preprocess_housing_data
-from model import SpamClassifier # Using this as a placeholder for a housing model
-
-@pytest.fixture(scope="module")
-def raw_housing_data() -> pd.DataFrame:
-    """Fixture for raw housing data, loaded once per module."""
-    print("\n(Creating raw_housing_data fixture)")
-    data = {
-        'price': ['$750,000', '$1,200,000', '$450,000', None],
-        'year_built': [2005, 2018, 1990, 2010],
-        'sq_ft': [2200, 3100, 1500, 1800]
+def test_train_and_predict_properties():
+    # 1. Setup: Create training data and data for prediction
+    train_data = {
+        'price': [200000, 350000, 275000, 500000, 450000],
+        'bedrooms': [3, 4, 3, 5, 4],
+        'year_built': [1985.0, 1992.0, 1999.0, 2010.0, 2005.0],
+        'style': ['Ranch', 'Colonial', 'Ranch', 'Modern', 'Colonial']
     }
-    return pd.DataFrame(data)
+    train_df = pd.DataFrame(train_data)
 
-@pytest.fixture(scope="module")
-def processed_housing_data(raw_housing_data: pd.DataFrame) -> pd.DataFrame:
-    """
-    Fixture that depends on raw_housing_data and provides cleaned data.
-    """
-    print("\n(Creating processed_housing_data fixture)")
-    return preprocess_housing_data(raw_housing_data)
+    predict_data = {
+        'bedrooms': [3, 5],
+        'year_built': [1990.0, 2015.0],
+        'style': ['Ranch', 'Modern']
+    }
+    predict_df = pd.DataFrame(predict_data)
 
-@pytest.fixture(scope="module")
-def trained_model():
-    """
-    Fixture to provide a 'trained' model. In a real scenario, this might
-    load a model from a file. Here, we just instantiate it.
-    """
-    print("\n(Creating trained_model fixture)")
-    # In a real test suite, this would be your actual model,
-    # e.g., a trained RandomForestRegressor.
-    return SpamClassifier() # Placeholder
+    # 2. Action
+    predictions = train_and_predict(train_df, predict_df)
+
+    # 3. Assertions
+    # Test output shape
+    assert len(predictions) == 2
+
+    # Test output type
+    assert all(isinstance(p, float) for p in predictions)
+
+    # Test prediction range (a simple heuristic)
+    # Given our training prices, predictions shouldn't be negative or astronomical.
+    assert all(p > 0 for p in predictions)
 ```
 
-We've created a chain of dependencies: `processed_housing_data` depends on `raw_housing_data`. By setting `scope="module"`, we ensure this potentially expensive data loading and processing happens only *once* when we run the tests in a file, not before every single test. The `print` statements will help us see this in action.
-
-Now, our test file becomes incredibly clean and readable. Each test just asks for the specific data it needs.
-
-```python
-# tests/test_pipeline_good.py
-import pandas as pd
-from datetime import datetime
-
-def test_data_processing_output(processed_housing_data: pd.DataFrame):
-    """Test the output of the processing step using a fixture."""
-    # The setup is now completely handled by the fixture.
-    # We can focus purely on the assertions.
-    assert not processed_housing_data.isnull().values.any()
-    assert 'house_age' in processed_housing_data.columns
-    assert processed_housing_data['price'].dtype == 'float64'
-
-def test_model_on_processed_data(trained_model, processed_housing_data: pd.DataFrame):
-    """Test the model's behavior on clean data."""
-    # This test needs both the model and the data.
-    # Pytest provides both fixtures automatically.
-    
-    # For this placeholder, we need to convert the DataFrame to a list of strings
-    # A real housing model would take the DataFrame directly.
-    test_input = processed_housing_data['price'].astype(str).tolist()
-    
-    predictions = trained_model.predict(test_input)
-    assert len(predictions) == len(processed_housing_data)
-```
-
-Let's run these tests with the `-s` (to show print statements) and `-v` (verbose) flags to see how the fixtures are executed.
+Let's run our new test suite.
 
 ```bash
-$ pytest -sv tests/test_pipeline_good.py
-
-=========================== test session starts ===========================
+$ pytest
+============================= test session starts ==============================
 ...
 collected 2 items
 
-tests/test_pipeline_good.py::test_data_processing_output
-(Creating raw_housing_data fixture)
-(Creating processed_housing_data fixture)
-PASSED
-tests/test_pipeline_good.py::test_model_on_processed_data
-(Creating trained_model fixture)
-PASSED
+test_data_processing.py .                                                [ 50%]
+test_model.py .                                                          [100%]
 
-============================ 2 passed in 0.15s ============================
+============================== 2 passed in ...s ===============================
 ```
 
-Notice the output. The data fixtures are created only once at the beginning, and the model fixture is created when it's first needed. Both are then reused for subsequent tests in the module. This pattern is the key to writing efficient, scalable, and maintainable tests for complex data pipelines.
+It passes. Our test successfully verifies the *behavior* and *contract* of our prediction function without being coupled to specific prediction values. This is a much more robust way to test machine learning models.
+
+**Limitation preview:** Look at all that setup code! We're creating DataFrames inside `test_data_processing.py` and `test_model.py`. This is repetitive and violates the DRY (Don't Repeat Yourself) principle. If we need to add a new column, we have to update it in multiple places. There must be a better way to manage this shared test data setup.
+
+## Fixtures for Data Pipelines
+
+## Fixtures for Data Pipelines
+
+As we've seen, testing data science code involves a lot of setup. We need to create DataFrames, load data, and sometimes even train a model *before* our test can even begin. Pytest fixtures are the perfect solution for managing this setup code, making our tests cleaner, more modular, and more efficient.
+
+### Iteration 3: Refactoring Setup with Fixtures
+
+**Current state recap:** We have two test files, both with significant, manually-created pandas DataFrames inside the test functions.
+
+**Current limitation:** The setup code is duplicated and tightly coupled to the tests. This makes maintenance difficult and tests harder to read.
+
+**Technique introduced:** We will use pytest fixtures to externalize the creation of our test data. We'll create a `conftest.py` file to hold fixtures that can be shared across our entire test suite.
+
+We will create two fixtures:
+1.  `raw_housing_data()`: Provides a raw, unprocessed DataFrame for testing.
+2.  `processed_housing_data()`: Depends on the first fixture, runs the data through `preprocess_data`, and provides the processed DataFrame.
+
+**New file:** `conftest.py`
+
+```python
+# conftest.py
+import pytest
+import pandas as pd
+import numpy as np
+from data_processing import preprocess_data
+
+@pytest.fixture(scope="module")
+def raw_housing_data() -> pd.DataFrame:
+    """Fixture for a raw housing data DataFrame."""
+    raw_data = {
+        'price': [200000, 350000, 275000, 500000, 450000],
+        'bedrooms': [3, 4, 3, 5, 4],
+        'year_built': [1985.0, np.nan, 1999.0, 2010.0, 2005.0],
+        'style': ['Ranch', 'Colonial', 'Ranch', 'Modern', 'Colonial']
+    }
+    return pd.DataFrame(raw_data)
+
+@pytest.fixture(scope="module")
+def processed_housing_data(raw_housing_data: pd.DataFrame) -> pd.DataFrame:
+    """Fixture for processed housing data."""
+    return preprocess_data(raw_housing_data)
+```
+
+By placing these in `conftest.py`, they are automatically available to all tests. The `scope="module"` means the fixture will be set up only once per test module, which is more efficient than setting it up for every single test function.
+
+### Solution Implementation
+
+Now we can refactor our test files to use these fixtures. The tests become dramatically simpler and more focused on their specific assertion logic.
+
+**Before (in `test_data_processing.py`):**
+
+```python
+# test_data_processing.py (OLD version)
+def test_preprocess_data_with_scaling_and_approx():
+    # 1. Setup
+    raw_data = {
+        'price': [200000, 350000, 275000, 500000],
+        'bedrooms': [3, 4, 3, 5],
+        'year_built': [1985.0, np.nan, 1999.0, 2010.0],
+        'style': ['Ranch', 'Colonial', 'Ranch', 'Modern']
+    }
+    input_df = pd.DataFrame(raw_data)
+
+    # 2. Action
+    actual_df = preprocess_data(input_df)
+    # ... assertions ...
+```
+
+**After (in `test_data_processing.py`):**
+
+```python
+# test_data_processing.py (REFACTORED)
+import pandas as pd
+from pytest import approx
+from pandas.testing import assert_frame_equal
+
+def test_preprocess_data_output(processed_housing_data: pd.DataFrame):
+    # The 'processed_housing_data' fixture handles all setup and action!
+    # We just need to assert on the result.
+    actual_df = processed_housing_data
+
+    # Assertions
+    # The median of [1985, 1999, 2010, 2005] is 2002.0
+    # min_price=200k, max_price=500k
+    expected_prices = [0.0, 0.5, 0.25, 1.0, 0.83333333]
+    assert list(actual_df['price']) == approx(expected_prices)
+    assert actual_df['year_built'].isnull().sum() == 0
+    assert actual_df['year_built'][1] == 2002.0 # Check median fill
+    assert 'style' not in actual_df.columns
+    assert 'style_Ranch' in actual_df.columns
+```
+
+And now for `test_model.py`.
+
+**Before (in `test_model.py`):**
+
+```python
+# test_model.py (OLD version)
+def test_train_and_predict_properties():
+    # 1. Setup: Create training data and data for prediction
+    train_data = { ... }
+    train_df = pd.DataFrame(train_data)
+    predict_data = { ... }
+    predict_df = pd.DataFrame(predict_data)
+
+    # 2. Action
+    predictions = train_and_predict(train_df, predict_df)
+    # ... assertions ...
+```
+
+**After (in `test_model.py`):**
+
+```python
+# test_model.py (REFACTORED)
+import pandas as pd
+from model import train_and_predict
+
+def test_train_and_predict_properties_fixture(raw_housing_data: pd.DataFrame):
+    # 1. Setup: Use the fixture for training data
+    train_df = raw_housing_data
+
+    # Create a smaller, specific dataset for prediction
+    predict_data = {
+        'bedrooms': [3, 5],
+        'year_built': [1990.0, 2015.0],
+        'style': ['Ranch', 'Modern']
+    }
+    predict_df = pd.DataFrame(predict_data)
+
+    # 2. Action
+    predictions = train_and_predict(train_df, predict_df)
+
+    # 3. Assertions
+    assert len(predictions) == 2
+    assert all(isinstance(p, float) for p in predictions)
+    assert all(p > 0 for p in predictions)
+```
+
+### Verification
+
+Let's run the full suite again.
+
+```bash
+$ pytest -v
+============================= test session starts ==============================
+...
+collected 2 items
+
+test_data_processing.py::test_preprocess_data_output PASSED              [ 50%]
+test_model.py::test_train_and_predict_properties_fixture PASSED          [100%]
+
+============================== 2 passed in ...s ===============================
+```
+
+The tests still pass, but now our test code is dramatically cleaner. The logic for creating data is centralized in `conftest.py`. If we need to update the test dataset, we only have to do it in one place. The tests themselves are now focused purely on the behavior they are meant to verify. This is a huge win for maintainability.
+
+**Limitation preview:** Our pipeline produces not just numbers, but also visualizations. How can we test a function that creates a plot? We can't easily compare images in an automated test.
 
 ## Testing Visualization Code
 
 ## Testing Visualization Code
 
-Testing visual output is notoriously difficult. Do you save a "golden" image of the plot and compare it pixel-by-pixel to the new output? This is brittle; a tiny change in a dependency like Matplotlib could alter rendering slightly and break all your tests.
+Testing code that generates plots (e.g., with Matplotlib or Seaborn) is notoriously difficult. You can't easily perform an assertion on a PNG file. A single-pixel difference would cause a test to fail, making such tests extremely brittle.
 
-A much more robust strategy is to **test the data, not the pixels**. We should verify that our visualization function is called with the correct data and settings. We can trust that if we give Matplotlib the right numbers, it will draw the right chart.
+However, this doesn't mean we can't test visualization code at all. We just need to change our approach. Instead of testing the visual *output*, we test the plot-generating *process* and the *properties* of the resulting plot object.
 
-This is a perfect use case for mocking, which we covered in Chapter 8. We can use `unittest.mock.patch` to intercept the call to the plotting function (e.g., `matplotlib.pyplot.bar`) and inspect the arguments it received.
+### Iteration 4: Introducing a Plotting Function
 
-Let's create a simple visualization function.
+**Current state recap:** Our data processing and model prediction logic is well-tested and uses fixtures for clean setup.
+
+**Current limitation:** We have no tests for any visualization outputs of our project.
+
+**New scenario introduction:** Let's add a function that takes a trained model and feature names, and generates a bar chart of feature importances (or coefficients, in the case of linear regression).
+
+**New file:** `visualization.py`
 
 ```python
 # visualization.py
 import pandas as pd
 import matplotlib.pyplot as plt
+from sklearn.linear_model import LinearRegression
 
-def plot_average_price_by_year(df: pd.DataFrame):
+def plot_feature_coefficients(model: LinearRegression, feature_names: list):
     """
-    Generates a bar plot of the average house price for each year built.
+    Generates and shows a bar plot of model feature coefficients.
     """
-    if df.empty:
-        return None # Do nothing if no data
+    if not hasattr(model, 'coef_'):
+        raise ValueError("Model does not have coefficients. Was it trained?")
 
-    avg_price_by_year = df.groupby('year_built')['price'].mean()
+    coefficients = model.coef_
+    coef_df = pd.DataFrame({'feature': feature_names, 'coefficient': coefficients})
+    coef_df = coef_df.sort_values('coefficient', ascending=False)
 
-    plt.figure(figsize=(10, 6))
-    plt.bar(
-        x=avg_price_by_year.index,
-        height=avg_price_by_year.values
-    )
-    plt.xlabel("Year Built")
-    plt.ylabel("Average Price ($)")
-    plt.title("Average Housing Price by Year Built")
+    fig, ax = plt.subplots()
+    ax.bar(coef_df['feature'], coef_df['coefficient'])
+    ax.set_title("Model Feature Coefficients")
+    ax.set_xlabel("Feature")
+    ax.set_ylabel("Coefficient Value")
+    plt.xticks(rotation=45, ha='right')
     plt.tight_layout()
-    # In a real app, you might call plt.savefig() or plt.show()
-    # For testing, we'll just let the function end here.
-    return plt.gca() # Return the current axes object for inspection
+    # In a real script, you might use plt.show() or fig.savefig()
+    # For testing, we will want to get the Axes object back.
+    return ax
 ```
 
-Now, let's write a test. We will "patch" `matplotlib.pyplot.bar`. This replaces the real `bar` function with a "MagicMock" object that records how it was called.
+Notice the function now returns the `ax` (Matplotlib Axes) object. This is a crucial change that makes the function testable. Functions that only call `plt.show()` are very difficult to test.
+
+### Testing Strategies for Plots
+
+#### Strategy 1: The Smoke Test
+
+The simplest possible test for a plotting function is a "smoke test." It doesn't check for correctness; it only checks if the function runs to completion without raising an error. This is surprisingly useful for catching bugs introduced during refactoring.
+
+#### Strategy 2: Inspecting Plot Properties
+
+A more powerful approach is to inspect the properties of the returned Axes object. We can't see the plot, but we can ask questions about its structure:
+-   Does it have the correct title?
+-   Are the axis labels set correctly?
+-   Does it have the right number of bars?
+
+Let's create a test file that does both. First, we need a fixture to provide a trained model.
+
+**Add to `conftest.py`:**
 
 ```python
-# tests/test_visualization.py
-import pytest
-import pandas as pd
-import numpy as np
-from unittest.mock import patch
+# conftest.py (add new fixture)
+from sklearn.linear_model import LinearRegression
+from model import preprocess_data # Assuming preprocess_data is accessible
 
-from visualization import plot_average_price_by_year
+# ... existing fixtures ...
 
-@pytest.fixture
-def viz_data() -> pd.DataFrame:
-    """Sample data for visualization tests."""
-    data = {
-        'price': [500000, 600000, 700000, 800000],
-        'year_built': [2010, 2010, 2012, 2012],
-    }
-    return pd.DataFrame(data)
-
-# The patch decorator intercepts the call to 'visualization.plt.bar'
-@patch('visualization.plt.bar')
-def test_plot_average_price_by_year_data(mock_bar, viz_data):
-    """
-    Test that plt.bar is called with the correctly aggregated data.
-    """
-    # Call the function that we are testing
-    plot_average_price_by_year(viz_data)
-
-    # Assert that our mock was called exactly once
-    mock_bar.assert_called_once()
-
-    # The arguments are available in mock_bar.call_args
-    # It's a tuple of (args, kwargs)
-    args, kwargs = mock_bar.call_args
-
-    # The data is passed as keyword arguments 'x' and 'height'
-    x_values = kwargs.get('x')
-    height_values = kwargs.get('height')
-
-    # Expected data after groupby and mean aggregation
-    # Year 2010: mean(500000, 600000) = 550000
-    # Year 2012: mean(700000, 800000) = 750000
-    expected_x = np.array([2010, 2012])
-    expected_height = np.array([550000.0, 750000.0])
-
-    # Use numpy's testing utilities for array comparison
-    np.testing.assert_array_equal(x_values, expected_x)
-    np.testing.assert_array_equal(height_values, expected_height)
-
-@patch('visualization.plt.title')
-@patch('visualization.plt.xlabel')
-@patch('visualization.plt.ylabel')
-def test_plot_labels_and_title(mock_ylabel, mock_xlabel, mock_title, viz_data):
-    """Test that the plot labels and title are set correctly."""
-    plot_average_price_by_year(viz_data)
-
-    mock_title.assert_called_once_with("Average Housing Price by Year Built")
-    mock_xlabel.assert_called_once_with("Year Built")
-    mock_ylabel.assert_called_once_with("Average Price ($)")
+@pytest.fixture(scope="module")
+def trained_linear_model(processed_housing_data: pd.DataFrame):
+    """Fixture for a trained LinearRegression model."""
+    df = processed_housing_data
+    
+    X_train = df.drop('price', axis=1)
+    y_train = df['price']
+    
+    model = LinearRegression()
+    model.fit(X_train, y_train)
+    return model, list(X_train.columns)
 ```
 
-This approach is far superior to image comparison:
--   **It's fast:** It doesn't require any actual image rendering.
--   **It's robust:** It's immune to changes in library versions that affect rendering.
--   **It's precise:** It tests the core logic of the function—the data aggregation—which is what you, the developer, are responsible for.
+Now we can write the tests.
 
-By testing the inputs to the plotting library, you verify that your code is doing its job correctly without getting bogged down in the fragile and complex world of visual testing.
+**New test file:** `test_visualization.py`
+
+```python
+# test_visualization.py
+import matplotlib
+# Use a non-interactive backend for tests to prevent plots from popping up
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from visualization import plot_feature_coefficients
+
+# Smoke test: Does it run without error?
+def test_plot_feature_coefficients_smoke(trained_linear_model):
+    model, feature_names = trained_linear_model
+    try:
+        plot_feature_coefficients(model, feature_names)
+        # Close the plot to free up memory
+        plt.close()
+    except Exception as e:
+        assert False, f"Plotting function raised an exception: {e}"
+
+# Property test: Does the plot have the right components?
+def test_plot_feature_coefficients_properties(trained_linear_model):
+    model, feature_names = trained_linear_model
+    ax = plot_feature_coefficients(model, feature_names)
+
+    # Test title
+    assert ax.get_title() == "Model Feature Coefficients"
+
+    # Test axis labels
+    assert ax.get_xlabel() == "Feature"
+    assert ax.get_ylabel() == "Coefficient Value"
+
+    # Test number of bars
+    # There should be one bar for each feature
+    num_features = len(feature_names)
+    assert len(ax.patches) == num_features
+
+    # Close the plot to free up memory
+    plt.close()
+```
+
+### Verification
+
+Let's run the final test suite.
+
+```bash
+$ pytest
+============================= test session starts ==============================
+...
+collected 4 items
+
+test_data_processing.py .                                                [ 25%]
+test_model.py .                                                          [ 50%]
+test_visualization.py ..                                                 [100%]
+
+============================== 4 passed in ...s ===============================
+```
+
+All tests pass. We have successfully tested our visualization code without resorting to fragile image comparison. We've verified that it runs and that the key components of the plot are generated as expected.
+
+### The Journey: From Problem to Solution
+
+| Iteration | Failure Mode / Challenge                               | Technique Applied          | Result                                                              |
+| --------- | ------------------------------------------------------ | -------------------------- | ------------------------------------------------------------------- |
+| 0         | Need to verify data transformation logic.              | `pandas.testing`           | Basic test for integers and one-hot encoding works.                 |
+| 1         | Exact comparisons fail with floating-point numbers.    | `pytest.approx`            | Test is now robust to small floating-point inaccuracies.            |
+| 2         | Model predictions are not deterministic or exact.      | Property-based testing     | Tests verify shape, type, and range of predictions, not exact values. |
+| 3         | Test setup code is duplicated and hard to maintain.    | `pytest` fixtures          | Setup logic is centralized, making tests clean and maintainable.    |
+| 4         | Visual outputs (plots) cannot be easily asserted on.   | Smoke & property testing   | Tests verify the plotting function runs and generates correct components. |
+
+This chapter has demonstrated a robust, layered approach to testing a data science pipeline. By understanding the unique challenges and applying the right tools—`pytest.approx` for floats, property-based assertions for models, and fixtures for setup—you can build a reliable test suite that supports, rather than hinders, your data science workflow.

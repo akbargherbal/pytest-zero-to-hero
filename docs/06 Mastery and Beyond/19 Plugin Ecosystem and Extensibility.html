@@ -359,554 +359,503 @@
         <div class="content">
             <h1 id="chapter-19-plugin-ecosystem-and-extensibility">Chapter 19: Plugin Ecosystem and Extensibility</h1>
 <h2 id="popular-pytest-plugins-pytest-html-pytest-xdist-pytest-sugar">Popular Pytest Plugins (pytest-html, pytest-xdist, pytest-sugar)</h2>
-<h2 id="the-power-of-plugins">The Power of Plugins</h2>
-<p>Pytest's core is powerful, but its true genius lies in its extensibility. The plugin ecosystem is what elevates pytest from a great test runner to a comprehensive testing framework that can adapt to any project's needs. Plugins are third-party packages that seamlessly integrate with pytest to add new features, change its behavior, or integrate with other tools.</p>
-<p>Think of pytest as a high-performance car engine. Plugins are the turbochargers, custom dashboards, and advanced navigation systems you can add to it. You don't need to rebuild the engine to get new capabilities; you just install a component.</p>
-<p>In this section, we'll explore three of the most popular and impactful plugins. We'll see how they solve common problems and dramatically improve the testing experience.</p>
-<h3 id="pytest-html-creating-sharable-test-reports"><code>pytest-html</code>: Creating Sharable Test Reports</h3>
-<p><strong>The Problem:</strong> The command-line output of pytest is great for developers, but it's not ideal for sharing with managers, clients, or for archiving test results. You need a portable, human-readable report.</p>
-<p><strong>The Solution:</strong> <code>pytest-html</code> generates a self-contained HTML file summarizing the test run results.</p>
-<p>Let's start with a simple test suite.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_reporting.py</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<h2 id="the-power-of-extensibility">The Power of Extensibility</h2>
+<p>Pytest's core is powerful, but its true strength lies in its extensibility. The plugin system allows developers to alter or extend nearly every aspect of pytest's behavior, from test collection and execution to reporting. This has fostered a rich ecosystem of third-party plugins that can solve common testing problems with a simple <code>pip install</code>.</p>
+<p>In this chapter, we'll explore this ecosystem. We'll start by using some of the most popular plugins to solve real-world problems, then we'll dive into the mechanics of how plugins work, and finally, we'll build and package our own custom plugin.</p>
+<h3 id="phase-1-establish-the-reference-implementation">Phase 1: Establish the Reference Implementation</h3>
+<p>To see the value of plugins, we need a test suite with some tangible challenges. Let's create a simple data validation utility. Its job is to check data files for common issues. To simulate a real-world scenario, our tests will be intentionally a bit slow, making them a perfect candidate for optimization.</p>
+<p>Our anchor example will be a <code>DataValidator</code> that performs checks on CSV-like data.</p>
+<p>Here is the code for our utility:</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># project/validator.py</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">random</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_passing</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;A simple test that passes.&quot;&quot;&quot;</span>
-    <span class="k">assert</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span> <span class="o">==</span> <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DataValidationError</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="k">pass</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_failing</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;A simple test that fails.&quot;&quot;&quot;</span>
-    <span class="k">assert</span> <span class="s2">&quot;hello&quot;</span> <span class="o">==</span> <span class="s2">&quot;world&quot;</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">DataValidator</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">data_source</span><span class="p">):</span>
+        <span class="c1"># In a real app, this would read from a file or database</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">data</span> <span class="o">=</span> <span class="n">data_source</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">DataValidationError</span><span class="p">(</span><span class="s2">&quot;Data source is empty&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">headers</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;,&#39;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rows</span> <span class="o">=</span> <span class="p">[</span><span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;,&#39;</span><span class="p">)</span> <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="mi">1</span><span class="p">:]]</span>
 
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">skip</span><span class="p">(</span><span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Demonstration of a skipped test&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_skipped</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;A test that is skipped.&quot;&quot;&quot;</span>
-    <span class="k">assert</span> <span class="mi">1</span> <span class="o">==</span> <span class="mi">1</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">check_row_length</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Simulates a check that all rows have the same number of columns as the header.&quot;&quot;&quot;</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span> <span class="c1"># Simulate I/O and processing</span>
+        <span class="n">header_len</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">headers</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rows</span><span class="p">):</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">row</span><span class="p">)</span> <span class="o">!=</span> <span class="n">header_len</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">DataValidationError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Row </span><span class="si">{</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="si">}</span><span class="s2"> has incorrect length&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">True</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_slow_passing</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;A test that passes but takes some time.&quot;&quot;&quot;</span>
-    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="kc">True</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">check_unique_id</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">column_name</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Simulates a check for unique values in a given column.&quot;&quot;&quot;</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.15</span><span class="p">)</span> <span class="c1"># Simulate a more expensive check</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">idx</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">headers</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">column_name</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">DataValidationError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Column &#39;</span><span class="si">{</span><span class="n">column_name</span><span class="si">}</span><span class="s2">&#39; not found&quot;</span><span class="p">)</span>
+
+        <span class="n">seen_ids</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rows</span><span class="p">):</span>
+            <span class="n">row_id</span> <span class="o">=</span> <span class="n">row</span><span class="p">[</span><span class="n">idx</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">row_id</span> <span class="ow">in</span> <span class="n">seen_ids</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="n">DataValidationError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Duplicate ID &#39;</span><span class="si">{</span><span class="n">row_id</span><span class="si">}</span><span class="s2">&#39; found in column &#39;</span><span class="si">{</span><span class="n">column_name</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
+            <span class="n">seen_ids</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">row_id</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">True</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">check_value_range</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">column_name</span><span class="p">,</span> <span class="n">min_val</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">max_val</span><span class="o">=</span><span class="mi">100</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Simulates checking that values in a column are within a numeric range.&quot;&quot;&quot;</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.12</span><span class="p">)</span> <span class="c1"># Simulate another expensive check</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">idx</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">headers</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">column_name</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">DataValidationError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Column &#39;</span><span class="si">{</span><span class="n">column_name</span><span class="si">}</span><span class="s2">&#39; not found&quot;</span><span class="p">)</span>
+
+        <span class="k">for</span> <span class="n">i</span><span class="p">,</span> <span class="n">row</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">rows</span><span class="p">):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">val</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">row</span><span class="p">[</span><span class="n">idx</span><span class="p">])</span>
+                <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">min_val</span> <span class="o">&lt;=</span> <span class="n">val</span> <span class="o">&lt;=</span> <span class="n">max_val</span><span class="p">):</span>
+                    <span class="k">raise</span> <span class="n">DataValidationError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Value </span><span class="si">{</span><span class="n">val</span><span class="si">}</span><span class="s2"> in row </span><span class="si">{</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="si">}</span><span class="s2"> is out of range (</span><span class="si">{</span><span class="n">min_val</span><span class="si">}</span><span class="s2">-</span><span class="si">{</span><span class="n">max_val</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+            <span class="k">except</span> <span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="ne">IndexError</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="n">DataValidationError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid numeric value in row </span><span class="si">{</span><span class="n">i</span><span class="o">+</span><span class="mi">1</span><span class="si">}</span><span class="s2">, column &#39;</span><span class="si">{</span><span class="n">column_name</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">True</span>
 </code></pre></div>
 
-<p>First, let's install the plugin.</p>
-<div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>pytest-html
+<p>And here is our initial test suite. We'll create a fixture to provide valid sample data.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_validator.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">project.validator</span><span class="w"> </span><span class="kn">import</span> <span class="n">DataValidator</span><span class="p">,</span> <span class="n">DataValidationError</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">valid_data</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Provides a string of valid CSV data.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="s2">&quot;id,name,value</span><span class="se">\n</span><span class="s2">&quot;</span>
+        <span class="s2">&quot;1,alpha,10</span><span class="se">\n</span><span class="s2">&quot;</span>
+        <span class="s2">&quot;2,beta,25</span><span class="se">\n</span><span class="s2">&quot;</span>
+        <span class="s2">&quot;3,gamma,99</span><span class="se">\n</span><span class="s2">&quot;</span>
+    <span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_valid_data_passes_all_checks</span><span class="p">(</span><span class="n">valid_data</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A baseline test for valid data.&quot;&quot;&quot;</span>
+    <span class="n">validator</span> <span class="o">=</span> <span class="n">DataValidator</span><span class="p">(</span><span class="n">valid_data</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">validator</span><span class="o">.</span><span class="n">check_row_length</span><span class="p">()</span>
+    <span class="k">assert</span> <span class="n">validator</span><span class="o">.</span><span class="n">check_unique_id</span><span class="p">(</span><span class="n">column_name</span><span class="o">=</span><span class="s2">&quot;id&quot;</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">validator</span><span class="o">.</span><span class="n">check_value_range</span><span class="p">(</span><span class="n">column_name</span><span class="o">=</span><span class="s2">&quot;value&quot;</span><span class="p">,</span> <span class="n">min_val</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">max_val</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_incorrect_row_length_fails</span><span class="p">(</span><span class="n">valid_data</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests that a row with a missing column raises an error.&quot;&quot;&quot;</span>
+    <span class="n">invalid_data</span> <span class="o">=</span> <span class="n">valid_data</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;25&quot;</span><span class="p">,</span> <span class="s2">&quot;25,extra_col&quot;</span><span class="p">)</span>
+    <span class="n">validator</span> <span class="o">=</span> <span class="n">DataValidator</span><span class="p">(</span><span class="n">invalid_data</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">DataValidationError</span><span class="p">,</span> <span class="n">match</span><span class="o">=</span><span class="s2">&quot;incorrect length&quot;</span><span class="p">):</span>
+        <span class="n">validator</span><span class="o">.</span><span class="n">check_row_length</span><span class="p">()</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_duplicate_id_fails</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests that duplicate IDs are caught.&quot;&quot;&quot;</span>
+    <span class="c1"># This test creates its own data to be independent</span>
+    <span class="n">data</span> <span class="o">=</span> <span class="s2">&quot;id,name</span><span class="se">\n</span><span class="s2">1,alpha</span><span class="se">\n</span><span class="s2">1,beta&quot;</span>
+    <span class="n">validator</span> <span class="o">=</span> <span class="n">DataValidator</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">DataValidationError</span><span class="p">,</span> <span class="n">match</span><span class="o">=</span><span class="s2">&quot;Duplicate ID &#39;1&#39;&quot;</span><span class="p">):</span>
+        <span class="n">validator</span><span class="o">.</span><span class="n">check_unique_id</span><span class="p">(</span><span class="n">column_name</span><span class="o">=</span><span class="s2">&quot;id&quot;</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_value_out_of_range_fails</span><span class="p">(</span><span class="n">valid_data</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests that a value outside the specified range fails.&quot;&quot;&quot;</span>
+    <span class="n">invalid_data</span> <span class="o">=</span> <span class="n">valid_data</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;99&quot;</span><span class="p">,</span> <span class="s2">&quot;101&quot;</span><span class="p">)</span>
+    <span class="n">validator</span> <span class="o">=</span> <span class="n">DataValidator</span><span class="p">(</span><span class="n">invalid_data</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">DataValidationError</span><span class="p">,</span> <span class="n">match</span><span class="o">=</span><span class="s2">&quot;out of range&quot;</span><span class="p">):</span>
+        <span class="n">validator</span><span class="o">.</span><span class="n">check_value_range</span><span class="p">(</span><span class="n">column_name</span><span class="o">=</span><span class="s2">&quot;value&quot;</span><span class="p">,</span> <span class="n">min_val</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">max_val</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
 </code></pre></div>
 
-<p>Now, run pytest with a new command-line flag, <code>--html</code>, specifying the output file.</p>
-<div class="codehilite"><pre><span></span><code>pytest<span class="w"> </span>--html<span class="o">=</span>report.html
+<p>Let's run this suite and see the standard pytest output.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span><span class="nv">pytest</span>
+<span class="o">=============================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==============================</span>
+platform<span class="w"> </span>linux<span class="w"> </span>--<span class="w"> </span>Python<span class="w"> </span><span class="m">3</span>.10.12,<span class="w"> </span>pytest-7.4.0,<span class="w"> </span>pluggy-1.2.0
+rootdir:<span class="w"> </span>/path/to/project
+collected<span class="w"> </span><span class="m">4</span><span class="w"> </span>items
+
+tests/test_validator.py<span class="w"> </span>....<span class="w">                                             </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">==============================</span><span class="w"> </span><span class="m">4</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">1</span>.51s<span class="w"> </span><span class="o">===============================</span>
 </code></pre></div>
 
-<p>This command runs your tests as usual, but it also creates a <code>report.html</code> file in your project root. Open this file in a web browser, and you'll see a detailed, interactive report with sortable columns, collapsible sections for error details, and a summary of the environment. This is a game-changer for communication and documentation.</p>
-<h3 id="pytest-xdist-parallelizing-test-execution"><code>pytest-xdist</code>: Parallelizing Test Execution</h3>
-<p><strong>The Problem:</strong> As your test suite grows, it gets slower. A suite that takes 10 minutes to run is a suite that developers run less frequently, which defeats the purpose of rapid feedback.</p>
-<p><strong>The Solution:</strong> <code>pytest-xdist</code> runs your tests in parallel across multiple CPU cores, dramatically reducing execution time.</p>
-<p>Let's use our previous example, which includes a slow test. First, let's time a normal run.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># The --durations=0 flag shows the execution time of all tests</span>
-pytest<span class="w"> </span>--durations<span class="o">=</span><span class="m">0</span>
-</code></pre></div>
-
-<p>The output will show that the total time is a little over 1 second, dominated by <code>test_slow_passing</code>.</p>
-<div class="codehilite"><pre><span></span><code>=========================== slowest 1 durations ============================
-1.01s call     tests/test_reporting.py::test_slow_passing
-================= 2 passed, 1 failed, 1 skipped in 1.05s ==================
-</code></pre></div>
-
-<p>Now, let's install <code>pytest-xdist</code>.</p>
-<div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>pytest-xdist
-</code></pre></div>
-
-<p>To use it, add the <code>-n</code> (or <code>--numprocesses</code>) flag. A common choice is <code>auto</code>, which tells <code>pytest-xdist</code> to use the number of available CPU cores.</p>
-<div class="codehilite"><pre><span></span><code>pytest<span class="w"> </span>-n<span class="w"> </span>auto
-</code></pre></div>
-
-<p>The output will look slightly different, showing workers being scheduled. The key takeaway is the final execution time. It will be significantly less than 1 second because <code>pytest-xdist</code> ran the fast tests on one core while the slow test ran on another. For large test suites, the speedup can be monumental, turning a 20-minute wait into a 5-minute one.</p>
-<p><strong>Important Note:</strong> For <code>pytest-xdist</code> to work effectively, your tests must be independent of each other. Tests that rely on global state or a specific execution order will fail unpredictably when run in parallel. This is another reason why writing clean, isolated tests is so important.</p>
-<h3 id="pytest-sugar-a-sweeter-testing-experience"><code>pytest-sugar</code>: A Sweeter Testing Experience</h3>
-<p><strong>The Problem:</strong> The default pytest output is functional but can be dense. When you have many tests, it's hard to get an at-a-glance feel for the progress.</p>
-<p><strong>The Solution:</strong> <code>pytest-sugar</code> changes the default output to be more visually appealing and easier to read, with a progress bar, instant feedback on failing tests, and cleaner formatting.</p>
-<p>Let's install it.</p>
+<p>Our test suite works, but it has three problems that plugins can solve:
+1.  <strong>Readability</strong>: The output is functional, but for larger suites, the simple dots (<code>....</code>) aren't very engaging or informative.
+2.  <strong>Reporting</strong>: If we need to share these results, terminal output isn't a professional or persistent format.
+3.  <strong>Speed</strong>: The suite took over 1.5 seconds for just four simple tests. As we add hundreds more, this will become a major bottleneck.</p>
+<p>Let's tackle these one by one using popular plugins.</p>
+<h3 id="iteration-1-improving-readability-with-pytest-sugar">Iteration 1: Improving Readability with <code>pytest-sugar</code></h3>
+<p><strong>Current Limitation</strong>: The default pytest output is minimal. It doesn't show test names as they run, and the progress indicator is just a series of dots.</p>
+<p><code>pytest-sugar</code> is a plugin that provides a much nicer user interface in the terminal, including a progress bar and instant feedback on failing tests.</p>
+<p>First, let's install it.</p>
 <div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>pytest-sugar
 </code></pre></div>
 
-<p>That's it! There are no flags to add. <code>pytest-sugar</code> automatically activates itself upon installation. Now, just run <code>pytest</code>.</p>
-<div class="codehilite"><pre><span></span><code>pytest
+<p>Now, let's run our tests again with no other changes. <code>pytest-sugar</code> automatically activates itself upon installation.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest
+
+――――――――――――――――――――――――――――――<span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span>starts<span class="w"> </span>―――――――――――――――――――――――――――――――
+platform<span class="w"> </span>linux<span class="w"> </span>--<span class="w"> </span>Python<span class="w"> </span><span class="m">3</span>.10.12,<span class="w"> </span>pytest-7.4.0,<span class="w"> </span>pluggy-1.2.0
+rootdir:<span class="w"> </span>/path/to/project
+plugins:<span class="w"> </span>sugar-1.0.0
+collected<span class="w"> </span><span class="m">4</span><span class="w"> </span>items
+
+<span class="w"> </span>tests/test_validator.py<span class="w"> </span>✓✓✓✓<span class="w">                                           </span><span class="m">100</span>%<span class="w"> </span>██████████
+
+―――――――――――――――――――――――――――――――――――<span class="w"> </span>summary<span class="w"> </span>――――――――――――――――――――――――――――――――――――
+✅<span class="w"> </span><span class="m">4</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">1</span>.52s
 </code></pre></div>
 
-<p>Instead of the standard dots and <code>F</code>s, you'll see a beautiful progress bar. Passing tests get a checkmark, and failing tests are reported instantly with a clear diff.</p>
-<div class="codehilite"><pre><span></span><code>――――――――――――――――――――――――――――――――――――― test_failing ―――――――――――――――――――――――――――――――――――――
-
-    def test_failing():
-        &quot;&quot;&quot;A simple test that fails.&quot;&quot;&quot;
-&gt;       assert &quot;hello&quot; == &quot;world&quot;
-E       assert &#39;hello&#39; == &#39;world&#39;
-E         - hello
-E         + world
-
-tests/test_reporting.py:11: AssertionError
-================================================================================
-Failing Tests (1)
-================================================================================
-tests/test_reporting.py:9 test_failing
-
-Results (0.03s):
-       2 passed
-       1 failed
-       1 skipped
+<p><strong>Expected vs. Actual Improvement</strong>: The output is immediately clearer. We get a progress bar, and the checkmarks (<code>✓</code>) give a more positive sense of progress than the dots. If a test were to fail, <code>pytest-sugar</code> would print the failure immediately instead of waiting for the entire run to finish, providing faster feedback. This simple plugin enhances the developer experience with zero configuration.</p>
+<h3 id="iteration-2-generating-reports-with-pytest-html">Iteration 2: Generating Reports with <code>pytest-html</code></h3>
+<p><strong>Current Limitation</strong>: Our test results vanish as soon as we close the terminal. We have no artifact to archive, email, or post on a dashboard.</p>
+<p><code>pytest-html</code> solves this by generating a self-contained HTML report with the results of the test run.</p>
+<p>First, install it.</p>
+<div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>pytest-html
 </code></pre></div>
 
-<p>This immediate, clear feedback makes the development cycle faster and more pleasant. It's a small change that has a big impact on daily workflow.</p>
+<p>To use it, we run pytest with an extra command-line option, <code>--html</code>, specifying the output file.</p>
+<div class="codehilite"><pre><span></span><code>pytest<span class="w"> </span>--html<span class="o">=</span>report.html<span class="w"> </span>--self-contained-html
+</code></pre></div>
+
+<p>The run looks the same in the terminal (you'll still see the <code>pytest-sugar</code> output), but now you'll have a new file, <code>report.html</code>, in your directory. Opening it in a browser shows a detailed, professional report with information about your environment, a summary of results, and a detailed breakdown of each test, including its duration.</p>
+<p>This artifact is invaluable for continuous integration (CI) systems, quality assurance teams, and project managers.</p>
+<h3 id="iteration-3-speeding-up-the-suite-with-pytest-xdist">Iteration 3: Speeding Up the Suite with <code>pytest-xdist</code></h3>
+<p><strong>Current Limitation</strong>: Our tests run sequentially, one after another. The total time is the sum of all individual test times. Our four tests took ~1.5 seconds. A suite with 400 such tests would take over 2 minutes.</p>
+<p><code>pytest-xdist</code> allows you to run tests in parallel, distributing them across multiple CPU cores. Since our tests are independent of each other, they are perfect candidates for parallelization.</p>
+<p>First, install it.</p>
+<div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>pytest-xdist
+</code></pre></div>
+
+<p>To activate it, we use the <code>-n</code> flag to specify the number of parallel processes. A common choice is <code>auto</code>, which tells <code>pytest-xdist</code> to use the number of available CPU cores.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># First, let&#39;s get a baseline time without xdist</span>
+$<span class="w"> </span><span class="nb">time</span><span class="w"> </span>pytest<span class="w"> </span>-q
+....
+<span class="m">4</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">1</span>.51s
+
+real<span class="w">    </span>0m1.623s
+user<span class="w">    </span>0m0.315s
+sys<span class="w">     </span>0m0.048s
+
+<span class="c1"># Now, let&#39;s run with xdist</span>
+$<span class="w"> </span><span class="nb">time</span><span class="w"> </span>pytest<span class="w"> </span>-q<span class="w"> </span>-n<span class="w"> </span>auto
+....
+<span class="m">4</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.55s
+
+real<span class="w">    </span>0m0.897s
+user<span class="w">    </span>0m0.641s
+sys<span class="w">     </span>0m0.102s
+</code></pre></div>
+
+<p><strong>Expected vs. Actual Improvement</strong>: The results are dramatic. The test session duration reported by pytest dropped from <strong>1.51s</strong> to <strong>0.55s</strong>—nearly a 3x speedup on a machine with 4 cores. The <code>real</code> time reported by the <code>time</code> command shows a similar improvement.</p>
+<p><code>pytest-xdist</code> intelligently sends each test file to a different worker process. Because our tests are I/O-bound (due to <code>time.sleep</code>), parallelization allows the CPU to switch between them effectively, finishing the entire suite much faster than a sequential run. For large, slow test suites (e.g., those involving database access or network requests), <code>pytest-xdist</code> is an essential tool.</p>
 <h2 id="installing-and-configuring-plugins">Installing and Configuring Plugins</h2>
-<h2 id="how-pytest-manages-plugins">How Pytest Manages Plugins</h2>
-<p>Pytest's plugin system is designed to be "zero-configuration" for the most part. Once a plugin is installed in your Python environment, pytest automatically discovers and activates it.</p>
-<h3 id="the-discovery-mechanism">The Discovery Mechanism</h3>
-<p>How does this "magic" work? It relies on a standard Python packaging feature called <strong>entry points</strong>. When you <code>pip install</code> a package like <code>pytest-html</code>, the package's setup instructions tell <code>pip</code> to register it as a pytest plugin. When pytest starts, it queries the environment for all registered plugins and loads them.</p>
-<p>This is a powerful concept: you don't need to modify a central list or configuration file to add new functionality. Your project's dependencies, listed in <code>requirements.txt</code> or <code>pyproject.toml</code>, define the testing capabilities of your environment.</p>
-<h3 id="installing-a-plugin">Installing a Plugin</h3>
-<p>As we saw in the previous section, installation is as simple as using <code>pip</code>.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># Install a specific plugin</span>
-pip<span class="w"> </span>install<span class="w"> </span>pytest-cov
-
-<span class="c1"># Install multiple plugins from a requirements file</span>
-pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements-dev.txt
+<h2 id="managing-your-plugins">Managing Your Plugins</h2>
+<p>As we saw in the previous section, using a plugin is typically a two-step process:
+1.  Install the package using <code>pip</code>.
+2.  Activate its functionality, either automatically or via a command-line flag.</p>
+<h3 id="installation">Installation</h3>
+<p>Plugins are standard Python packages, so they are installed with <code>pip</code>:</p>
+<div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>pytest-xdist
 </code></pre></div>
 
-<p>To see which plugins are active in your environment, you can run <code>pytest --version</code>. It will list the installed plugins at the end of its output.</p>
-<h3 id="configuring-plugin-behavior">Configuring Plugin Behavior</h3>
-<p>While plugins are auto-discovered, you often need to configure their behavior. For example, you might want to set a default number of parallel workers for <code>pytest-xdist</code> or always generate an HTML report.</p>
-<p>This is done in your pytest configuration file (<code>pytest.ini</code>, <code>pyproject.toml</code>, or <code>setup.cfg</code>). Configuration options are typically added under the <code>[pytest]</code> section.</p>
-<p>Let's create a <code>pytest.ini</code> file to configure the plugins we've discussed.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># pytest.ini</span>
-
-<span class="k">[pytest]</span>
-<span class="c1"># Add default command-line options here.</span>
-<span class="c1"># This avoids having to type them every time.</span>
-<span class="na">addopts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">-n auto --html=test-report/report.html --self-contained-html</span>
-
-<span class="c1"># Custom configuration for pytest-cov (Chapter 13)</span>
-<span class="k">[coverage:run]</span>
-<span class="na">source</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">my_project</span>
-</code></pre></div>
-
-<p>Let's break down the <code>addopts</code> line:</p>
-<ul>
-<li><code>-n auto</code>: This tells <code>pytest-xdist</code> to always use the maximum number of available processes. You no longer need to type it on the command line.</li>
-<li><code>--html=test-report/report.html</code>: This tells <code>pytest-html</code> to always generate a report at this path.</li>
-<li><code>--self-contained-html</code>: This is a specific option for <code>pytest-html</code> that embeds all CSS and JS into the HTML file, making it a single, easily shareable artifact.</li>
-</ul>
-<p>Now, you can simply run <code>pytest</code> with no arguments, and it will behave as if you had typed all those options on the command line.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># This command will now run in parallel and generate a self-contained HTML report</span>
+<p>It's crucial to manage these dependencies just like any other project dependency. You should add them to your <code>requirements.txt</code> or <code>pyproject.toml</code> file to ensure that your test environment is reproducible.</p>
+<div class="codehilite"><pre><span></span><code># requirements.txt
 pytest
+pytest-sugar
+pytest-html
+pytest-xdist
 </code></pre></div>
 
-<p>Each plugin documents its own available configuration options. Always check the plugin's official documentation to see what you can customize. Using a configuration file is a best practice for creating a consistent and reproducible testing environment for your entire team.</p>
+<h3 id="discovering-installed-plugins">Discovering Installed Plugins</h3>
+<p>Pytest automatically discovers any installed packages that register as plugins. You can see which plugins are active in your environment by looking at the header of any pytest run:</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>--version
+pytest<span class="w"> </span><span class="m">7</span>.4.0,<span class="w"> </span>pluggy<span class="w"> </span><span class="m">1</span>.2.0
+plugins:<span class="w"> </span>sugar-1.0.0,<span class="w"> </span>html-4.0.1,<span class="w"> </span>xdist-3.3.1
+</code></pre></div>
+
+<p>For even more detail, you can use the <code>--trace-config</code> flag, which shows where each plugin was loaded from. This is extremely useful for debugging issues with plugin loading.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>--trace-config
+<span class="o">=============================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==============================</span>
+<span class="c1"># ... (lots of output)</span>
+PLUGIN<span class="w"> </span>registered:<span class="w"> </span>&lt;module<span class="w"> </span><span class="s1">&#39;sugar.plugin&#39;</span><span class="w"> </span>from<span class="w"> </span><span class="s1">&#39;/.../lib/python3.10/site-packages/sugar/plugin.py&#39;</span>&gt;
+PLUGIN<span class="w"> </span>registered:<span class="w"> </span>&lt;module<span class="w"> </span><span class="s1">&#39;pytest_html.plugin&#39;</span><span class="w"> </span>from<span class="w"> </span><span class="s1">&#39;/.../lib/python3.10/site-packages/pytest_html/plugin.py&#39;</span>&gt;
+PLUGIN<span class="w"> </span>registered:<span class="w"> </span>&lt;module<span class="w"> </span><span class="s1">&#39;pytest_xdist.plugin&#39;</span><span class="w"> </span>from<span class="w"> </span><span class="s1">&#39;/.../lib/python3.10/site-packages/pytest_xdist/plugin.py&#39;</span>&gt;
+<span class="c1"># ... (more output)</span>
+</code></pre></div>
+
+<h3 id="configuration">Configuration</h3>
+<p>Many plugins offer configuration options to customize their behavior. These are typically managed in your <code>pytest.ini</code>, <code>pyproject.toml</code>, or <code>setup.cfg</code> file, under a section named <code>[pytest]</code>.</p>
+<p>For example, you can set command-line options by default using <code>addopts</code>. Instead of typing <code>pytest -n auto --html=report.html</code> every time, you can configure it like this:</p>
+<p><strong><code>pytest.ini</code></strong></p>
+<div class="codehilite"><pre><span></span><code><span class="k">[pytest]</span>
+<span class="na">addopts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">-n auto --html=report.html --self-contained-html</span>
+</code></pre></div>
+
+<p>Now, simply running <code>pytest</code> will execute with those options automatically.</p>
+<p>Plugins may also define their own custom configuration keys. For example, <code>pytest-html</code> allows you to customize the report title.</p>
+<p><strong><code>pytest.ini</code></strong></p>
+<div class="codehilite"><pre><span></span><code><span class="k">[pytest]</span>
+<span class="na">addopts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">-n auto --html=report.html --self-contained-html</span>
+
+<span class="k">[pytest-html]</span>
+<span class="na">report_title</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">My Project Test Report</span>
+</code></pre></div>
+
+<p>Always consult the documentation for the specific plugin you are using to see the available configuration options.</p>
 <h2 id="creating-custom-plugins">Creating Custom Plugins</h2>
-<h2 id="from-user-to-creator-your-first-plugin">From User to Creator: Your First Plugin</h2>
-<p>Using third-party plugins is great, but the real power comes when you realize you can write your own. You don't need to publish a package to PyPI to create a plugin; you can start by adding custom hooks and fixtures directly inside your project.</p>
-<p>The easiest place to do this is in a special file called <code>conftest.py</code>. Pytest automatically discovers any <code>conftest.py</code> file in your test directories and treats its contents as a <strong>local plugin</strong>, making its fixtures and hooks available to all tests at or below that directory level.</p>
-<h3 id="the-problem-adding-a-custom-command-line-option">The Problem: Adding a Custom Command-Line Option</h3>
-<p>Let's imagine we're testing a web application that can be deployed to different environments (e.g., <code>dev</code>, <code>staging</code>, <code>prod</code>). We want our tests to be able to target a specific environment. A great way to do this is with a custom command-line option, like <code>--env=staging</code>.</p>
-<h3 id="step-1-define-the-option-with-a-hook">Step 1: Define the Option with a Hook</h3>
-<p>We can add a new option to the pytest command line by implementing the <code>pytest_addoption</code> hook in our <code>conftest.py</code> file.</p>
+<h2 id="extending-pytest-yourself">Extending Pytest Yourself</h2>
+<p>Using third-party plugins is powerful, but the real magic happens when you realize you can write your own. This allows you to create project-specific helpers, enforce custom conventions, or integrate with internal tools.</p>
+<p>The simplest way to create a plugin is to place code in a <code>conftest.py</code> file at your project's root. Pytest automatically discovers and loads this file, making any hooks or fixtures defined within it available to your entire test suite.</p>
+<h3 id="iteration-4-creating-a-custom-test-timer-plugin">Iteration 4: Creating a Custom Test Timer Plugin</h3>
+<p><strong>Current Limitation</strong>: We know the total test suite duration, but we don't have an easy way to see the duration of each individual test or to flag tests that are unusually slow. While <code>pytest --durations</code> exists, building our own simple version is the best way to learn the plugin mechanism.</p>
+<p><strong>Goal</strong>: We want to create a plugin that:
+1.  Times each test individually.
+2.  At the end of the run, prints a report of the 5 slowest tests.</p>
+<p>To do this, we need to tap into pytest's execution process. We'll use <strong>hooks</strong>, which are special functions that pytest calls at specific points during its lifecycle. We'll place our hook implementations in <code>conftest.py</code>.</p>
+<p>Here is the implementation for our simple timing plugin:</p>
 <div class="codehilite"><pre><span></span><code><span class="c1"># tests/conftest.py</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">pytest_addoption</span><span class="p">(</span><span class="n">parser</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Adds a custom command-line option to pytest.&quot;&quot;&quot;</span>
-    <span class="n">parser</span><span class="o">.</span><span class="n">addoption</span><span class="p">(</span>
-        <span class="s2">&quot;--env&quot;</span><span class="p">,</span> 
-        <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store&quot;</span><span class="p">,</span> 
-        <span class="n">default</span><span class="o">=</span><span class="s2">&quot;dev&quot;</span><span class="p">,</span> 
-        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Specify the test environment: dev, staging, or prod&quot;</span>
-    <span class="p">)</span>
-</code></pre></div>
-
-<p>Let's break this down:
--   <code>pytest_addoption</code> is a special function name (a hook) that pytest calls during its startup phase.
--   <code>parser</code> is an object, similar to Python's <code>argparse</code>, that lets us define new options.
--   <code>parser.addoption()</code> registers our new <code>--env</code> flag.
-    -   <code>action="store"</code> means it will store the provided value.
-    -   <code>default="dev"</code> sets a default value if the flag isn't used.
-    -   <code>help</code> provides a description that will appear when you run <code>pytest --help</code>.</p>
-<p>Now, if you run <code>pytest --help</code>, you'll see your custom option listed!</p>
-<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>--help
-...
-custom<span class="w"> </span>options:
-<span class="w">  </span>--env<span class="o">=</span>ENV<span class="w">             </span>Specify<span class="w"> </span>the<span class="w"> </span><span class="nb">test</span><span class="w"> </span>environment:<span class="w"> </span>dev,<span class="w"> </span>staging,<span class="w"> </span>or<span class="w"> </span>prod
-...
-</code></pre></div>
-
-<h3 id="step-2-make-the-option-value-available-to-tests">Step 2: Make the Option Value Available to Tests</h3>
-<p>Defining the option is only half the battle. We need a way for our tests to access the value that was passed on the command line. The best way to do this is with a fixture.</p>
-<p>Fixtures can access pytest's internal configuration using a special fixture named <code>request</code>.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/conftest.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">pytest_addoption</span><span class="p">(</span><span class="n">parser</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Adds a custom command-line option to pytest.&quot;&quot;&quot;</span>
-    <span class="n">parser</span><span class="o">.</span><span class="n">addoption</span><span class="p">(</span>
-        <span class="s2">&quot;--env&quot;</span><span class="p">,</span> 
-        <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store&quot;</span><span class="p">,</span> 
-        <span class="n">default</span><span class="o">=</span><span class="s2">&quot;dev&quot;</span><span class="p">,</span> 
-        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Specify the test environment: dev, staging, or prod&quot;</span>
-    <span class="p">)</span>
-
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">&quot;session&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_env</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;A fixture to retrieve the value of the --env command-line option.&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="n">request</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">getoption</span><span class="p">(</span><span class="s2">&quot;--env&quot;</span><span class="p">)</span>
-</code></pre></div>
-
-<p>Here's the flow:
-1.  We define a new fixture called <code>test_env</code>. We give it <code>session</code> scope because the environment won't change during the test run.
-2.  This fixture takes the built-in <code>request</code> fixture as an argument.
-3.  <code>request.config</code> gives us access to pytest's configuration object.
-4.  <code>request.config.getoption("--env")</code> retrieves the value passed to our custom command-line flag.
-5.  The fixture returns this value.</p>
-<h3 id="step-3-use-the-fixture-in-a-test">Step 3: Use the Fixture in a Test</h3>
-<p>Now, any test can simply request the <code>test_env</code> fixture to get the current environment.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_environment.py</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_api_endpoint</span><span class="p">(</span><span class="n">test_env</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests that the correct API endpoint is constructed.&quot;&quot;&quot;</span>
-    <span class="n">base_urls</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="s2">&quot;dev&quot;</span><span class="p">:</span> <span class="s2">&quot;http://localhost:8000/api&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;staging&quot;</span><span class="p">:</span> <span class="s2">&quot;https://staging.myapp.com/api&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;prod&quot;</span><span class="p">:</span> <span class="s2">&quot;https://api.myapp.com/api&quot;</span><span class="p">,</span>
-    <span class="p">}</span>
-
-    <span class="c1"># The test_env fixture provides the value from the command line</span>
-    <span class="n">expected_url</span> <span class="o">=</span> <span class="n">base_urls</span><span class="p">[</span><span class="n">test_env</span><span class="p">]</span>
-
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Testing against environment: </span><span class="si">{</span><span class="n">test_env</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Expected URL: </span><span class="si">{</span><span class="n">expected_url</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-    <span class="c1"># In a real test, you would use this URL to make API calls</span>
-    <span class="k">assert</span> <span class="n">test_env</span> <span class="ow">in</span> <span class="n">base_urls</span>
-</code></pre></div>
-
-<p>Let's run this with different options.</p>
-<p><strong>Run with the default:</strong></p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># -s shows the output from print() statements</span>
-pytest<span class="w"> </span>-s<span class="w"> </span>tests/test_environment.py
-</code></pre></div>
-
-<div class="codehilite"><pre><span></span><code>...
-PASSED                           [100%]
-Testing against environment: dev
-Expected URL: http://localhost:8000/api
-...
-</code></pre></div>
-
-<p><strong>Run against staging:</strong></p>
-<div class="codehilite"><pre><span></span><code>pytest<span class="w"> </span>-s<span class="w"> </span>tests/test_environment.py<span class="w"> </span>--env<span class="o">=</span>staging
-</code></pre></div>
-
-<div class="codehilite"><pre><span></span><code>...
-PASSED                           [100%]
-Testing against environment: staging
-Expected URL: https://staging.myapp.com/api
-...
-</code></pre></div>
-
-<p>You've just created your first local plugin! You defined a custom command-line interface, exposed it to your tests via a clean fixture-based API, and used it to control test behavior. This pattern is incredibly powerful for building flexible and maintainable test suites.</p>
-<h2 id="hooks-how-pytest-plugins-work-under-the-hood">Hooks: How Pytest Plugins Work Under the Hood</h2>
-<h2 id="banish-magic-the-pytest-hook-system">Banish Magic: The Pytest Hook System</h2>
-<p>We've used a hook, <code>pytest_addoption</code>, to create a plugin. But what exactly <em>are</em> hooks?</p>
-<p>Hooks are the fundamental mechanism behind pytest's extensibility. They are well-defined points in the test execution lifecycle where plugins can insert custom logic. Pytest's execution is not a monolithic black box; it's a series of stages, and at the transition between each stage, it makes a "hook call."</p>
-<p>Think of it like a rocket launch sequence:
--   T-10: <code>pytest_sessionstart</code> (Ignition sequence start)
--   T-5: <code>pytest_collect_file</code> (Main engine start)
--   T-1: <code>pytest_runtest_setup</code> (Liftoff)
--   T+0: <code>pytest_runtest_call</code> (In flight)
--   T+5: <code>pytest_sessionfinish</code> (Mission complete)</p>
-<p>A plugin is simply a collection of functions whose names match these hook specifications. Pytest discovers these functions and calls them at the appropriate time.</p>
-<h3 id="visualizing-the-hook-lifecycle">Visualizing the Hook Lifecycle</h3>
-<p>The best way to understand the hook system is to see it in action. Let's use a <code>conftest.py</code> file to implement several key hooks and have them print a message when they are called. This will give us a trace of the pytest run.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/conftest.py</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-
-<span class="c1"># Clear any previous hooks for this demonstration</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">pytest_addoption</span><span class="p">(</span><span class="n">parser</span><span class="p">):</span>
-    <span class="k">pass</span>
-
-<span class="c1"># --- Hook implementations ---</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">pytest_sessionstart</span><span class="p">(</span><span class="n">session</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Called after the Session object has been created and before performing</span>
-<span class="sd">    collection and entering the run test loop.&quot;&quot;&quot;</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">HOOK: pytest_sessionstart&quot;</span><span class="p">)</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">pytest_collection_modifyitems</span><span class="p">(</span><span class="n">session</span><span class="p">,</span> <span class="n">config</span><span class="p">,</span> <span class="n">items</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Called after collection has been performed, may filter or re-order</span>
-<span class="sd">    the items in-place.&quot;&quot;&quot;</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">HOOK: pytest_collection_modifyitems&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;  &gt; Number of items collected:&quot;</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">items</span><span class="p">))</span>
-
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">hookimpl</span><span class="p">(</span><span class="n">hookwrapper</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">pytest_runtest_protocol</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="n">nextitem</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Wraps the entire test execution protocol for a single item.&quot;&quot;&quot;</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">HOOK: pytest_runtest_protocol (setup) for </span><span class="si">{</span><span class="n">item</span><span class="o">.</span><span class="n">nodeid</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="k">yield</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;HOOK: pytest_runtest_protocol (teardown) for </span><span class="si">{</span><span class="n">item</span><span class="o">.</span><span class="n">nodeid</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 
 <span class="k">def</span><span class="w"> </span><span class="nf">pytest_runtest_setup</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Called to perform the setup phase for a test item.&quot;&quot;&quot;</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  &gt; HOOK: pytest_runtest_setup for </span><span class="si">{</span><span class="n">item</span><span class="o">.</span><span class="n">nodeid</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">pytest_runtest_call</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Called to run the test for a test item.&quot;&quot;&quot;</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  &gt; HOOK: pytest_runtest_call for </span><span class="si">{</span><span class="n">item</span><span class="o">.</span><span class="n">nodeid</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Hook called before a test item is run.&quot;&quot;&quot;</span>
+    <span class="n">item</span><span class="o">.</span><span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
 
 <span class="k">def</span><span class="w"> </span><span class="nf">pytest_runtest_teardown</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="n">nextitem</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Called to perform the teardown phase for a test item.&quot;&quot;&quot;</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  &gt; HOOK: pytest_runtest_teardown for </span><span class="si">{</span><span class="n">item</span><span class="o">.</span><span class="n">nodeid</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Hook called after a test item is run.&quot;&quot;&quot;</span>
+    <span class="n">item</span><span class="o">.</span><span class="n">end_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+    <span class="n">item</span><span class="o">.</span><span class="n">duration</span> <span class="o">=</span> <span class="n">item</span><span class="o">.</span><span class="n">end_time</span> <span class="o">-</span> <span class="n">item</span><span class="o">.</span><span class="n">start_time</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">pytest_sessionfinish</span><span class="p">(</span><span class="n">session</span><span class="p">,</span> <span class="n">exitstatus</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Called after whole test run finished, right before returning the</span>
-<span class="sd">    exit status to the system.&quot;&quot;&quot;</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">HOOK: pytest_sessionfinish&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">pytest_sessionfinish</span><span class="p">(</span><span class="n">session</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Hook called after the entire test session finishes.&quot;&quot;&quot;</span>
+    <span class="n">reporter</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">pluginmanager</span><span class="o">.</span><span class="n">get_plugin</span><span class="p">(</span><span class="s1">&#39;terminalreporter&#39;</span><span class="p">)</span>
+    <span class="n">reporter</span><span class="o">.</span><span class="n">write_sep</span><span class="p">(</span><span class="s2">&quot;=&quot;</span><span class="p">,</span> <span class="s2">&quot;CUSTOM TEST DURATIONS REPORT&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Collect all items and their durations</span>
+    <span class="n">all_items</span> <span class="o">=</span> <span class="p">[</span><span class="n">item</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">session</span><span class="o">.</span><span class="n">items</span> <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="s1">&#39;duration&#39;</span><span class="p">)]</span>
+
+    <span class="c1"># Sort by duration, descending</span>
+    <span class="n">slowest_tests</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">all_items</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">duration</span><span class="p">,</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="c1"># Report the top 5 slowest</span>
+    <span class="n">reporter</span><span class="o">.</span><span class="n">write_line</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Top 5 slowest tests:&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">slowest_tests</span><span class="p">[:</span><span class="mi">5</span><span class="p">]:</span>
+        <span class="n">reporter</span><span class="o">.</span><span class="n">write_line</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">item</span><span class="o">.</span><span class="n">nodeid</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">item</span><span class="o">.</span><span class="n">duration</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">s&quot;</span><span class="p">)</span>
 </code></pre></div>
 
-<p>We'll also need a simple test file for pytest to run.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_hooks_demo.py</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_one</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;    -&gt; INSIDE test_one()&quot;</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="kc">True</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_two</span><span class="p">():</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;    -&gt; INSIDE test_two()&quot;</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="kc">True</span>
-</code></pre></div>
-
-<p>Now, run pytest with the <code>-s</code> flag to ensure our <code>print</code> statements are displayed.</p>
-<div class="codehilite"><pre><span></span><code>pytest<span class="w"> </span>-v<span class="w"> </span>-s<span class="w"> </span>tests/test_hooks_demo.py
-</code></pre></div>
-
-<p>The output provides a perfect trace of the execution flow:</p>
-<div class="codehilite"><pre><span></span><code>============================= test session starts ==============================
-...
-HOOK: pytest_sessionstart
-
-...
-collected 2 items
-
-HOOK: pytest_collection_modifyitems
-  &gt; Number of items collected: 2
-
-tests/test_hooks_demo.py::test_one 
-HOOK: pytest_runtest_protocol (setup) for tests/test_hooks_demo.py::test_one
-  &gt; HOOK: pytest_runtest_setup for tests/test_hooks_demo.py::test_one
-PASSED                           [ 50%]
-  &gt; HOOK: pytest_runtest_call for tests/test_hooks_demo.py::test_one
-    -&gt; INSIDE test_one()
-  &gt; HOOK: pytest_runtest_teardown for tests/test_hooks_demo.py::test_one
-HOOK: pytest_runtest_protocol (teardown) for tests/test_hooks_demo.py::test_one
-
-tests/test_hooks_demo.py::test_two 
-HOOK: pytest_runtest_protocol (setup) for tests/test_hooks_demo.py::test_two
-  &gt; HOOK: pytest_runtest_setup for tests/test_hooks_demo.py::test_two
-PASSED                           [100%]
-  &gt; HOOK: pytest_runtest_call for tests/test_hooks_demo.py::test_two
-    -&gt; INSIDE test_two()
-  &gt; HOOK: pytest_runtest_teardown for tests/test_hooks_demo.py::test_two
-HOOK: pytest_runtest_protocol (teardown) for tests/test_hooks_demo.py::test_two
-
-HOOK: pytest_sessionfinish
-============================== 2 passed in 0.02s ===============================
-</code></pre></div>
-
-<h3 id="key-observations">Key Observations</h3>
+<h3 id="banish-magic-with-mechanics-how-this-works">Banish Magic with Mechanics: How This Works</h3>
+<p>Let's break down what's happening here. We've defined three functions with special names that pytest recognizes as hooks:</p>
 <ol>
-<li><strong>Session Hooks:</strong> <code>pytest_sessionstart</code> and <code>pytest_sessionfinish</code> wrap the entire run.</li>
-<li><strong>Collection Hook:</strong> <code>pytest_collection_modifyitems</code> runs after all tests have been found but before any have been executed. This is where you can re-order or filter tests.</li>
-<li><strong>Test Item Hooks:</strong> For <em>each test</em>, pytest runs a setup, call, and teardown phase, wrapped by the <code>pytest_runtest_protocol</code>. This is the heart of the test execution.</li>
-<li><strong>Hookwrapper:</strong> The <code>@pytest.hookimpl(hookwrapper=True)</code> decorator on <code>pytest_runtest_protocol</code> creates a "wrapper" hook. The code before the <code>yield</code> runs before other plugins' implementations of the same hook, and the code after <code>yield</code> runs after. This is an advanced feature for controlling execution order.</li>
+<li>
+<p><strong><code>pytest_runtest_setup(item)</code></strong>: Pytest calls this hook just before it executes a test function. The <code>item</code> object represents the test being run (e.g., <code>test_valid_data_passes_all_checks</code>). We attach a <code>start_time</code> attribute directly to this object to store the current time.</p>
+</li>
+<li>
+<p><strong><code>pytest_runtest_teardown(item, nextitem)</code></strong>: This hook is called after the test has finished (and after any teardown fixtures). We record the <code>end_time</code> and calculate the <code>duration</code>, again storing it on the <code>item</code> object.</p>
+</li>
+<li>
+<p><strong><code>pytest_sessionfinish(session)</code></strong>: Pytest calls this hook once at the very end of the entire test session. This is the perfect place to generate our summary report.</p>
+<ul>
+<li>We get the <code>terminalreporter</code> object from the session, which allows us to print nicely formatted output to the console.</li>
+<li>We collect all test items from the session.</li>
+<li>We sort them by the <code>duration</code> attribute we added.</li>
+<li>We print the top 5 slowest tests.</li>
+</ul>
+</li>
 </ol>
-<p>By understanding this lifecycle, you can now see how plugins like <code>pytest-xdist</code> or <code>pytest-html</code> work. <code>pytest-xdist</code> might override <code>pytest_runtest_protocol</code> to send the test <code>item</code> to a worker process instead of running it locally. <code>pytest-html</code> uses the <code>pytest_runtest_makereport</code> hook (not shown here) to capture the result of each test and add it to its report.</p>
-<p>The hook system is the machinery beneath the magic.</p>
+<p>Now, let's run pytest. We don't need any special flags; the plugin in <code>conftest.py</code> is loaded automatically.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest
+<span class="c1"># ... (normal test output from pytest-sugar) ...</span>
+
+―――――――――――――――――――――――――――――――――――<span class="w"> </span>summary<span class="w"> </span>――――――――――――――――――――――――――――――――――――
+✅<span class="w"> </span><span class="m">4</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">1</span>.53s
+
+<span class="o">=======================</span><span class="w"> </span>CUSTOM<span class="w"> </span>TEST<span class="w"> </span>DURATIONS<span class="w"> </span><span class="nv">REPORT</span><span class="w"> </span><span class="o">=======================</span>
+
+Top<span class="w"> </span><span class="m">5</span><span class="w"> </span>slowest<span class="w"> </span>tests:
+tests/test_validator.py::test_valid_data_passes_all_checks:<span class="w"> </span><span class="m">0</span>.3789s
+tests/test_validator.py::test_duplicate_id_fails:<span class="w"> </span><span class="m">0</span>.1534s
+tests/test_validator.py::test_value_out_of_range_fails:<span class="w"> </span><span class="m">0</span>.1227s
+tests/test_validator.py::test_incorrect_row_length_fails:<span class="w"> </span><span class="m">0</span>.1019s
+</code></pre></div>
+
+<p><strong>Expected vs. Actual Improvement</strong>: It worked perfectly! After the standard summary, our custom report is printed, showing the exact duration of each test, sorted from slowest to fastest. We have successfully extended pytest's functionality to meet our specific needs. This demonstrates the core principle of plugins: you can attach your own logic to almost any part of the testing process.</p>
+<h2 id="hooks-how-pytest-plugins-work-under-the-hood">Hooks: How Pytest Plugins Work Under the Hood</h2>
+<h2 id="the-pytest-hook-system">The Pytest Hook System</h2>
+<p>The functions we wrote in <code>conftest.py</code> (<code>pytest_runtest_setup</code>, etc.) are the heart of the plugin system. Pytest defines hundreds of these <strong>hook specifications</strong> that act as well-defined entry points for plugins to inject custom logic.</p>
+<p>When pytest is about to perform an action (like collecting tests, running a test, or finishing the session), it checks if any loaded plugins (including <code>conftest.py</code>) have implemented the corresponding hook function. If so, it calls that function, passing in relevant context as arguments (like the <code>item</code> or <code>session</code> object).</p>
+<p>This is a powerful design because it allows plugins to be modular and self-contained. A plugin only needs to implement the hooks it cares about.</p>
+<h3 id="key-hook-categories-and-examples">Key Hook Categories and Examples</h3>
+<p>While there are many hooks, they generally fall into a few main categories. Understanding these categories helps you know where to look when you want to build a plugin.</p>
+<h4 id="1-initialization-and-configuration-hooks">1. Initialization and Configuration Hooks</h4>
+<p>These hooks run at the very beginning of a pytest session and are used for adding command-line options or modifying configuration.</p>
+<ul>
+<li><strong><code>pytest_addoption(parser)</code></strong>: Allows you to add custom command-line options. The <code>parser</code> object is used to define the option, its help text, and default value.</li>
+<li><strong><code>pytest_configure(config)</code></strong>: Called after command-line options have been parsed. This is where you can read your custom options and set up any global state for your plugin.</li>
+</ul>
+<h4 id="2-collection-hooks">2. Collection Hooks</h4>
+<p>These hooks are called when pytest is discovering test files and functions. They allow you to customize the collection process.</p>
+<ul>
+<li><strong><code>pytest_collection_modifyitems(session, config, items)</code></strong>: One of the most powerful hooks. It's called after all test items have been collected. The <code>items</code> argument is a list of all test functions pytest is about to run. You can reorder this list, remove items (deselect tests), or add custom markers. For example, you could write a plugin to automatically add a <code>@pytest.mark.slow</code> marker to any test whose name contains <code>_integration_</code>.</li>
+</ul>
+<h4 id="3-test-execution-runtest-hooks">3. Test Execution (Runtest) Hooks</h4>
+<p>This is the family of hooks we used for our timer plugin. They wrap the actual execution of a single test item.</p>
+<ul>
+<li><strong><code>pytest_runtest_protocol(item, nextitem)</code></strong>: This is the main hook that manages the execution of a single test. It's responsible for calling the setup, the test function itself, and the teardown.</li>
+<li><strong><code>pytest_runtest_setup(item)</code></strong>: Called before the test and its fixtures are set up.</li>
+<li><strong><code>pytest_runtest_call(item)</code></strong>: Called to execute the test function itself.</li>
+<li><strong><code>pytest_runtest_teardown(item, nextitem)</code></strong>: Called after the test has run and fixtures have been torn down.</li>
+<li><strong><code>pytest_runtest_makereport(item, call)</code></strong>: A crucial hook called to create the test report object. The <code>call</code> object contains information about whether the setup, call, or teardown phase failed. You can inspect the outcome (passed, failed, skipped) and add extra information to the report, which can then be used by other hooks or plugins (like <code>pytest-html</code>).</li>
+</ul>
+<h4 id="4-reporting-hooks">4. Reporting Hooks</h4>
+<p>These hooks are used to customize the output of the test run.</p>
+<ul>
+<li><strong><code>pytest_report_header(config)</code></strong>: Allows you to add extra lines to the header of the test report.</li>
+<li><strong><code>pytest_terminal_summary(terminalreporter, exitstatus, config)</code></strong>: Called just before pytest exits. This is an alternative to <code>pytest_sessionfinish</code> that is specifically for adding content to the terminal report. We could have used this for our timer plugin.</li>
+</ul>
+<p>By combining these hooks, you can create incredibly sophisticated plugins that integrate deeply with pytest's lifecycle. The official pytest documentation contains a complete reference of all available hooks. When building a plugin, your first step should be to browse this list to find the correct entry points for the logic you want to implement.</p>
 <h2 id="common-plugin-use-cases">Common Plugin Use Cases</h2>
-<h2 id="from-theory-to-practice-solving-problems-with-hooks">From Theory to Practice: Solving Problems with Hooks</h2>
-<p>Understanding the hook system is one thing; applying it to solve real-world problems is another. Let's explore some practical use cases for custom plugins.</p>
-<h3 id="use-case-1-conditionally-skipping-tests">Use Case 1: Conditionally Skipping Tests</h3>
-<p><strong>The Problem:</strong> You have a set of tests that should only run when a specific condition is met—for example, tests that require a network connection or a specific service to be running. You want to skip them automatically if the condition isn't met.</p>
-<p><strong>The Solution:</strong> We can use the <code>pytest_collection_modifyitems</code> hook to inspect all collected tests and apply a <code>skip</code> marker to them dynamically.</p>
-<p>Let's create a custom marker <code>@pytest.mark.network</code> and a command-line option <code>--no-network</code> to disable these tests.</p>
+<h2 id="what-can-you-build-with-plugins">What Can You Build with Plugins?</h2>
+<p>Now that we understand the mechanics of hooks, let's explore some common and powerful use cases for custom plugins.</p>
+<h3 id="adding-custom-command-line-options">Adding Custom Command-Line Options</h3>
+<p>Imagine our data validator needs to run against different environments (e.g., <code>staging</code>, <code>production</code>), and the data source changes for each. We can add a custom <code>--env</code> option to control this.</p>
+<p><strong><code>tests/conftest.py</code></strong></p>
 <div class="codehilite"><pre><span></span><code><span class="c1"># tests/conftest.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
 
 <span class="k">def</span><span class="w"> </span><span class="nf">pytest_addoption</span><span class="p">(</span><span class="n">parser</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Adds a custom --env command-line option.&quot;&quot;&quot;</span>
     <span class="n">parser</span><span class="o">.</span><span class="n">addoption</span><span class="p">(</span>
-        <span class="s2">&quot;--no-network&quot;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store_true&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;disable network tests&quot;</span>
+        <span class="s2">&quot;--env&quot;</span><span class="p">,</span> <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store&quot;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="s2">&quot;staging&quot;</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s2">&quot;environment to run tests against&quot;</span>
     <span class="p">)</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">pytest_configure</span><span class="p">(</span><span class="n">config</span><span class="p">):</span>
-    <span class="n">config</span><span class="o">.</span><span class="n">addinivalue_line</span><span class="p">(</span><span class="s2">&quot;markers&quot;</span><span class="p">,</span> <span class="s2">&quot;network: marks tests as requiring network access&quot;</span><span class="p">)</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">api_endpoint</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A fixture that provides the correct API endpoint based on --env.&quot;&quot;&quot;</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="n">request</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">getoption</span><span class="p">(</span><span class="s2">&quot;--env&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">env</span> <span class="o">==</span> <span class="s2">&quot;staging&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;https://staging-api.example.com&quot;</span>
+    <span class="k">elif</span> <span class="n">env</span> <span class="o">==</span> <span class="s2">&quot;production&quot;</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;https://api.example.com&quot;</span>
+    <span class="k">return</span> <span class="s2">&quot;https://dev-api.example.com&quot;</span>
+
+<span class="c1"># In a test:</span>
+<span class="c1"># def test_api_connection(api_endpoint):</span>
+<span class="c1">#     assert requests.get(api_endpoint).status_code == 200</span>
+</code></pre></div>
+
+<p>Now you can run <code>pytest --env=production</code> to target the production API. This pattern is fundamental for building flexible test suites.</p>
+<h3 id="dynamically-selecting-or-reordering-tests">Dynamically Selecting or Reordering Tests</h3>
+<p>The <code>pytest_collection_modifyitems</code> hook gives you ultimate control over which tests run and in what order.</p>
+<p><strong>Use Case</strong>: You want to run all tests marked as <code>slow</code> at the very end of the test suite to get faster feedback on quick unit tests.</p>
+<p><strong><code>tests/conftest.py</code></strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/conftest.py</span>
 
 <span class="k">def</span><span class="w"> </span><span class="nf">pytest_collection_modifyitems</span><span class="p">(</span><span class="n">config</span><span class="p">,</span> <span class="n">items</span><span class="p">):</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">config</span><span class="o">.</span><span class="n">getoption</span><span class="p">(</span><span class="s2">&quot;--no-network&quot;</span><span class="p">):</span>
-        <span class="c1"># --no-network option not given, so don&#39;t skip anything</span>
-        <span class="k">return</span>
-
-    <span class="c1"># --no-network option was given, find and skip network tests</span>
-    <span class="n">skip_network</span> <span class="o">=</span> <span class="n">pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">skip</span><span class="p">(</span><span class="n">reason</span><span class="o">=</span><span class="s2">&quot;need --no-network option to be disabled to run&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Reorders tests to run @pytest.mark.slow tests last.&quot;&quot;&quot;</span>
+    <span class="n">slow_tests</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">other_tests</span> <span class="o">=</span> <span class="p">[]</span>
     <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">items</span><span class="p">:</span>
-        <span class="k">if</span> <span class="s2">&quot;network&quot;</span> <span class="ow">in</span> <span class="n">item</span><span class="o">.</span><span class="n">keywords</span><span class="p">:</span>
-            <span class="n">item</span><span class="o">.</span><span class="n">add_marker</span><span class="p">(</span><span class="n">skip_network</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">item</span><span class="o">.</span><span class="n">get_closest_marker</span><span class="p">(</span><span class="s2">&quot;slow&quot;</span><span class="p">):</span>
+            <span class="n">slow_tests</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">other_tests</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+
+    <span class="c1"># Put the other tests first, then the slow ones</span>
+    <span class="n">items</span><span class="p">[:]</span> <span class="o">=</span> <span class="n">other_tests</span> <span class="o">+</span> <span class="n">slow_tests</span>
 </code></pre></div>
 
-<p>Here's the logic:
-1.  <code>pytest_addoption</code>: We add a <code>--no-network</code> flag. <code>action="store_true"</code> means it's a boolean flag.
-2.  <code>pytest_configure</code>: This hook is a good place to register our custom marker to avoid warnings from pytest.
-3.  <code>pytest_collection_modifyitems</code>:
-    -   We check if the <code>--no-network</code> flag was provided.
-    -   If it was, we iterate through all collected test <code>items</code>.
-    -   <code>item.keywords</code> is a dictionary-like object containing all markers applied to the test.
-    -   If we find our <code>network</code> marker, we use <code>item.add_marker()</code> to dynamically add a <code>skip</code> marker to that test.</p>
-<p>Now, let's write a test that uses this marker.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_network_calls.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">network</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_api_call</span><span class="p">():</span>
-    <span class="c1"># In a real test, this would make an HTTP request</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Making a network call...&quot;</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="kc">True</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_local_calculation</span><span class="p">():</span>
-    <span class="k">assert</span> <span class="mi">1</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">==</span> <span class="mi">2</span>
-</code></pre></div>
-
-<p><strong>Running normally:</strong></p>
-<div class="codehilite"><pre><span></span><code>pytest<span class="w"> </span>-v
-<span class="c1"># Both tests will run</span>
-</code></pre></div>
-
-<p><strong>Running with our custom flag:</strong></p>
-<div class="codehilite"><pre><span></span><code>pytest<span class="w"> </span>-v<span class="w"> </span>--no-network
-</code></pre></div>
-
-<p>The output will show that <code>test_api_call</code> was skipped, while <code>test_local_calculation</code> ran as usual.</p>
-<div class="codehilite"><pre><span></span><code>...
-tests/test_network_calls.py::test_api_call SKIPPED (need --no-network option to be disabled to run) [ 50%]
-tests/test_network_calls.py::test_local_calculation PASSED [100%]
-...
-</code></pre></div>
-
-<h3 id="use-case-2-adding-metadata-to-html-reports">Use Case 2: Adding Metadata to HTML Reports</h3>
-<p><strong>The Problem:</strong> Your <code>pytest-html</code> report is useful, but you want to add custom columns—for example, a test's unique ID from a test case management system like Jira or TestRail.</p>
-<p><strong>The Solution:</strong> We can use markers to attach metadata to tests and then use hooks provided by <code>pytest-html</code> itself to modify the report. This demonstrates how plugins can be built on top of other plugins.</p>
-<p>First, let's modify <code>conftest.py</code> to add a <code>test_id</code> marker and hooks to modify the HTML report.</p>
+<p>This simple plugin automatically prioritizes your faster tests, improving the developer feedback loop without any manual intervention.</p>
+<h3 id="integrating-with-external-systems">Integrating with External Systems</h3>
+<p>Plugins are the perfect way to integrate your test suite with external tools like test case management systems (e.g., TestRail, Zephyr) or notification services (e.g., Slack).</p>
+<p><strong>Use Case</strong>: Post a summary of test failures to a Slack channel after a CI run.</p>
+<p><strong><code>tests/conftest.py</code> (conceptual)</strong></p>
 <div class="codehilite"><pre><span></span><code><span class="c1"># tests/conftest.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">requests</span>
 
-<span class="c1"># (Keep the network-related hooks from the previous example if you wish)</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">pytest_configure</span><span class="p">(</span><span class="n">config</span><span class="p">):</span>
-    <span class="n">config</span><span class="o">.</span><span class="n">addinivalue_line</span><span class="p">(</span><span class="s2">&quot;markers&quot;</span><span class="p">,</span> <span class="s2">&quot;test_id(id): assign a test case ID to a test&quot;</span><span class="p">)</span>
-
-<span class="c1"># Hook provided by pytest-html to add extra columns to the report</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">pytest_html_results_table_header</span><span class="p">(</span><span class="n">cells</span><span class="p">):</span>
-    <span class="n">cells</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;&lt;th&gt;Test ID&lt;/th&gt;&quot;</span><span class="p">)</span>
-
-<span class="c1"># Hook provided by pytest-html to add data to the new column for each test</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">pytest_html_results_table_row</span><span class="p">(</span><span class="n">report</span><span class="p">,</span> <span class="n">cells</span><span class="p">):</span>
-    <span class="c1"># Find our marker on the test item</span>
-    <span class="n">item</span> <span class="o">=</span> <span class="n">report</span><span class="o">.</span><span class="n">user_properties</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;item&quot;</span><span class="p">)</span>
-    <span class="k">if</span> <span class="n">item</span><span class="p">:</span>
-        <span class="n">test_id_marker</span> <span class="o">=</span> <span class="n">item</span><span class="o">.</span><span class="n">get_closest_marker</span><span class="p">(</span><span class="s2">&quot;test_id&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">test_id_marker</span><span class="p">:</span>
-            <span class="n">test_id</span> <span class="o">=</span> <span class="n">test_id_marker</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-            <span class="n">cells</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;&lt;td&gt;</span><span class="si">{</span><span class="n">test_id</span><span class="si">}</span><span class="s2">&lt;/td&gt;&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">pytest_sessionfinish</span><span class="p">(</span><span class="n">session</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Posts a summary to Slack on failure.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">session</span><span class="o">.</span><span class="n">testsfailed</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="ow">and</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;CI&quot;</span><span class="p">):</span>
+        <span class="n">slack_webhook_url</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getenv</span><span class="p">(</span><span class="s2">&quot;SLACK_WEBHOOK_URL&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">slack_webhook_url</span><span class="p">:</span>
             <span class="k">return</span>
-    <span class="n">cells</span><span class="o">.</span><span class="n">insert</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;&lt;td&gt;-&lt;/td&gt;&quot;</span><span class="p">)</span>
 
-<span class="c1"># Hook to attach the test item to the report object</span>
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">hookimpl</span><span class="p">(</span><span class="n">hookwrapper</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">pytest_runtest_makereport</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="n">call</span><span class="p">):</span>
-    <span class="n">outcome</span> <span class="o">=</span> <span class="k">yield</span>
-    <span class="n">report</span> <span class="o">=</span> <span class="n">outcome</span><span class="o">.</span><span class="n">get_result</span><span class="p">()</span>
-    <span class="n">report</span><span class="o">.</span><span class="n">user_properties</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="s2">&quot;item&quot;</span><span class="p">,</span> <span class="n">item</span><span class="p">))</span>
+        <span class="n">summary</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;Test run finished with </span><span class="si">{</span><span class="n">session</span><span class="o">.</span><span class="n">testsfailed</span><span class="si">}</span><span class="s2"> failures.&quot;</span>
+        <span class="c1"># In a real implementation, you would list the failed tests.</span>
+
+        <span class="n">payload</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="n">summary</span><span class="p">}</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">requests</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="n">slack_webhook_url</span><span class="p">,</span> <span class="n">json</span><span class="o">=</span><span class="n">payload</span><span class="p">)</span>
+        <span class="k">except</span> <span class="n">requests</span><span class="o">.</span><span class="n">RequestException</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Failed to send Slack notification: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
 
-<p>Now, let's add our new marker to a test.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_with_ids.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">test_id</span><span class="p">(</span><span class="s2">&quot;PROJ-123&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_user_login</span><span class="p">():</span>
-    <span class="k">assert</span> <span class="kc">True</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_guest_access</span><span class="p">():</span>
-    <span class="k">assert</span> <span class="kc">True</span>
-</code></pre></div>
-
-<p>Run pytest and generate the HTML report:</p>
-<div class="codehilite"><pre><span></span><code>pytest<span class="w"> </span>--html<span class="o">=</span>report.html
-</code></pre></div>
-
-<p>When you open <code>report.html</code>, you will see a new "Test ID" column. The row for <code>test_user_login</code> will contain "PROJ-123", and the row for <code>test_guest_access</code> will be empty. This powerful pattern allows you to fully customize reporting to fit your team's workflow.</p>
+<p>This hook runs at the end of the session, checks for failures, and (if running in a CI environment) sends a notification. This kind of automation is a hallmark of a mature testing setup.</p>
 <h2 id="distributing-your-own-plugin">Distributing Your Own Plugin</h2>
-<h2 id="from-local-plugin-to-sharable-package">From Local Plugin to Sharable Package</h2>
-<p>We've seen how to create powerful local plugins in <code>conftest.py</code>. But what if you develop a set of hooks and fixtures that would be useful across multiple projects, or that you want to share with the community? You need to package it as an installable plugin.</p>
-<p>The process involves moving your code from <code>conftest.py</code> into a proper Python package and adding a special entry point to your configuration so pytest can discover it.</p>
-<h3 id="step-1-create-the-package-structure">Step 1: Create the Package Structure</h3>
-<p>Let's convert our command-line option plugin from Section 19.3 into a distributable package.</p>
-<p>Create the following file structure:</p>
-<div class="codehilite"><pre><span></span><code>pytest-env-plugin/
+<h2 id="from-conftestpy-to-installable-package">From <code>conftest.py</code> to Installable Package</h2>
+<p>Our custom timer plugin is useful, and we might want to use it in other projects. Copying the <code>conftest.py</code> file everywhere is not a scalable or maintainable solution. The professional approach is to package it as a proper, installable Python package.</p>
+<h3 id="iteration-5-packaging-the-custom-timer-plugin">Iteration 5: Packaging the Custom Timer Plugin</h3>
+<p><strong>Current Limitation</strong>: The plugin code lives inside our project's <code>tests/conftest.py</code>, making it impossible to share with other projects without copy-pasting.</p>
+<p><strong>Goal</strong>: Create a new, separate Python package for our <code>pytest-timer</code> plugin that can be installed with <code>pip</code>.</p>
+<h4 id="step-1-create-the-package-structure">Step 1: Create the Package Structure</h4>
+<p>First, we'll create a new directory for our plugin project.</p>
+<div class="codehilite"><pre><span></span><code>pytest-timer/
 ├── pyproject.toml
 └── src/
-    └── pytest_env_plugin/
+    └── pytest_timer/
         ├── __init__.py
         └── plugin.py
 </code></pre></div>
 
 <ul>
-<li><code>pytest-env-plugin/</code>: The root directory for our project.</li>
-<li><code>pyproject.toml</code>: The modern standard for Python package configuration.</li>
-<li><code>src/pytest_env_plugin/</code>: The source directory for our package.</li>
-<li><code>plugin.py</code>: The file where our plugin code will live.</li>
+<li><code>pyproject.toml</code>: The modern standard for defining Python package metadata and dependencies.</li>
+<li><code>src/pytest_timer/plugin.py</code>: We will move our plugin code here from <code>conftest.py</code>.</li>
 </ul>
-<h3 id="step-2-move-the-plugin-code">Step 2: Move the Plugin Code</h3>
-<p>Move the hook and fixture definitions from <code>conftest.py</code> into <code>src/pytest_env_plugin/plugin.py</code>.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># src/pytest_env_plugin/plugin.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<h4 id="step-2-move-the-plugin-code">Step 2: Move the Plugin Code</h4>
+<p>Copy the hook implementations from <code>conftest.py</code> into <code>src/pytest_timer/plugin.py</code>. The code remains identical.</p>
+<p><strong><code>src/pytest_timer/plugin.py</code></strong></p>
+<div class="codehilite"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">pytest_addoption</span><span class="p">(</span><span class="n">parser</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Adds the --env command-line option.&quot;&quot;&quot;</span>
-    <span class="n">parser</span><span class="o">.</span><span class="n">addoption</span><span class="p">(</span>
-        <span class="s2">&quot;--env&quot;</span><span class="p">,</span>
-        <span class="n">action</span><span class="o">=</span><span class="s2">&quot;store&quot;</span><span class="p">,</span>
-        <span class="n">default</span><span class="o">=</span><span class="s2">&quot;dev&quot;</span><span class="p">,</span>
-        <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Specify the test environment: dev, staging, or prod&quot;</span>
-    <span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">pytest_runtest_setup</span><span class="p">(</span><span class="n">item</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Hook called before a test item is run.&quot;&quot;&quot;</span>
+    <span class="n">item</span><span class="o">.</span><span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
 
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">&quot;session&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_env</span><span class="p">(</span><span class="n">request</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;A fixture for the --env command-line option.&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="n">request</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">getoption</span><span class="p">(</span><span class="s2">&quot;--env&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">pytest_runtest_teardown</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="n">nextitem</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Hook called after a test item is run.&quot;&quot;&quot;</span>
+    <span class="n">item</span><span class="o">.</span><span class="n">end_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+    <span class="n">item</span><span class="o">.</span><span class="n">duration</span> <span class="o">=</span> <span class="n">item</span><span class="o">.</span><span class="n">end_time</span> <span class="o">-</span> <span class="n">item</span><span class="o">.</span><span class="n">start_time</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">pytest_sessionfinish</span><span class="p">(</span><span class="n">session</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Hook called after the entire test session finishes.&quot;&quot;&quot;</span>
+    <span class="n">reporter</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">config</span><span class="o">.</span><span class="n">pluginmanager</span><span class="o">.</span><span class="n">get_plugin</span><span class="p">(</span><span class="s1">&#39;terminalreporter&#39;</span><span class="p">)</span>
+    <span class="n">reporter</span><span class="o">.</span><span class="n">write_sep</span><span class="p">(</span><span class="s2">&quot;=&quot;</span><span class="p">,</span> <span class="s2">&quot;CUSTOM TEST DURATIONS REPORT&quot;</span><span class="p">)</span>
+
+    <span class="n">all_items</span> <span class="o">=</span> <span class="p">[</span><span class="n">item</span> <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">session</span><span class="o">.</span><span class="n">items</span> <span class="k">if</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">item</span><span class="p">,</span> <span class="s1">&#39;duration&#39;</span><span class="p">)]</span>
+    <span class="n">slowest_tests</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">all_items</span><span class="p">,</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span><span class="o">.</span><span class="n">duration</span><span class="p">,</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="n">reporter</span><span class="o">.</span><span class="n">write_line</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Top 5 slowest tests:&quot;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">item</span> <span class="ow">in</span> <span class="n">slowest_tests</span><span class="p">[:</span><span class="mi">5</span><span class="p">]:</span>
+        <span class="n">reporter</span><span class="o">.</span><span class="n">write_line</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">item</span><span class="o">.</span><span class="n">nodeid</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">item</span><span class="o">.</span><span class="n">duration</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">s&quot;</span><span class="p">)</span>
 </code></pre></div>
 
-<h3 id="step-3-configure-the-package-and-entry-point">Step 3: Configure the Package and Entry Point</h3>
-<p>This is the most critical step. We need to tell Python's packaging tools that this project contains a pytest plugin. This is done via the <code>pytest11</code> entry point in <code>pyproject.toml</code>.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># pyproject.toml</span>
-
-<span class="k">[build-system]</span>
+<h4 id="step-3-define-the-package-metadata-and-entry-point">Step 3: Define the Package Metadata and Entry Point</h4>
+<p>This is the most critical step. We need to tell the Python packaging tools about our project and, most importantly, tell pytest that this package contains a plugin. This is done using an <strong>entry point</strong>.</p>
+<p>The entry point is a special piece of metadata that tells a host application (like pytest) where to find plugins. For pytest, the entry point group is called <code>pytest11</code>.</p>
+<p><strong><code>pyproject.toml</code></strong></p>
+<div class="codehilite"><pre><span></span><code><span class="k">[build-system]</span>
 <span class="n">requires</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;setuptools&gt;=61.0&quot;</span><span class="p">]</span>
 <span class="n">build-backend</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;setuptools.build_meta&quot;</span>
 
 <span class="k">[project]</span>
-<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;pytest-env-plugin&quot;</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;pytest-timer&quot;</span>
 <span class="n">version</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;0.1.0&quot;</span>
 <span class="n">authors</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span>
 <span class="w">  </span><span class="p">{</span><span class="w"> </span><span class="n">name</span><span class="p">=</span><span class="s2">&quot;Your Name&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">email</span><span class="p">=</span><span class="s2">&quot;you@example.com&quot;</span><span class="w"> </span><span class="p">},</span>
 <span class="p">]</span>
-<span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;A pytest plugin to manage test environments.&quot;</span>
-<span class="n">readme</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;README.md&quot;</span>
-<span class="n">requires-python</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;&gt;=3.7&quot;</span>
+<span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;A simple pytest plugin to report slow tests&quot;</span>
+<span class="n">requires-python</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;&gt;=3.8&quot;</span>
 <span class="n">classifiers</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span>
 <span class="w">    </span><span class="s2">&quot;Programming Language :: Python :: 3&quot;</span><span class="p">,</span>
 <span class="w">    </span><span class="s2">&quot;License :: OSI Approved :: MIT License&quot;</span><span class="p">,</span>
@@ -914,33 +863,95 @@ tests/test_network_calls.py::test_local_calculation PASSED [100%]
 <span class="w">    </span><span class="s2">&quot;Framework :: Pytest&quot;</span><span class="p">,</span>
 <span class="p">]</span>
 <span class="n">dependencies</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span>
-<span class="w">    </span><span class="s2">&quot;pytest&gt;=6.0&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;pytest&quot;</span><span class="p">,</span>
 <span class="p">]</span>
 
-<span class="k">[project.entry-points.pytest11]</span>
-<span class="c1"># The name on the left is what you might use to disable the plugin (-p no:env_plugin)</span>
-<span class="c1"># The path on the right points to the module containing the plugin code</span>
-<span class="n">env_plugin</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;pytest_env_plugin.plugin&quot;</span>
+<span class="k">[project.entry-points.</span><span class="s2">&quot;pytest11&quot;</span><span class="k">]</span>
+<span class="n">timer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;pytest_timer.plugin&quot;</span>
 </code></pre></div>
 
-<p>The <code>[project.entry-points.pytest11]</code> section is the "magic". When this package is installed, <code>setuptools</code> registers <code>pytest_env_plugin.plugin</code> as a module for pytest to load at startup. Pytest will then scan this module for any functions named like <code>pytest_*</code> (hooks) or decorated with <code>@pytest.fixture</code>.</p>
-<h3 id="step-4-install-and-verify">Step 4: Install and Verify</h3>
-<p>Now, navigate to the root of your plugin project (<code>pytest-env-plugin/</code>) and install it in "editable" mode. This creates a link to your source code, so any changes you make are immediately reflected in your environment.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># From inside the pytest-env-plugin/ directory</span>
+<p>Let's break down the <code>[project.entry-points."pytest11"]</code> section:
+-   <code>"pytest11"</code>: This is the specific entry point group that pytest looks for. The name is historical.
+-   <code>timer</code>: This is a name we give our plugin. It's not strictly required but is good practice.
+-   <code>"pytest_timer.plugin"</code>: This is the crucial part. It tells pytest to load the module <code>pytest_timer.plugin</code> as a plugin. Pytest will then inspect this module for any functions named like <code>pytest_*</code> and register them as hooks.</p>
+<h4 id="step-4-install-and-verify">Step 4: Install and Verify</h4>
+<p>Now, we can install our plugin in editable mode from the root of the <code>pytest-timer</code> directory. This links the package into our Python environment so we can use it immediately.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># From within the pytest-timer/ directory</span>
 pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.
 </code></pre></div>
 
-<p>To verify, go back to your original test project. <strong>Crucially, remove or rename your <code>tests/conftest.py</code> file</strong> that contains the old local plugin code.</p>
-<p>Now, run the test that depends on the <code>test_env</code> fixture.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># From your original project directory</span>
-pytest<span class="w"> </span>tests/test_environment.py<span class="w"> </span>--env<span class="o">=</span>staging
+<p>Go back to our original data validator project. <strong>Crucially, remove the plugin code from <code>tests/conftest.py</code></strong> so we can be sure the packaged version is being used.</p>
+<p>Now, run pytest.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># In the original project directory</span>
+$<span class="w"> </span>pytest
+<span class="c1"># ... (normal test output) ...</span>
+
+―――――――――――――――――――――――――――――――――――<span class="w"> </span>summary<span class="w"> </span>――――――――――――――――――――――――――――――――――――
+✅<span class="w"> </span><span class="m">4</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">1</span>.55s
+
+<span class="o">=======================</span><span class="w"> </span>CUSTOM<span class="w"> </span>TEST<span class="w"> </span>DURATIONS<span class="w"> </span><span class="nv">REPORT</span><span class="w"> </span><span class="o">=======================</span>
+
+Top<span class="w"> </span><span class="m">5</span><span class="w"> </span>slowest<span class="w"> </span>tests:
+tests/test_validator.py::test_valid_data_passes_all_checks:<span class="w"> </span><span class="m">0</span>.3812s
+tests/test_validator.py::test_duplicate_id_fails:<span class="w"> </span><span class="m">0</span>.1540s
+tests/test_validator.py::test_value_out_of_range_fails:<span class="w"> </span><span class="m">0</span>.1233s
+tests/test_validator.py::test_incorrect_row_length_fails:<span class="w"> </span><span class="m">0</span>.1025s
 </code></pre></div>
 
-<p>It works! Even though the code is no longer in <code>conftest.py</code>, pytest finds it because your plugin is now an installed package in the environment.</p>
-<p>You have successfully packaged a pytest plugin. The final step to share it with the world would be to build it and upload it to the Python Package Index (PyPI). This process transforms a local convenience into a reusable, professional tool that contributes to the rich pytest ecosystem.</p>
+<p>It works! Pytest discovered our installed <code>pytest-timer</code> package via the entry point, loaded <code>pytest_timer.plugin</code>, and registered our hooks. Our project's test suite is now clean, and our plugin is a reusable, distributable tool that can be shared, versioned, and even published to the Python Package Index (PyPI) for anyone to use.</p>
+<h3 id="the-journey-from-problem-to-solution">The Journey: From Problem to Solution</h3>
+<table>
+<thead>
+<tr>
+<th>Iteration</th>
+<th>Failure Mode / Problem</th>
+<th>Technique Applied</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>Default output is verbose and slow</td>
+<td>None</td>
+<td>Baseline performance and readability</td>
+</tr>
+<tr>
+<td>1</td>
+<td>Output is hard to scan quickly</td>
+<td><code>pytest-sugar</code> plugin</td>
+<td>Improved terminal UI with progress bar</td>
+</tr>
+<tr>
+<td>2</td>
+<td>No shareable report for stakeholders</td>
+<td><code>pytest-html</code> plugin</td>
+<td>Generated self-contained HTML report</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Test suite execution is slow</td>
+<td><code>pytest-xdist</code> plugin</td>
+<td>Parallel execution, significantly faster suite</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Need custom per-test timing data</td>
+<td>Local plugin in <code>conftest.py</code> using hooks</td>
+<td>Custom summary report with slow test warnings</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Custom plugin is not reusable</td>
+<td>Packaging plugin as an installable distribution</td>
+<td>Plugin can be installed and used in any project</td>
+</tr>
+</tbody>
+</table>
+<p>This journey encapsulates the power of the pytest ecosystem. You can start by leveraging the work of others to quickly solve common problems. As your needs become more specific, you can tap into the same hook system the community uses to build your own powerful, project-specific tooling. And finally, you can contribute back to that ecosystem by packaging and sharing your solutions.</p>
         </div>
         <div class="footer">
-            Generated on 2025-11-22 17:25:05 | Made with ❤️ by GitHub Pages Generator
+            Generated on 2025-11-24 14:31:16 | Made with ❤️ by GitHub Pages Generator
         </div>
     </div>
     <script>

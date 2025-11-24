@@ -359,652 +359,800 @@
         <div class="content">
             <h1 id="chapter-10-testing-synchronous-code">Chapter 10: Testing Synchronous Code</h1>
 <h2 id="testing-functions-and-methods">Testing Functions and Methods</h2>
-<h2 id="testing-functions-and-methods_1">Testing Functions and Methods</h2>
-<p>At the heart of any Python application are functions and methods. They are the fundamental units of logic, and learning to test them effectively is the cornerstone of building reliable software. In this section, we'll start with the simplest case—a pure function—and see how the principles extend directly to testing methods on an object.</p>
-<h3 id="the-anatomy-of-a-function-test">The Anatomy of a Function Test</h3>
-<p>A test for a function follows a simple, universal pattern:</p>
-<ol>
-<li><strong>Arrange</strong>: Set up the necessary preconditions and inputs.</li>
-<li><strong>Act</strong>: Call the function or method you want to test.</li>
-<li><strong>Assert</strong>: Verify that the outcome (the return value, a change in state, etc.) is what you expected.</li>
-</ol>
-<p>Let's apply this to a concrete example. Imagine we have a utility function in our application that formats user names for display.</p>
-<p>Here's the function we want to test, located in a file named <code>app/utils.py</code>:</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># app/utils.py</span>
+<h2 id="the-foundation-testing-pure-functions">The Foundation: Testing Pure Functions</h2>
+<p>At the heart of any application lies logic, encapsulated in functions and methods. The simplest and most reliable code to test is a <strong>pure function</strong>: a function that, for the same input, will always return the same output and has no observable side effects.</p>
+<p>We will build our understanding around a common e-commerce scenario: processing a customer's order. This will be our <strong>anchor example</strong> for the entire chapter, evolving from a simple function into a complex class with dependencies.</p>
+<h3 id="phase-1-establish-the-reference-implementation">Phase 1: Establish the Reference Implementation</h3>
+<p>Let's start with a simple function to calculate the total price of an order.</p>
+<p>First, we need a representation of a product. We'll use a simple data structure.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/product.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">format_user_display_name</span><span class="p">(</span><span class="n">first_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">last_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Formats a user&#39;s name for display, handling potential whitespace</span>
-<span class="sd">    and capitalizing both names.</span>
-<span class="sd">    Example: format_user_display_name(&quot;  john &quot;, &quot;DOE&quot;) -&gt; &quot;John Doe&quot;</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">first_name</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">last_name</span><span class="p">:</span>
-        <span class="k">return</span> <span class="s2">&quot;&quot;</span>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Product</span><span class="p">:</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">price</span><span class="p">:</span> <span class="nb">float</span>
 
-    <span class="c1"># Clean up whitespace and ensure proper capitalization</span>
-    <span class="n">formatted_first</span> <span class="o">=</span> <span class="n">first_name</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">capitalize</span><span class="p">()</span>
-    <span class="n">formatted_last</span> <span class="o">=</span> <span class="n">last_name</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">capitalize</span><span class="p">()</span>
-
-    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">formatted_first</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">formatted_last</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">price</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Price cannot be negative.&quot;</span><span class="p">)</span>
 </code></pre></div>
 
-<p>Now, let's write our tests in <code>tests/test_utils.py</code>.</p>
-<h3 id="testing-the-happy-path">Testing the "Happy Path"</h3>
-<p>First, we test the most common, expected use case. This is often called the "happy path."</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_utils.py</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">app.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">format_user_display_name</span>
+<p>Now, let's create our core business logic function.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/order_processing.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.product</span><span class="w"> </span><span class="kn">import</span> <span class="n">Product</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_format_user_display_name_happy_path</span><span class="p">():</span>
-    <span class="c1"># Arrange: Define the inputs</span>
-    <span class="n">first</span> <span class="o">=</span> <span class="s2">&quot;ada&quot;</span>
-    <span class="n">last</span> <span class="o">=</span> <span class="s2">&quot;lovelace&quot;</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">calculate_order_total</span><span class="p">(</span><span class="n">product</span><span class="p">:</span> <span class="n">Product</span><span class="p">,</span> <span class="n">quantity</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Calculates the total price for a given product and quantity.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">quantity</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Quantity must be at least 1.&quot;</span><span class="p">)</span>
 
-    <span class="c1"># Act: Call the function</span>
-    <span class="n">result</span> <span class="o">=</span> <span class="n">format_user_display_name</span><span class="p">(</span><span class="n">first</span><span class="p">,</span> <span class="n">last</span><span class="p">)</span>
-
-    <span class="c1"># Assert: Check the output</span>
-    <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="s2">&quot;Ada Lovelace&quot;</span>
+    <span class="k">return</span> <span class="n">product</span><span class="o">.</span><span class="n">price</span> <span class="o">*</span> <span class="n">quantity</span>
 </code></pre></div>
 
-<p>This test is simple, readable, and directly verifies the function's core purpose.</p>
-<h3 id="testing-edge-cases">Testing Edge Cases</h3>
-<p>Good tests don't just check the happy path; they probe the boundaries and handle unexpected inputs gracefully. What happens if the inputs have extra whitespace or inconsistent capitalization? Our function's docstring claims to handle this, so let's verify it.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_utils.py</span>
+<p>This function is a perfect candidate for our first test. It takes inputs, performs a calculation, and returns a value. It doesn't write to a file, access a database, or call an API. It's pure.</p>
+<p>Let's write a straightforward pytest test for the "happy path"—a valid product and quantity.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_order_processing.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.order_processing</span><span class="w"> </span><span class="kn">import</span> <span class="n">calculate_order_total</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.product</span><span class="w"> </span><span class="kn">import</span> <span class="n">Product</span>
 
-<span class="c1"># ... (previous test)</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_format_user_display_name_with_whitespace_and_mixed_case</span><span class="p">():</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_calculate_order_total_success</span><span class="p">():</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Verify that the function correctly handles leading/trailing whitespace</span>
-<span class="sd">    and different character cases.</span>
+<span class="sd">    Tests that the total is calculated correctly for a valid product and quantity.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="c1"># Arrange</span>
-    <span class="n">first</span> <span class="o">=</span> <span class="s2">&quot;  GRACE &quot;</span>
-    <span class="n">last</span> <span class="o">=</span> <span class="s2">&quot;hopper  &quot;</span>
+    <span class="n">product</span> <span class="o">=</span> <span class="n">Product</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;Laptop&quot;</span><span class="p">,</span> <span class="n">price</span><span class="o">=</span><span class="mf">1000.0</span><span class="p">)</span>
+    <span class="n">quantity</span> <span class="o">=</span> <span class="mi">3</span>
 
     <span class="c1"># Act</span>
-    <span class="n">result</span> <span class="o">=</span> <span class="n">format_user_display_name</span><span class="p">(</span><span class="n">first</span><span class="p">,</span> <span class="n">last</span><span class="p">)</span>
+    <span class="n">total</span> <span class="o">=</span> <span class="n">calculate_order_total</span><span class="p">(</span><span class="n">product</span><span class="p">,</span> <span class="n">quantity</span><span class="p">)</span>
 
     <span class="c1"># Assert</span>
-    <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="s2">&quot;Grace Hopper&quot;</span>
+    <span class="k">assert</span> <span class="n">total</span> <span class="o">==</span> <span class="mf">3000.0</span>
 </code></pre></div>
 
-<p>What about invalid or empty inputs? The function's logic returns an empty string. This is a business rule we must test.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_utils.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">app.utils</span><span class="w"> </span><span class="kn">import</span> <span class="n">format_user_display_name</span>
-
-<span class="c1"># ... (previous tests)</span>
-
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">parametrize</span><span class="p">(</span>
-    <span class="s2">&quot;first, last, expected&quot;</span><span class="p">,</span>
-    <span class="p">[</span>
-        <span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="s2">&quot;Lovelace&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
-        <span class="p">(</span><span class="s2">&quot;Ada&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
-        <span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;Hopper&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span> <span class="c1"># Assuming the function should handle None</span>
-        <span class="p">(</span><span class="s2">&quot;Grace&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">),</span>
-    <span class="p">]</span>
-<span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_format_user_display_name_empty_or_none_inputs</span><span class="p">(</span><span class="n">first</span><span class="p">,</span> <span class="n">last</span><span class="p">,</span> <span class="n">expected</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Verify that empty or None inputs result in an empty string.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># The function as written will raise an AttributeError for None.</span>
-    <span class="c1"># This test reveals a bug or an unhandled case!</span>
-    <span class="c1"># Let&#39;s pretend our goal is to fix the function to handle this.</span>
-    <span class="c1"># After fixing format_user_display_name to check for None, this test will pass.</span>
-
-    <span class="c1"># For now, let&#39;s test only empty strings which the current code handles.</span>
-    <span class="k">if</span> <span class="n">first</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="n">last</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">pytest</span><span class="o">.</span><span class="n">skip</span><span class="p">(</span><span class="s2">&quot;Skipping None test until function is updated&quot;</span><span class="p">)</span>
-
-    <span class="k">assert</span> <span class="n">format_user_display_name</span><span class="p">(</span><span class="n">first</span><span class="p">,</span> <span class="n">last</span><span class="p">)</span> <span class="o">==</span> <span class="n">expected</span>
-</code></pre></div>
-
-<p>Notice how writing the test for <code>None</code> immediately revealed a flaw in our function! It would raise an <code>AttributeError</code> because you can't call <code>.strip()</code> on <code>None</code>. This is a perfect example of <strong>Test-Driven Development (TDD)</strong>: writing a test that fails, then writing the code to make it pass.</p>
-<h3 id="from-functions-to-methods">From Functions to Methods</h3>
-<p>Now, let's consider a method. A method is simply a function that is bound to an instance of a class. Testing it is nearly identical, with one extra step in the "Arrange" phase: creating an instance of the object.</p>
-<p>Let's create a simple <code>User</code> class in <code>app/models.py</code>.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># app/models.py</span>
-
-<span class="k">class</span><span class="w"> </span><span class="nc">User</span><span class="p">:</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">first_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">last_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">email</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">first_name</span> <span class="o">=</span> <span class="n">first_name</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">last_name</span> <span class="o">=</span> <span class="n">last_name</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">email</span> <span class="o">=</span> <span class="n">email</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_display_name</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the formatted full name of the user.&quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">first_name</span> <span class="ow">or</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">last_name</span><span class="p">:</span>
-            <span class="k">return</span> <span class="s2">&quot;&quot;</span>
-
-        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">first_name</span><span class="o">.</span><span class="n">capitalize</span><span class="p">()</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">last_name</span><span class="o">.</span><span class="n">capitalize</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_email_domain</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the domain part of the user&#39;s email.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">email</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;@&#39;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
-</code></pre></div>
-
-<p>To test the <code>get_display_name</code> method, we follow the same Arrange-Act-Assert pattern.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_models.py</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">app.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">User</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_user_get_display_name</span><span class="p">():</span>
-    <span class="c1"># Arrange: Create an instance of the User class</span>
-    <span class="n">user</span> <span class="o">=</span> <span class="n">User</span><span class="p">(</span><span class="n">first_name</span><span class="o">=</span><span class="s2">&quot;ada&quot;</span><span class="p">,</span> <span class="n">last_name</span><span class="o">=</span><span class="s2">&quot;lovelace&quot;</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="s2">&quot;ada@example.com&quot;</span><span class="p">)</span>
-
-    <span class="c1"># Act: Call the method on the instance</span>
-    <span class="n">display_name</span> <span class="o">=</span> <span class="n">user</span><span class="o">.</span><span class="n">get_display_name</span><span class="p">()</span>
-
-    <span class="c1"># Assert: Check the result</span>
-    <span class="k">assert</span> <span class="n">display_name</span> <span class="o">==</span> <span class="s2">&quot;Ada Lovelace&quot;</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_user_get_email_domain</span><span class="p">():</span>
-    <span class="c1"># Arrange</span>
-    <span class="n">user</span> <span class="o">=</span> <span class="n">User</span><span class="p">(</span><span class="n">first_name</span><span class="o">=</span><span class="s2">&quot;grace&quot;</span><span class="p">,</span> <span class="n">last_name</span><span class="o">=</span><span class="s2">&quot;hopper&quot;</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="s2">&quot;grace.hopper@navy.mil&quot;</span><span class="p">)</span>
-
-    <span class="c1"># Act</span>
-    <span class="n">domain</span> <span class="o">=</span> <span class="n">user</span><span class="o">.</span><span class="n">get_email_domain</span><span class="p">()</span>
-
-    <span class="c1"># Assert</span>
-    <span class="k">assert</span> <span class="n">domain</span> <span class="o">==</span> <span class="s2">&quot;navy.mil&quot;</span>
-</code></pre></div>
-
-<p>As you can see, the core logic is the same. Whether it's a standalone function or a method on an object, you set up the context, call the code, and assert the result.</p>
-<h2 id="testing-classes-and-object-oriented-code">Testing Classes and Object-Oriented Code</h2>
-<h2 id="testing-classes-and-object-oriented-code_1">Testing Classes and Object-Oriented Code</h2>
-<p>Testing a class is more than just testing its methods in isolation. It's about verifying the object's behavior, state, and interactions over its entire lifecycle. A class is a blueprint for objects that hold state, and our tests must confirm that this state is managed correctly.</p>
-<p>To explore this, let's build a <code>ShoppingCart</code> class. This is a classic example because it involves adding items, removing them, and calculating totals—all actions that modify the object's internal state.</p>
-<p>Here is our class in <code>app/models.py</code>:</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># app/models.py</span>
-
-<span class="c1"># ... (User class from before)</span>
-
-<span class="k">class</span><span class="w"> </span><span class="nc">ShoppingCart</span><span class="p">:</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_items</span> <span class="o">=</span> <span class="p">{}</span>  <span class="c1"># Using a dict to store item_id -&gt; quantity</span>
-
-    <span class="nd">@property</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">items</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_items</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span> <span class="c1"># Return a copy to prevent external modification</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">add_item</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">quantity</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">):</span>
-        <span class="k">if</span> <span class="n">quantity</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Quantity must be positive.&quot;</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_items</span><span class="p">[</span><span class="n">item_id</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_items</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">item_id</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">+</span> <span class="n">quantity</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">remove_item</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">quantity</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">):</span>
-        <span class="k">if</span> <span class="n">quantity</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Quantity must be positive.&quot;</span><span class="p">)</span>
-        <span class="k">if</span> <span class="n">item_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_items</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">_items</span><span class="p">[</span><span class="n">item_id</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">quantity</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Not enough items in the cart to remove.&quot;</span><span class="p">)</span>
-
-        <span class="bp">self</span><span class="o">.</span><span class="n">_items</span><span class="p">[</span><span class="n">item_id</span><span class="p">]</span> <span class="o">-=</span> <span class="n">quantity</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_items</span><span class="p">[</span><span class="n">item_id</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="k">del</span> <span class="bp">self</span><span class="o">.</span><span class="n">_items</span><span class="p">[</span><span class="n">item_id</span><span class="p">]</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_total_items</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
-        <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_items</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
-</code></pre></div>
-
-<h3 id="the-wrong-way-repetitive-setup">The Wrong Way: Repetitive Setup</h3>
-<p>You might be tempted to write tests like this, creating a new cart inside every single test function.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_models.py</span>
-
-<span class="c1"># ... (User tests)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">app.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">ShoppingCart</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_cart_add_item_repetitive</span><span class="p">():</span>
-    <span class="c1"># Arrange</span>
-    <span class="n">cart</span> <span class="o">=</span> <span class="n">ShoppingCart</span><span class="p">()</span>
-
-    <span class="c1"># Act</span>
-    <span class="n">cart</span><span class="o">.</span><span class="n">add_item</span><span class="p">(</span><span class="s2">&quot;apple&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-
-    <span class="c1"># Assert</span>
-    <span class="k">assert</span> <span class="n">cart</span><span class="o">.</span><span class="n">items</span> <span class="o">==</span> <span class="p">{</span><span class="s2">&quot;apple&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">}</span>
-    <span class="k">assert</span> <span class="n">cart</span><span class="o">.</span><span class="n">get_total_items</span><span class="p">()</span> <span class="o">==</span> <span class="mi">1</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_cart_add_multiple_items_repetitive</span><span class="p">():</span>
-    <span class="c1"># Arrange</span>
-    <span class="n">cart</span> <span class="o">=</span> <span class="n">ShoppingCart</span><span class="p">()</span>
-
-    <span class="c1"># Act</span>
-    <span class="n">cart</span><span class="o">.</span><span class="n">add_item</span><span class="p">(</span><span class="s2">&quot;apple&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-    <span class="n">cart</span><span class="o">.</span><span class="n">add_item</span><span class="p">(</span><span class="s2">&quot;banana&quot;</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
-
-    <span class="c1"># Assert</span>
-    <span class="k">assert</span> <span class="n">cart</span><span class="o">.</span><span class="n">items</span> <span class="o">==</span> <span class="p">{</span><span class="s2">&quot;apple&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;banana&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">}</span>
-    <span class="k">assert</span> <span class="n">cart</span><span class="o">.</span><span class="n">get_total_items</span><span class="p">()</span> <span class="o">==</span> <span class="mi">3</span>
-</code></pre></div>
-
-<p>This works, but it violates the <strong>Don't Repeat Yourself (DRY)</strong> principle. The line <code>cart = ShoppingCart()</code> will appear in every test. If the <code>ShoppingCart</code> constructor ever changes (e.g., to require a user ID), you'd have to update every single test. This is where fixtures, which you learned about in Chapter 4, become essential.</p>
-<h3 id="the-right-way-using-fixtures-for-clean-state">The Right Way: Using Fixtures for Clean State</h3>
-<p>A fixture can provide a clean, empty <code>ShoppingCart</code> instance to every test that needs one. This isolates tests from each other and centralizes the setup logic.</p>
-<p>Let's create a fixture in <code>tests/test_models.py</code>.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_models.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">app.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">ShoppingCart</span><span class="p">,</span> <span class="n">User</span> <span class="c1"># Assuming all models are in one file</span>
-
-<span class="c1"># ... (User tests)</span>
-
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">empty_cart</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">ShoppingCart</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Provides an empty shopping cart for tests.&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="n">ShoppingCart</span><span class="p">()</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_cart_add_item</span><span class="p">(</span><span class="n">empty_cart</span><span class="p">:</span> <span class="n">ShoppingCart</span><span class="p">):</span>
-    <span class="c1"># Arrange: The empty_cart fixture handles this</span>
-
-    <span class="c1"># Act</span>
-    <span class="n">empty_cart</span><span class="o">.</span><span class="n">add_item</span><span class="p">(</span><span class="s2">&quot;apple&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-
-    <span class="c1"># Assert</span>
-    <span class="k">assert</span> <span class="n">empty_cart</span><span class="o">.</span><span class="n">items</span> <span class="o">==</span> <span class="p">{</span><span class="s2">&quot;apple&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">}</span>
-    <span class="k">assert</span> <span class="n">empty_cart</span><span class="o">.</span><span class="n">get_total_items</span><span class="p">()</span> <span class="o">==</span> <span class="mi">1</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_cart_add_multiple_of_same_item</span><span class="p">(</span><span class="n">empty_cart</span><span class="p">:</span> <span class="n">ShoppingCart</span><span class="p">):</span>
-    <span class="c1"># Act</span>
-    <span class="n">empty_cart</span><span class="o">.</span><span class="n">add_item</span><span class="p">(</span><span class="s2">&quot;apple&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
-    <span class="n">empty_cart</span><span class="o">.</span><span class="n">add_item</span><span class="p">(</span><span class="s2">&quot;apple&quot;</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="c1"># Add more of the same item</span>
-
-    <span class="c1"># Assert</span>
-    <span class="k">assert</span> <span class="n">empty_cart</span><span class="o">.</span><span class="n">items</span> <span class="o">==</span> <span class="p">{</span><span class="s2">&quot;apple&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">}</span>
-    <span class="k">assert</span> <span class="n">empty_cart</span><span class="o">.</span><span class="n">get_total_items</span><span class="p">()</span> <span class="o">==</span> <span class="mi">3</span>
-</code></pre></div>
-
-<p>Now our tests are cleaner and focused only on the "Act" and "Assert" steps.</p>
-<h3 id="testing-state-transitions">Testing State Transitions</h3>
-<p>The most important aspect of testing a class is verifying how its state changes in response to method calls. We need to test sequences of actions.</p>
-<p>Let's test adding and then removing an item.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_models.py</span>
-
-<span class="c1"># ... (previous cart tests)</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_cart_remove_item</span><span class="p">(</span><span class="n">empty_cart</span><span class="p">:</span> <span class="n">ShoppingCart</span><span class="p">):</span>
-    <span class="c1"># Arrange: Add items to the cart first</span>
-    <span class="n">empty_cart</span><span class="o">.</span><span class="n">add_item</span><span class="p">(</span><span class="s2">&quot;apple&quot;</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
-    <span class="n">empty_cart</span><span class="o">.</span><span class="n">add_item</span><span class="p">(</span><span class="s2">&quot;banana&quot;</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
-
-    <span class="c1"># Act: Remove some of one item</span>
-    <span class="n">empty_cart</span><span class="o">.</span><span class="n">remove_item</span><span class="p">(</span><span class="s2">&quot;apple&quot;</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
-
-    <span class="c1"># Assert: Check the new state</span>
-    <span class="k">assert</span> <span class="n">empty_cart</span><span class="o">.</span><span class="n">items</span> <span class="o">==</span> <span class="p">{</span><span class="s2">&quot;apple&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;banana&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">}</span>
-    <span class="k">assert</span> <span class="n">empty_cart</span><span class="o">.</span><span class="n">get_total_items</span><span class="p">()</span> <span class="o">==</span> <span class="mi">4</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_cart_remove_all_of_one_item</span><span class="p">(</span><span class="n">empty_cart</span><span class="p">:</span> <span class="n">ShoppingCart</span><span class="p">):</span>
-    <span class="c1"># Arrange</span>
-    <span class="n">empty_cart</span><span class="o">.</span><span class="n">add_item</span><span class="p">(</span><span class="s2">&quot;apple&quot;</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
-    <span class="n">empty_cart</span><span class="o">.</span><span class="n">add_item</span><span class="p">(</span><span class="s2">&quot;banana&quot;</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
-
-    <span class="c1"># Act: Remove all of one item</span>
-    <span class="n">empty_cart</span><span class="o">.</span><span class="n">remove_item</span><span class="p">(</span><span class="s2">&quot;apple&quot;</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
-
-    <span class="c1"># Assert: The item should be completely gone from the cart</span>
-    <span class="k">assert</span> <span class="s2">&quot;apple&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">empty_cart</span><span class="o">.</span><span class="n">items</span>
-    <span class="k">assert</span> <span class="n">empty_cart</span><span class="o">.</span><span class="n">items</span> <span class="o">==</span> <span class="p">{</span><span class="s2">&quot;banana&quot;</span><span class="p">:</span> <span class="mi">2</span><span class="p">}</span>
-    <span class="k">assert</span> <span class="n">empty_cart</span><span class="o">.</span><span class="n">get_total_items</span><span class="p">()</span> <span class="o">==</span> <span class="mi">2</span>
-</code></pre></div>
-
-<h3 id="testing-for-expected-errors">Testing for Expected Errors</h3>
-<p>Our <code>ShoppingCart</code> class is designed to raise <code>ValueError</code> for invalid operations, like removing an item that isn't there. As we saw in Chapter 7, <code>pytest.raises</code> is the perfect tool for this.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_models.py</span>
-
-<span class="c1"># ... (previous cart tests)</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_cart_remove_too_many_items_raises_error</span><span class="p">(</span><span class="n">empty_cart</span><span class="p">:</span> <span class="n">ShoppingCart</span><span class="p">):</span>
-    <span class="n">empty_cart</span><span class="o">.</span><span class="n">add_item</span><span class="p">(</span><span class="s2">&quot;apple&quot;</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
-
-    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">)</span> <span class="k">as</span> <span class="n">exc_info</span><span class="p">:</span>
-        <span class="n">empty_cart</span><span class="o">.</span><span class="n">remove_item</span><span class="p">(</span><span class="s2">&quot;apple&quot;</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span> <span class="c1"># Try to remove more than available</span>
-
-    <span class="k">assert</span> <span class="s2">&quot;Not enough items&quot;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">exc_info</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_cart_add_negative_quantity_raises_error</span><span class="p">(</span><span class="n">empty_cart</span><span class="p">:</span> <span class="n">ShoppingCart</span><span class="p">):</span>
-    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="n">match</span><span class="o">=</span><span class="s2">&quot;Quantity must be positive&quot;</span><span class="p">):</span>
-        <span class="n">empty_cart</span><span class="o">.</span><span class="n">add_item</span><span class="p">(</span><span class="s2">&quot;apple&quot;</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">)</span>
-</code></pre></div>
-
-<p>By testing the happy paths, state transitions, and error conditions, we build a comprehensive and robust test suite for our class, ensuring it behaves exactly as designed.</p>
-<h2 id="testing-private-methods-and-why-you-might-not-want-to">Testing Private Methods (And Why You Might Not Want To)</h2>
-<h2 id="testing-private-methods-and-why-you-might-not-want-to_1">Testing Private Methods (And Why You Might Not Want To)</h2>
-<p>As you build complex classes, you'll often create "helper" methods to break down logic into smaller, manageable pieces. In Python, the convention is to prefix these internal-use-only methods with a single underscore (e.g., <code>_calculate_tax</code>). This signals to other developers, "This is an implementation detail, don't rely on it."</p>
-<p>A common question then arises: "Should I write tests for my private methods?"</p>
-<p>The short answer is: <strong>No, you should test the public interface, not the implementation details.</strong></p>
-<p>Let's explore why this philosophy leads to more robust and maintainable tests.</p>
-<h3 id="the-temptation-to-test-everything">The Temptation to Test Everything</h3>
-<p>Imagine we add a tax calculation feature to our <code>ShoppingCart</code>. The implementation uses a private helper method.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># app/models.py</span>
-
-<span class="k">class</span><span class="w"> </span><span class="nc">ShoppingCart</span><span class="p">:</span>
-    <span class="c1"># ... (previous methods)</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">tax_rate</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.1</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_items</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_tax_rate</span> <span class="o">=</span> <span class="n">tax_rate</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">_calculate_subtotal</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prices</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Calculates total price before tax.&quot;&quot;&quot;</span>
-        <span class="n">subtotal</span> <span class="o">=</span> <span class="mf">0.0</span>
-        <span class="k">for</span> <span class="n">item_id</span><span class="p">,</span> <span class="n">quantity</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_items</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="n">subtotal</span> <span class="o">+=</span> <span class="n">prices</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">item_id</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="o">*</span> <span class="n">quantity</span>
-        <span class="k">return</span> <span class="n">subtotal</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_total_price</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prices</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Calculates the total price including tax.&quot;&quot;&quot;</span>
-        <span class="n">subtotal</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_calculate_subtotal</span><span class="p">(</span><span class="n">prices</span><span class="p">)</span>
-        <span class="n">tax</span> <span class="o">=</span> <span class="n">subtotal</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tax_rate</span>
-        <span class="k">return</span> <span class="n">subtotal</span> <span class="o">+</span> <span class="n">tax</span>
-</code></pre></div>
-
-<p>You might be tempted to write a test directly for <code>_calculate_subtotal</code> to ensure it works correctly. You <em>can</em> do this, as Python doesn't truly enforce privacy.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_models.py</span>
-
-<span class="c1"># ...</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_cart_private_calculate_subtotal_directly</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    This is an example of a BRITTLE test. Avoid this pattern.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># Arrange</span>
-    <span class="n">cart</span> <span class="o">=</span> <span class="n">ShoppingCart</span><span class="p">()</span>
-    <span class="n">cart</span><span class="o">.</span><span class="n">add_item</span><span class="p">(</span><span class="s2">&quot;apple&quot;</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
-    <span class="n">cart</span><span class="o">.</span><span class="n">add_item</span><span class="p">(</span><span class="s2">&quot;banana&quot;</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
-    <span class="n">prices</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;apple&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span> <span class="s2">&quot;banana&quot;</span><span class="p">:</span> <span class="mf">0.5</span><span class="p">}</span>
-
-    <span class="c1"># Act: Call the private method directly</span>
-    <span class="n">subtotal</span> <span class="o">=</span> <span class="n">cart</span><span class="o">.</span><span class="n">_calculate_subtotal</span><span class="p">(</span><span class="n">prices</span><span class="p">)</span>
-
-    <span class="c1"># Assert</span>
-    <span class="k">assert</span> <span class="n">subtotal</span> <span class="o">==</span> <span class="mf">3.50</span> <span class="c1"># (2 * 1.0) + (3 * 0.5)</span>
-</code></pre></div>
-
-<p>This test passes. So what's the problem?</p>
-<h3 id="the-pitfall-brittle-tests-coupled-to-implementation">The Pitfall: Brittle Tests Coupled to Implementation</h3>
-<p>The problem arises when you refactor your code. Good developers constantly refactor to improve clarity and performance. Let's say you realize the <code>_calculate_subtotal</code> logic is simple enough to be inlined directly into <code>get_total_price</code>.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># app/models.py (Refactored)</span>
-
-<span class="k">class</span><span class="w"> </span><span class="nc">ShoppingCart</span><span class="p">:</span>
-    <span class="c1"># ...</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_total_price</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">prices</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Calculates the total price including tax (refactored).&quot;&quot;&quot;</span>
-        <span class="n">subtotal</span> <span class="o">=</span> <span class="mf">0.0</span>
-        <span class="k">for</span> <span class="n">item_id</span><span class="p">,</span> <span class="n">quantity</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_items</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="n">subtotal</span> <span class="o">+=</span> <span class="n">prices</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">item_id</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span> <span class="o">*</span> <span class="n">quantity</span>
-
-        <span class="n">tax</span> <span class="o">=</span> <span class="n">subtotal</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tax_rate</span>
-        <span class="k">return</span> <span class="n">subtotal</span> <span class="o">+</span> <span class="n">tax</span>
-
-    <span class="c1"># The _calculate_subtotal method has been removed!</span>
-</code></pre></div>
-
-<p>The public behavior of <code>get_total_price</code> is <strong>exactly the same</strong>. The class works perfectly. But what happens when you run your tests?</p>
-<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>tests/test_models.py
+<p>Running this test is simple and gives us immediate confidence.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span><span class="nv">pytest</span>
+<span class="o">=============================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==============================</span>
 ...
-_________________<span class="w"> </span>test_cart_private_calculate_subtotal_directly<span class="w"> </span>__________________
+collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
 
-<span class="w">    </span>def<span class="w"> </span>test_cart_private_calculate_subtotal_directly<span class="o">()</span>:
-<span class="w">        </span><span class="c1"># ...</span>
-<span class="w">        </span><span class="c1"># Act: Call the private method directly</span>
-&gt;<span class="w">       </span><span class="nv">subtotal</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>cart._calculate_subtotal<span class="o">(</span>prices<span class="o">)</span>
-E<span class="w">       </span>AttributeError:<span class="w"> </span><span class="s1">&#39;ShoppingCart&#39;</span><span class="w"> </span>object<span class="w"> </span>has<span class="w"> </span>no<span class="w"> </span>attribute<span class="w"> </span><span class="s1">&#39;_calculate_subtotal&#39;</span>
+tests/test_order_processing.py<span class="w"> </span>.<span class="w">                                         </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
 
-tests/test_models.py:123:<span class="w"> </span>AttributeError
+<span class="o">==============================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">===============================</span>
 </code></pre></div>
 
-<p>Your test suite fails! Your test for <code>_calculate_subtotal</code> is now broken, even though the class's public functionality is unchanged. This is a <strong>false negative</strong>. The test failed not because of a bug in the application code, but because it was too tightly coupled to a specific implementation detail that was free to change.</p>
-<h3 id="the-solution-test-the-behavior">The Solution: Test the Behavior</h3>
-<p>The correct approach is to test the public method (<code>get_total_price</code>) in a way that implicitly covers the logic that <em>was</em> in the private method.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_models.py</span>
+<p>This is the essence of unit testing: verifying a small, isolated piece of logic.</p>
+<h3 id="iteration-1-from-function-to-method">Iteration 1: From Function to Method</h3>
+<p>As our application grows, standalone functions often become methods of a class to manage related state and behavior. Let's refactor our logic into an <code>OrderProcessor</code> class. This is a common evolutionary step in software design.</p>
+<p>Here is the new class structure. For now, it's just a container for our calculation method.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/order_processor.py (New File)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.product</span><span class="w"> </span><span class="kn">import</span> <span class="n">Product</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">OrderProcessor</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">calculate_order_total</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">product</span><span class="p">:</span> <span class="n">Product</span><span class="p">,</span> <span class="n">quantity</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Calculates the total price for a given product and quantity.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">quantity</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Quantity must be at least 1.&quot;</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">product</span><span class="o">.</span><span class="n">price</span> <span class="o">*</span> <span class="n">quantity</span>
+</code></pre></div>
+
+<p>How does this change our test? The core logic is the same, but the way we call it is different. We now need an <em>instance</em> of the <code>OrderProcessor</code> class.</p>
+<p>Here is the updated test file.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_order_processor.py (New Test File)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.order_processor</span><span class="w"> </span><span class="kn">import</span> <span class="n">OrderProcessor</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.product</span><span class="w"> </span><span class="kn">import</span> <span class="n">Product</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_calculate_order_total_success</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests that the total is calculated correctly for a valid product and quantity.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Arrange</span>
+    <span class="n">processor</span> <span class="o">=</span> <span class="n">OrderProcessor</span><span class="p">()</span>  <span class="c1"># We need an instance now</span>
+    <span class="n">product</span> <span class="o">=</span> <span class="n">Product</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;Laptop&quot;</span><span class="p">,</span> <span class="n">price</span><span class="o">=</span><span class="mf">1000.0</span><span class="p">)</span>
+    <span class="n">quantity</span> <span class="o">=</span> <span class="mi">3</span>
+
+    <span class="c1"># Act</span>
+    <span class="n">total</span> <span class="o">=</span> <span class="n">processor</span><span class="o">.</span><span class="n">calculate_order_total</span><span class="p">(</span><span class="n">product</span><span class="p">,</span> <span class="n">quantity</span><span class="p">)</span>
+
+    <span class="c1"># Assert</span>
+    <span class="k">assert</span> <span class="n">total</span> <span class="o">==</span> <span class="mf">3000.0</span>
+</code></pre></div>
+
+<p>The test still passes, and the change seems trivial. However, this shift from a stateless function to a stateful class is the most significant leap in testing complexity. It opens the door to new challenges related to state management, dependencies, and side effects, which we will tackle in the upcoming sections.</p>
+<h2 id="testing-classes-and-object-oriented-code">Testing Classes and Object-Oriented Code</h2>
+<h2 id="the-challenge-of-state">The Challenge of State</h2>
+<p>Classes are more than just collections of methods; they encapsulate <strong>state</strong> (data) and <strong>behavior</strong> (methods). While our <code>OrderProcessor</code> is currently stateless, any realistic implementation would need to track information, such as a history of processed orders.</p>
+<p>Testing stateful objects introduces a critical new requirement: <strong>test isolation</strong>. One test must not be affected by the state changes caused by another.</p>
+<h3 id="iteration-2-introducing-state-and-a-new-bug">Iteration 2: Introducing State and a New Bug</h3>
+<p>Let's add a feature to our <code>OrderProcessor</code>: it will now keep a record of every order ID it processes.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/order_processor.py (Updated)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.product</span><span class="w"> </span><span class="kn">import</span> <span class="n">Product</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">OrderProcessor</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">processed_orders</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_generate_order_id</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generates a unique order ID.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="nb">str</span><span class="p">(</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">())</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">process_order</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">product</span><span class="p">:</span> <span class="n">Product</span><span class="p">,</span> <span class="n">quantity</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Processes an order and records it.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">quantity</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Quantity must be at least 1.&quot;</span><span class="p">)</span>
+
+        <span class="n">order_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_order_id</span><span class="p">()</span>
+        <span class="c1"># In a real system, this would do more (e.g., charge card, update inventory)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">processed_orders</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">order_id</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Processed order </span><span class="si">{</span><span class="n">order_id</span><span class="si">}</span><span class="s2"> for </span><span class="si">{</span><span class="n">quantity</span><span class="si">}</span><span class="s2"> of </span><span class="si">{</span><span class="n">product</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">order_id</span>
+</code></pre></div>
+
+<p>Our old test for <code>calculate_order_total</code> is now obsolete. We need new tests for <code>process_order</code> that verify two things:
+1.  It returns an order ID (behavior).
+2.  It adds the order ID to <code>processed_orders</code> (state change).</p>
+<p>Let's write two tests. A common but flawed approach for beginners is to use a single, shared instance of the class for all tests.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_order_processor.py (Problematic Version)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.order_processor</span><span class="w"> </span><span class="kn">import</span> <span class="n">OrderProcessor</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.product</span><span class="w"> </span><span class="kn">import</span> <span class="n">Product</span>
+
+<span class="c1"># Create a single instance to be shared by all tests in this module</span>
+<span class="n">processor</span> <span class="o">=</span> <span class="n">OrderProcessor</span><span class="p">()</span>
+<span class="n">product</span> <span class="o">=</span> <span class="n">Product</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;Keyboard&quot;</span><span class="p">,</span> <span class="n">price</span><span class="o">=</span><span class="mf">75.0</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_order_adds_to_history</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Verify that a processed order is added to the processor&#39;s history.&quot;&quot;&quot;</span>
+    <span class="n">initial_history_count</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">processor</span><span class="o">.</span><span class="n">processed_orders</span><span class="p">)</span>
+
+    <span class="n">processor</span><span class="o">.</span><span class="n">process_order</span><span class="p">(</span><span class="n">product</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+
+    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">processor</span><span class="o">.</span><span class="n">processed_orders</span><span class="p">)</span> <span class="o">==</span> <span class="n">initial_history_count</span> <span class="o">+</span> <span class="mi">1</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_single_item_order</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Verify that processing an order for a single item works.&quot;&quot;&quot;</span>
+    <span class="c1"># This test has a hidden assumption: that processed_orders is empty.</span>
+    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">processor</span><span class="o">.</span><span class="n">processed_orders</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span>
+
+    <span class="n">processor</span><span class="o">.</span><span class="n">process_order</span><span class="p">(</span><span class="n">product</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">processor</span><span class="o">.</span><span class="n">processed_orders</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
+</code></pre></div>
+
+<p>Now, let's run pytest. One of our tests is going to fail.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v
+<span class="o">=============================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==============================</span>
+...
+collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
+
+tests/test_order_processor.py::test_process_order_adds_to_history<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+tests/test_order_processor.py::test_process_single_item_order<span class="w"> </span>FAILED<span class="w">   </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">===================================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">===================================</span>
+_______________________<span class="w"> </span>test_process_single_item_order<span class="w"> </span>_______________________
+
+<span class="w">    </span>def<span class="w"> </span>test_process_single_item_order<span class="o">()</span>:
+<span class="w">        </span><span class="s2">&quot;&quot;&quot;Verify that processing an order for a single item works.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="c1"># This test has a hidden assumption: that processed_orders is empty.</span>
+&gt;<span class="w">       </span>assert<span class="w"> </span>len<span class="o">(</span>processor.processed_orders<span class="o">)</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">0</span>
+E<span class="w">       </span>assert<span class="w"> </span><span class="nv">1</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">0</span>
+E<span class="w">        </span>+<span class="w">  </span>where<span class="w"> </span><span class="nv">1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>len<span class="o">([</span><span class="s1">&#39;...&#39;</span><span class="o">])</span>
+
+tests/test_order_processor.py:20:<span class="w"> </span><span class="nv">AssertionError</span>
+<span class="o">===========================</span><span class="w"> </span>short<span class="w"> </span><span class="nb">test</span><span class="w"> </span>summary<span class="w"> </span><span class="nv">info</span><span class="w"> </span><span class="o">============================</span>
+FAILED<span class="w"> </span>tests/test_order_processor.py::test_process_single_item_order<span class="w"> </span>-<span class="w"> </span>assert<span class="w"> </span><span class="nv">1</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nv">0</span>
+<span class="o">=========================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>failed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">=========================</span>
+</code></pre></div>
+
+<h3 id="diagnostic-analysis-reading-the-failure">Diagnostic Analysis: Reading the Failure</h3>
+<p><strong>The complete output</strong>: The summary shows one test passed and one failed. The failure is <code>test_process_single_item_order</code>.</p>
+<p><strong>Let's parse this section by section</strong>:</p>
+<ol>
+<li>
+<p><strong>The summary line</strong>: <code>FAILED tests/test_order_processor.py::test_process_single_item_order - assert 1 == 0</code></p>
+<ul>
+<li><strong>What this tells us</strong>: The test failed because of an <code>AssertionError</code>. The specific assertion that failed was comparing <code>1</code> and <code>0</code>.</li>
+</ul>
+</li>
+<li>
+<p><strong>The traceback</strong>:
+    ```python
+    def test_process_single_item_order():
+        """Verify that processing an order for a single item works."""
+        # This test has a hidden assumption: that processed_orders is empty.</p>
+<blockquote>
+<div class="codehilite"><pre><span></span><code>  assert len(processor.processed_orders) == 0
+```
+</code></pre></div>
+
+</blockquote>
+<ul>
+<li><strong>What this tells us</strong>: The failure occurred on line 20 of our test file.</li>
+<li><strong>Key line</strong>: <code>assert len(processor.processed_orders) == 0</code> is the exact point of failure.</li>
+</ul>
+</li>
+<li>
+<p><strong>The assertion introspection</strong>:
+    <code>E       assert 1 == 0
+    E        +  where 1 = len(['...'])</code></p>
+<ul>
+<li><strong>What this tells us</strong>: Pytest's powerful introspection shows us the <em>values</em> at the time of the assertion. The left side of the <code>==</code>, which was <code>len(processor.processed_orders)</code>, evaluated to <code>1</code>. The right side was <code>0</code>. The assertion <code>1 == 0</code> is correctly identified as false.</li>
+</ul>
+</li>
+</ol>
+<p><strong>Root cause identified</strong>: The <code>test_process_single_item_order</code> test incorrectly assumed that the <code>processor.processed_orders</code> list would be empty at the start of the test. It was not; it contained one item.</p>
+<p><strong>Why the current approach can't solve this</strong>: By creating a single <code>processor</code> instance at the module level, we created shared state. The first test to run (<code>test_process_order_adds_to_history</code>) modified this shared state by adding an order ID to the list. The second test inherited this modified state, causing its initial assumption to be violated. The order of test execution determined the outcome, a classic sign of a fragile test suite.</p>
+<p><strong>What we need</strong>: A mechanism to ensure that every single test function gets a fresh, clean instance of <code>OrderProcessor</code>, guaranteeing test isolation.</p>
+<h3 id="the-solution-fixtures-for-isolation">The Solution: Fixtures for Isolation</h3>
+<p>This is precisely the problem that pytest fixtures are designed to solve. A fixture is a function that provides a resource (like a class instance, a database connection, or a dataset) to your tests. Pytest ensures that fixtures are set up and torn down cleanly for each test that uses them.</p>
+<p>Let's refactor our tests to use a fixture. By convention, fixtures are often placed in a <code>conftest.py</code> file to be shared across multiple test files, but for a single file, defining it locally is fine.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_order_processor.py (Corrected Version)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.order_processor</span><span class="w"> </span><span class="kn">import</span> <span class="n">OrderProcessor</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.product</span><span class="w"> </span><span class="kn">import</span> <span class="n">Product</span>
 
 <span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">cart_with_items</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">ShoppingCart</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Provides a cart with some items already in it.&quot;&quot;&quot;</span>
-    <span class="n">cart</span> <span class="o">=</span> <span class="n">ShoppingCart</span><span class="p">(</span><span class="n">tax_rate</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span> <span class="c1"># Use a known tax rate</span>
-    <span class="n">cart</span><span class="o">.</span><span class="n">add_item</span><span class="p">(</span><span class="s2">&quot;apple&quot;</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span> <span class="c1"># 2 * $1.00 = $2.00</span>
-    <span class="n">cart</span><span class="o">.</span><span class="n">add_item</span><span class="p">(</span><span class="s2">&quot;banana&quot;</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span> <span class="c1"># 3 * $0.50 = $1.50</span>
-    <span class="k">return</span> <span class="n">cart</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">processor</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Returns a fresh OrderProcessor instance for each test.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">OrderProcessor</span><span class="p">()</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_get_total_price</span><span class="p">(</span><span class="n">cart_with_items</span><span class="p">:</span> <span class="n">ShoppingCart</span><span class="p">):</span>
-    <span class="c1"># Arrange</span>
-    <span class="n">prices</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;apple&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span> <span class="s2">&quot;banana&quot;</span><span class="p">:</span> <span class="mf">0.5</span><span class="p">}</span>
-    <span class="c1"># Subtotal should be $3.50</span>
-    <span class="c1"># Tax should be $0.35 (10% of 3.50)</span>
-    <span class="c1"># Total should be $3.85</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">product</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Returns a sample product for tests.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">Product</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;Keyboard&quot;</span><span class="p">,</span> <span class="n">price</span><span class="o">=</span><span class="mf">75.0</span><span class="p">)</span>
 
-    <span class="c1"># Act</span>
-    <span class="n">total</span> <span class="o">=</span> <span class="n">cart_with_items</span><span class="o">.</span><span class="n">get_total_price</span><span class="p">(</span><span class="n">prices</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_order_adds_to_history</span><span class="p">(</span><span class="n">processor</span><span class="p">,</span> <span class="n">product</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Verify that a processed order is added to the processor&#39;s history.&quot;&quot;&quot;</span>
+    <span class="n">initial_history_count</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">processor</span><span class="o">.</span><span class="n">processed_orders</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">initial_history_count</span> <span class="o">==</span> <span class="mi">0</span> <span class="c1"># We can now safely assume this</span>
 
-    <span class="c1"># Assert</span>
-    <span class="k">assert</span> <span class="n">total</span> <span class="o">==</span> <span class="n">pytest</span><span class="o">.</span><span class="n">approx</span><span class="p">(</span><span class="mf">3.85</span><span class="p">)</span>
+    <span class="n">processor</span><span class="o">.</span><span class="n">process_order</span><span class="p">(</span><span class="n">product</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+
+    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">processor</span><span class="o">.</span><span class="n">processed_orders</span><span class="p">)</span> <span class="o">==</span> <span class="n">initial_history_count</span> <span class="o">+</span> <span class="mi">1</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_single_item_order</span><span class="p">(</span><span class="n">processor</span><span class="p">,</span> <span class="n">product</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Verify that processing an order for a single item works.&quot;&quot;&quot;</span>
+    <span class="c1"># This test now gets its own &#39;processor&#39; instance.</span>
+    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">processor</span><span class="o">.</span><span class="n">processed_orders</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span>
+
+    <span class="n">processor</span><span class="o">.</span><span class="n">process_order</span><span class="p">(</span><span class="n">product</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">processor</span><span class="o">.</span><span class="n">processed_orders</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
 </code></pre></div>
 
-<p>This test verifies the correct final price. It doesn't care <em>how</em> the subtotal was calculated, only that the final result is correct. Now, you are free to refactor the internal implementation of <code>ShoppingCart</code> as much as you want. As long as <code>get_total_price</code> returns the correct value, this test will pass.</p>
-<p>Your tests now protect the <strong>what</strong> (the object's behavior) and not the <strong>how</strong> (the object's internal implementation), leading to a more resilient and valuable test suite.</p>
-<h2 id="testing-code-with-side-effects">Testing Code with Side Effects</h2>
-<h2 id="testing-code-with-side-effects_1">Testing Code with Side Effects</h2>
-<p>A "pure function" is a developer's dream: for a given input, it always returns the same output and has no observable effects on the outside world. The <code>format_user_display_name</code> function from earlier is a good example.</p>
-<p>However, most real-world code is not pure. It has <strong>side effects</strong>: actions that change state outside the function's scope. Common side effects include:</p>
+<p>Let's run the tests again.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v
+<span class="o">=============================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==============================</span>
+...
+collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
+
+tests/test_order_processor.py::test_process_order_adds_to_history<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+tests/test_order_processor.py::test_process_single_item_order<span class="w"> </span>PASSED<span class="w">   </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">==============================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">===============================</span>
+</code></pre></div>
+
+<p><strong>Success!</strong> By declaring <code>processor</code> and <code>product</code> as arguments in our test functions, we told pytest to execute the corresponding fixture functions and pass their return values to our tests. Because the default <strong>scope</strong> of a fixture is <code>function</code>, pytest creates a brand new <code>OrderProcessor</code> and <code>Product</code> for each test, guaranteeing isolation. The <code>test_process_single_item_order</code> now receives an instance whose <code>processed_orders</code> list is guaranteed to be empty.</p>
+<p>This solves the state management problem, but our <code>OrderProcessor</code> has a hidden implementation detail (<code>_generate_order_id</code>) that we might be tempted to test directly.</p>
+<h2 id="testing-private-methods-and-why-you-might-not-want-to">Testing Private Methods (And Why You Might Not Want To)</h2>
+<h2 id="the-temptation-of-implementation-details">The Temptation of Implementation Details</h2>
+<p>Our <code>OrderProcessor</code> has a "private" method, <code>_generate_order_id</code>, indicated by the leading underscore. This is a Python convention signifying that the method is an internal implementation detail and not part of the class's public API.</p>
+<p>A common question arises: "Should I write a test specifically for <code>_generate_order_id</code>?"</p>
+<p>The short answer is usually <strong>no</strong>.</p>
+<h3 id="the-philosophy-test-behavior-not-implementation">The Philosophy: Test Behavior, Not Implementation</h3>
+<p>Your tests should act as the first user of your code. A user of the <code>OrderProcessor</code> class doesn't care <em>how</em> the order ID is generated; they only care that when they call the public method <code>process_order</code>, they get a unique ID back and the order is processed correctly.</p>
 <ul>
-<li>Writing to a file or database.</li>
-<li>Making an HTTP request to an external API.</li>
-<li>Printing to the console.</li>
-<li>Modifying a global variable.</li>
+<li><strong>Testing Public Behavior</strong>: When you test <code>process_order</code>, you are implicitly testing <code>_generate_order_id</code>. If the ID generation were to break (e.g., return <code>None</code>), your test for <code>process_order</code> would fail. This is good! The test tells you that a user-facing behavior is broken.</li>
+<li><strong>Testing Private Implementation</strong>: If you write a separate test for <code>_generate_order_id</code>, you are coupling your test suite to the internal structure of your class.</li>
 </ul>
-<p>Side effects make testing harder because they introduce dependencies on external systems (like the filesystem or the network) and can make tests slow, unreliable, and difficult to set up. The key to testing code with side effects is to <strong>isolate your code from the side effect itself</strong>.</p>
-<h3 id="the-problem-a-function-that-writes-to-a-file">The Problem: A Function That Writes to a File</h3>
-<p>Let's consider a function that logs an event message to a file.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># app/logging.py</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span>
+<p>Let's see what happens when we refactor the implementation without changing the behavior.</p>
+<h3 id="iteration-3-a-refactor-that-breaks-a-bad-test">Iteration 3: A Refactor that Breaks a Bad Test</h3>
+<p>Imagine we decide to change the order ID format to be prefixed with <code>ORD-</code>. The public behavior is unchanged—it still returns a unique string.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/order_processor.py (Refactored)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.product</span><span class="w"> </span><span class="kn">import</span> <span class="n">Product</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">log_event</span><span class="p">(</span><span class="n">message</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">log_file</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">OrderProcessor</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">processed_orders</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_generate_order_id</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Generates a unique order ID with a prefix.&quot;&quot;&quot;</span>
+        <span class="c1"># We changed the implementation detail.</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;ORD-</span><span class="si">{</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">process_order</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">product</span><span class="p">:</span> <span class="n">Product</span><span class="p">,</span> <span class="n">quantity</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Processes an order and records it.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">quantity</span> <span class="o">&lt;</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Quantity must be at least 1.&quot;</span><span class="p">)</span>
+
+        <span class="n">order_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_order_id</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">processed_orders</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">order_id</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Processed order </span><span class="si">{</span><span class="n">order_id</span><span class="si">}</span><span class="s2"> for </span><span class="si">{</span><span class="n">quantity</span><span class="si">}</span><span class="s2"> of </span><span class="si">{</span><span class="n">product</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">order_id</span>
+</code></pre></div>
+
+<p>Our existing tests for <code>process_order</code> still pass perfectly because they only check that an ID was added to the history. They don't care about the ID's format. This is the hallmark of a robust test suite.</p>
+<p>Now, let's demonstrate the <strong>wrong way</strong>. Suppose we had written a test that was tightly coupled to the implementation of <code>_generate_order_id</code>.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_order_processor_bad.py (A new file demonstrating a bad practice)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.order_processor</span><span class="w"> </span><span class="kn">import</span> <span class="n">OrderProcessor</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_generate_order_id_is_valid_uuid</span><span class="p">():</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Writes a timestamped event message to a log file.</span>
+<span class="sd">    This is a BRITTLE test. It tests a private implementation detail.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">timestamp</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">utcnow</span><span class="p">()</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s2">&quot;%Y-%m-</span><span class="si">%d</span><span class="s2"> %H:%M:%S&quot;</span><span class="p">)</span>
-    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">log_file</span><span class="p">,</span> <span class="s2">&quot;a&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-        <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;[</span><span class="si">{</span><span class="n">timestamp</span><span class="si">}</span><span class="s2">] </span><span class="si">{</span><span class="n">message</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="n">processor</span> <span class="o">=</span> <span class="n">OrderProcessor</span><span class="p">()</span>
+    <span class="c1"># We access the private method directly</span>
+    <span class="n">order_id</span> <span class="o">=</span> <span class="n">processor</span><span class="o">.</span><span class="n">_generate_order_id</span><span class="p">()</span>
+
+    <span class="c1"># This assertion is tied to the OLD implementation.</span>
+    <span class="c1"># It assumes the ID is a pure UUID string.</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">uuid</span><span class="o">.</span><span class="n">UUID</span><span class="p">(</span><span class="n">order_id</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+        <span class="n">pytest</span><span class="o">.</span><span class="n">fail</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;&#39;</span><span class="si">{</span><span class="n">order_id</span><span class="si">}</span><span class="s2">&#39; is not a valid UUID.&quot;</span><span class="p">)</span>
 </code></pre></div>
 
-<p>How would we test this? We could run the function and then read the file to see if the message was written.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_logging_bad.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">app.logging</span><span class="w"> </span><span class="kn">import</span> <span class="n">log_event</span>
+<p>With our refactored <code>OrderProcessor</code>, this new "bad" test will now fail.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>tests/test_order_processor_bad.py
+<span class="o">=============================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==============================</span>
+...
+collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_log_event_writes_to_file_bad_approach</span><span class="p">(</span><span class="n">tmp_path</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    This test works, but has several problems.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># Arrange</span>
-    <span class="n">log_file</span> <span class="o">=</span> <span class="n">tmp_path</span> <span class="o">/</span> <span class="s2">&quot;events.log&quot;</span>
+tests/test_order_processor_bad.py<span class="w"> </span>F<span class="w">                                      </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
 
-    <span class="c1"># Act</span>
-    <span class="n">log_event</span><span class="p">(</span><span class="s2">&quot;User logged in&quot;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">log_file</span><span class="p">))</span>
+<span class="o">===================================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">===================================</span>
+______________________<span class="w"> </span>test_generate_order_id_is_valid_uuid<span class="w"> </span>______________________
 
-    <span class="c1"># Assert</span>
-    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">log_file</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-        <span class="n">content</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+<span class="w">    </span>def<span class="w"> </span>test_generate_order_id_is_valid_uuid<span class="o">()</span>:
+<span class="w">        </span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        This is a BRITTLE test. It tests a private implementation detail.</span>
+<span class="s2">        &quot;&quot;&quot;</span>
+<span class="w">        </span><span class="nv">processor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>OrderProcessor<span class="o">()</span>
+<span class="w">        </span><span class="c1"># We access the private method directly</span>
+<span class="w">        </span><span class="nv">order_id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>processor._generate_order_id<span class="o">()</span>
 
-    <span class="k">assert</span> <span class="s2">&quot;User logged in&quot;</span> <span class="ow">in</span> <span class="n">content</span>
+<span class="w">        </span><span class="c1"># This assertion is tied to the OLD implementation.</span>
+<span class="w">        </span><span class="c1"># It assumes the ID is a pure UUID string.</span>
+<span class="w">        </span>try:
+<span class="w">            </span>uuid.UUID<span class="o">(</span>order_id<span class="o">)</span>
+<span class="w">        </span>except<span class="w"> </span>ValueError:
+&gt;<span class="w">           </span>pytest.fail<span class="o">(</span>f<span class="s2">&quot;&#39;{order_id}&#39; is not a valid UUID.&quot;</span><span class="o">)</span>
+E<span class="w">           </span>Failed:<span class="w"> </span><span class="s1">&#39;ORD-...&#39;</span><span class="w"> </span>is<span class="w"> </span>not<span class="w"> </span>a<span class="w"> </span>valid<span class="w"> </span>UUID.
 
-    <span class="c1"># Teardown is handled by tmp_path, but in other cases</span>
-    <span class="c1"># you might need manual cleanup.</span>
-    <span class="c1"># os.remove(log_file)</span>
+tests/test_order_processor_bad.py:17:<span class="w"> </span><span class="nv">Failed</span>
+<span class="o">===========================</span><span class="w"> </span>short<span class="w"> </span><span class="nb">test</span><span class="w"> </span>summary<span class="w"> </span><span class="nv">info</span><span class="w"> </span><span class="o">============================</span>
+FAILED<span class="w"> </span>tests/test_order_processor_bad.py::test_generate_order_id_is_valid_uuid
+<span class="o">==============================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>failed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">===============================</span>
 </code></pre></div>
 
-<p>While pytest's built-in <code>tmp_path</code> fixture helps, this approach has drawbacks:
-1.  <strong>It's slow</strong>: Filesystem I/O is orders of magnitude slower than in-memory operations.
-2.  <strong>It's complex</strong>: The test has to perform file operations just to verify the result.
-3.  <strong>It's not a true unit test</strong>: It depends on the filesystem being available and working correctly.</p>
-<h3 id="the-solution-mocking-the-side-effect">The Solution: Mocking the Side Effect</h3>
-<p>The solution is to use a <strong>mock</strong>. As we'll cover in depth in Chapters 8 and 9, a mock is a test double that replaces a real object or function. We can replace the built-in <code>open</code> function with a mock object that we control and inspect.</p>
-<p>Pytest integrates seamlessly with Python's standard <code>unittest.mock</code> library. The <code>mocker</code> fixture, provided by the <code>pytest-mock</code> plugin (a common dependency), is the standard way to do this.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># You&#39;ll likely need to install this</span>
-pip<span class="w"> </span>install<span class="w"> </span>pytest-mock
-</code></pre></div>
+<h3 id="diagnostic-analysis-the-cost-of-brittle-tests">Diagnostic Analysis: The Cost of Brittle Tests</h3>
+<p>The test failed because the code worked as intended! We changed an internal detail (<code>_generate_order_id</code>) without breaking the public contract (<code>process_order</code>). The test failed not because of a bug in the application code, but because the test itself was too specific and fragile.</p>
+<p><strong>Root cause identified</strong>: The test was coupled to the implementation, not the behavior.</p>
+<p><strong>Why this is a problem</strong>:
+1.  <strong>Increased Maintenance</strong>: Every time you refactor internal code, you have to fix a series of failing tests, even if the public behavior is unchanged. This slows down development and discourages refactoring.
+2.  <strong>Reduced Clarity</strong>: The test failure doesn't indicate a real bug. It's noise that hides real problems.</p>
+<h3 id="when-to-reconsider">When to Reconsider</h3>
+<p>There are exceptions. If a private method contains extremely complex, critical logic (e.g., a sophisticated pricing algorithm), you might argue for testing it directly. However, a better approach is often to ask: "If this logic is so important, why is it a private method?"</p>
+<p>Often, the need to test a private method is a "code smell" suggesting that the class is doing too much. The complex logic might be better off extracted into its own, separate class or module. That new component would have a public API, which you could then test thoroughly and with confidence.</p>
+<p><strong>Guideline</strong>: Start by testing only public methods. If you feel a strong urge to test a private one, first consider refactoring your code to make that logic part of a public API on another, more focused object.</p>
+<h2 id="testing-code-with-side-effects">Testing Code with Side Effects</h2>
+<h2 id="the-world-outside-your-function">The World Outside Your Function</h2>
+<p>So far, our <code>OrderProcessor</code> has lived in a vacuum. A real-world order processor must interact with other systems: it needs to check inventory, charge a credit card, and maybe send an email. These interactions are called <strong>side effects</strong>.</p>
+<p>Side effects make testing dramatically harder. If your test debits a real inventory database or calls a real payment API, it becomes:
+*   <strong>Slow</strong>: Network calls and database queries are orders of magnitude slower than in-memory operations.
+*   <strong>Expensive</strong>: You might be charged for API calls.
+*   <strong>Unreliable</strong>: The test could fail due to network issues or a third-party service being down.
+*   <strong>Destructive</strong>: The test changes the state of an external system, violating test isolation.</p>
+<p>The solution is to isolate our code from its dependencies during testing using <strong>Test Doubles</strong>.</p>
+<h3 id="iteration-4-introducing-dependencies-and-side-effects">Iteration 4: Introducing Dependencies and Side Effects</h3>
+<p>Let's make our <code>OrderProcessor</code> more realistic. It will now depend on an <code>InventorySystem</code> and a <code>PaymentGateway</code>. We'll use the principle of <strong>Dependency Injection</strong>: instead of creating its dependencies, the <code>OrderProcessor</code> will receive them in its constructor. This is crucial for testability.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/dependencies.py (New File)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.product</span><span class="w"> </span><span class="kn">import</span> <span class="n">Product</span>
 
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_logging.py</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">app.logging</span><span class="w"> </span><span class="kn">import</span> <span class="n">log_event</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">patch</span><span class="p">,</span> <span class="n">mock_open</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_log_event_with_mocker</span><span class="p">(</span><span class="n">mocker</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Tests the log_event function by mocking the &#39;open&#39; call.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># Arrange: We want to mock &#39;open&#39; inside the &#39;app.logging&#39; module</span>
-    <span class="c1"># where it is being called.</span>
-    <span class="n">mock_file</span> <span class="o">=</span> <span class="n">mocker</span><span class="o">.</span><span class="n">mock_open</span><span class="p">()</span>
-    <span class="n">mocker</span><span class="o">.</span><span class="n">patch</span><span class="p">(</span><span class="s2">&quot;app.logging.open&quot;</span><span class="p">,</span> <span class="n">mock_file</span><span class="p">)</span>
-
-    <span class="c1"># Act</span>
-    <span class="n">log_event</span><span class="p">(</span><span class="s2">&quot;User logged out&quot;</span><span class="p">,</span> <span class="s2">&quot;any/file/path.log&quot;</span><span class="p">)</span>
-
-    <span class="c1"># Assert: Check that &#39;open&#39; was called correctly</span>
-    <span class="n">mock_file</span><span class="o">.</span><span class="n">assert_called_once_with</span><span class="p">(</span><span class="s2">&quot;any/file/path.log&quot;</span><span class="p">,</span> <span class="s2">&quot;a&quot;</span><span class="p">)</span>
-
-    <span class="c1"># Assert: Check that &#39;write&#39; was called on the file handle</span>
-    <span class="c1"># We can&#39;t easily check the timestamp, so we check for the message.</span>
-    <span class="c1"># The call is a bit complex: handle.write(string)</span>
-    <span class="n">written_content</span> <span class="o">=</span> <span class="n">mock_file</span><span class="p">()</span><span class="o">.</span><span class="n">write</span><span class="o">.</span><span class="n">call_args</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
-    <span class="k">assert</span> <span class="s2">&quot;User logged out&quot;</span> <span class="ow">in</span> <span class="n">written_content</span>
-    <span class="k">assert</span> <span class="n">written_content</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
-</code></pre></div>
-
-<p>Let's break down what happened:
-1.  <code>mocker.patch("app.logging.open", ...)</code>: We told pytest to replace the <code>open</code> function <em>within the <code>app.logging</code> namespace</em> with our mock. This is a critical detail—you must patch the object where it is <em>looked up</em>, not where it is defined.
-2.  <code>mocker.mock_open()</code>: This is a convenient helper that creates a mock that behaves like a file handle.
-3.  <code>mock_file.assert_called_once_with(...)</code>: We assert that the <code>open</code> function was called exactly once with the expected filename and mode (<code>"a"</code> for append).
-4.  <code>mock_file().write.call_args</code>: We inspect the arguments that were passed to the <code>write</code> method on the mocked file handle to ensure our message was part of it.</p>
-<p>This test is fast, runs entirely in memory, and precisely verifies that our function tried to perform the correct side effect without actually doing it. This technique is fundamental for testing code that interacts with databases, APIs, or any other external system.</p>
-<h2 id="integration-testing-within-your-codebase">Integration Testing Within Your Codebase</h2>
-<h2 id="integration-testing-within-your-codebase_1">Integration Testing Within Your Codebase</h2>
-<p>So far, we've focused on <strong>unit tests</strong>, which test a single component (a function or a class) in isolation. This is the foundation of a solid testing strategy. However, a real application is a collection of many units working together. A bug might not be in any single unit, but in the interaction <em>between</em> them.</p>
-<p>This is where <strong>integration tests</strong> come in. An integration test verifies that two or more components of your application can communicate and work together correctly.</p>
-<h3 id="from-unit-to-integration">From Unit to Integration</h3>
-<p>Let's evolve our <code>ShoppingCart</code> example. In a real e-commerce system, product prices aren't hardcoded in the test; they come from a database or another service. Let's create a <code>ProductDB</code> class to represent this.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># app/db.py</span>
-
-<span class="k">class</span><span class="w"> </span><span class="nc">ProductDB</span><span class="p">:</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">InventorySystem</span><span class="p">:</span>
     <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
         <span class="c1"># In a real app, this would connect to a database.</span>
-        <span class="c1"># Here, it&#39;s just an in-memory dictionary.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_prices</span> <span class="o">=</span> <span class="p">{</span>
-            <span class="s2">&quot;apple&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span>
-            <span class="s2">&quot;banana&quot;</span><span class="p">:</span> <span class="mf">0.5</span><span class="p">,</span>
-            <span class="s2">&quot;orange&quot;</span><span class="p">:</span> <span class="mf">0.75</span><span class="p">,</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_stock</span> <span class="o">=</span> <span class="p">{</span>
+            <span class="s2">&quot;Laptop&quot;</span><span class="p">:</span> <span class="mi">10</span><span class="p">,</span>
+            <span class="s2">&quot;Keyboard&quot;</span><span class="p">:</span> <span class="mi">25</span><span class="p">,</span>
         <span class="p">}</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_price</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">item_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the price of an item.&quot;&quot;&quot;</span>
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_prices</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">item_id</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">check_stock</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">product</span><span class="p">:</span> <span class="n">Product</span><span class="p">,</span> <span class="n">quantity</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;DATABASE: Checking stock for </span><span class="si">{</span><span class="n">product</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stock</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">product</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">quantity</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">reduce_stock</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">product</span><span class="p">:</span> <span class="n">Product</span><span class="p">,</span> <span class="n">quantity</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;DATABASE: Reducing stock for </span><span class="si">{</span><span class="n">product</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2"> by </span><span class="si">{</span><span class="n">quantity</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_stock</span><span class="p">[</span><span class="n">product</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">-=</span> <span class="n">quantity</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">PaymentGateway</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">charge</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">amount</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">card_details</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;API: Charging card </span><span class="si">{</span><span class="n">card_details</span><span class="si">}</span><span class="s2"> for $</span><span class="si">{</span><span class="n">amount</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="c1"># In a real app, this would call a third-party API like Stripe.</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">card_details</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">False</span>
+        <span class="k">return</span> <span class="kc">True</span>
 </code></pre></div>
 
-<p>Now, we'll refactor <code>ShoppingCart</code> to use this <code>ProductDB</code>. This is a common pattern called <strong>Dependency Injection</strong>, where a component's dependencies are provided from the outside rather than created internally.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># app/models.py (Refactored ShoppingCart)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">app.db</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProductDB</span>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/order_processor.py (Updated with Dependencies)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.product</span><span class="w"> </span><span class="kn">import</span> <span class="n">Product</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.dependencies</span><span class="w"> </span><span class="kn">import</span> <span class="n">InventorySystem</span><span class="p">,</span> <span class="n">PaymentGateway</span>
 
-<span class="k">class</span><span class="w"> </span><span class="nc">ShoppingCart</span><span class="p">:</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">db</span><span class="p">:</span> <span class="n">ProductDB</span><span class="p">,</span> <span class="n">tax_rate</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.1</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_items</span> <span class="o">=</span> <span class="p">{}</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_db</span> <span class="o">=</span> <span class="n">db</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_tax_rate</span> <span class="o">=</span> <span class="n">tax_rate</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">OrderProcessor</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inventory</span><span class="p">:</span> <span class="n">InventorySystem</span><span class="p">,</span> <span class="n">payment</span><span class="p">:</span> <span class="n">PaymentGateway</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">inventory</span> <span class="o">=</span> <span class="n">inventory</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">payment</span> <span class="o">=</span> <span class="n">payment</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">processed_orders</span> <span class="o">=</span> <span class="p">[]</span>
 
-    <span class="c1"># ... add_item, remove_item, etc. remain the same ...</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_generate_order_id</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;ORD-</span><span class="si">{</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
 
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_total_price</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Calculates the total price using the product database.&quot;&quot;&quot;</span>
-        <span class="n">subtotal</span> <span class="o">=</span> <span class="mf">0.0</span>
-        <span class="k">for</span> <span class="n">item_id</span><span class="p">,</span> <span class="n">quantity</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">_items</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="n">price</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_db</span><span class="o">.</span><span class="n">get_price</span><span class="p">(</span><span class="n">item_id</span><span class="p">)</span>
-            <span class="n">subtotal</span> <span class="o">+=</span> <span class="n">price</span> <span class="o">*</span> <span class="n">quantity</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">process_order</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">product</span><span class="p">:</span> <span class="n">Product</span><span class="p">,</span> <span class="n">quantity</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">card_details</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">inventory</span><span class="o">.</span><span class="n">check_stock</span><span class="p">(</span><span class="n">product</span><span class="p">,</span> <span class="n">quantity</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Not enough stock.&quot;</span><span class="p">)</span>
 
-        <span class="n">tax</span> <span class="o">=</span> <span class="n">subtotal</span> <span class="o">*</span> <span class="bp">self</span><span class="o">.</span><span class="n">_tax_rate</span>
-        <span class="k">return</span> <span class="n">subtotal</span> <span class="o">+</span> <span class="n">tax</span>
+        <span class="n">total_price</span> <span class="o">=</span> <span class="n">product</span><span class="o">.</span><span class="n">price</span> <span class="o">*</span> <span class="n">quantity</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">payment</span><span class="o">.</span><span class="n">charge</span><span class="p">(</span><span class="n">total_price</span><span class="p">,</span> <span class="n">card_details</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Payment failed.&quot;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">inventory</span><span class="o">.</span><span class="n">reduce_stock</span><span class="p">(</span><span class="n">product</span><span class="p">,</span> <span class="n">quantity</span><span class="p">)</span>
+
+        <span class="n">order_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_order_id</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">processed_orders</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">order_id</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">order_id</span>
 </code></pre></div>
 
-<p>Our <code>ShoppingCart</code> now depends on <code>ProductDB</code>. We have two units that need to collaborate.</p>
-<h3 id="path-1-the-unit-test-with-mocks">Path 1: The Unit Test (with Mocks)</h3>
-<p>We can still write a unit test for <code>ShoppingCart</code> in isolation. To do this, we provide a <em>mock</em> <code>ProductDB</code> instead of a real one. This allows us to test the cart's calculation logic without any dependency on the actual database.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_models_integration.py</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">Mock</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">app.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">ShoppingCart</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">app.db</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProductDB</span>
+<p>Now, let's write a test for the happy path. A naive approach would be to use the real dependencies.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_order_processor.py (New test with real dependencies)</span>
+<span class="c1"># ... (previous fixtures and tests) ...</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_cart_total_price_unit_test</span><span class="p">(</span><span class="n">mocker</span><span class="p">):</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.dependencies</span><span class="w"> </span><span class="kn">import</span> <span class="n">InventorySystem</span><span class="p">,</span> <span class="n">PaymentGateway</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_order_with_real_dependencies_fails_on_second_run</span><span class="p">():</span>
+    <span class="c1"># Arrange</span>
+    <span class="n">inventory</span> <span class="o">=</span> <span class="n">InventorySystem</span><span class="p">()</span> <span class="c1"># Real dependency</span>
+    <span class="n">payment</span> <span class="o">=</span> <span class="n">PaymentGateway</span><span class="p">()</span>    <span class="c1"># Real dependency</span>
+    <span class="n">processor</span> <span class="o">=</span> <span class="n">OrderProcessor</span><span class="p">(</span><span class="n">inventory</span><span class="p">,</span> <span class="n">payment</span><span class="p">)</span>
+    <span class="n">product</span> <span class="o">=</span> <span class="n">Product</span><span class="p">(</span><span class="s2">&quot;Laptop&quot;</span><span class="p">,</span> <span class="mf">1000.0</span><span class="p">)</span>
+
+    <span class="c1"># Act</span>
+    <span class="n">processor</span><span class="o">.</span><span class="n">process_order</span><span class="p">(</span><span class="n">product</span><span class="p">,</span> <span class="n">quantity</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">card_details</span><span class="o">=</span><span class="s2">&quot;1234-5678&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Assert</span>
+    <span class="c1"># We can&#39;t easily check the database, but we can check our own state</span>
+    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">processor</span><span class="o">.</span><span class="n">processed_orders</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
+    <span class="c1"># Let&#39;s try to check the inventory state</span>
+    <span class="k">assert</span> <span class="ow">not</span> <span class="n">inventory</span><span class="o">.</span><span class="n">check_stock</span><span class="p">(</span><span class="n">product</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span> <span class="c1"># 10 - 8 = 2 left, so 5 is not available</span>
+</code></pre></div>
+
+<p>This test might pass the first time. But what happens if we run it twice? Or what if we run another test that also uses the "Laptop" inventory? Let's run this specific test twice in a row using <code>pytest -k ... -v --count=2</code>.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-k<span class="w"> </span>test_process_order_with_real_dependencies<span class="w"> </span>-v<span class="w"> </span>--count<span class="o">=</span><span class="nv">2</span>
+<span class="o">=============================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==============================</span>
+...
+collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item<span class="w"> </span>/<span class="w"> </span><span class="m">1</span><span class="w"> </span>deselected<span class="w"> </span>/<span class="w"> </span><span class="m">1</span><span class="w"> </span>selected
+
+tests/test_order_processor.py::test_process_order_with_real_dependencies_fails_on_second_run<span class="w"> </span><span class="o">[</span><span class="m">1</span>/2<span class="o">]</span><span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+tests/test_order_processor.py::test_process_order_with_real_dependencies_fails_on_second_run<span class="w"> </span><span class="o">[</span><span class="m">2</span>/2<span class="o">]</span><span class="w"> </span>FAILED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">===================================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">===================================</span>
+_<span class="w"> </span>test_process_order_with_real_dependencies_fails_on_second_run<span class="w"> </span>_
+
+<span class="w">    </span>def<span class="w"> </span>test_process_order_with_real_dependencies_fails_on_second_run<span class="o">()</span>:
+<span class="w">        </span><span class="c1"># ...</span>
+<span class="w">        </span><span class="nv">processor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>OrderProcessor<span class="o">(</span>inventory,<span class="w"> </span>payment<span class="o">)</span>
+<span class="w">        </span><span class="nv">product</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>Product<span class="o">(</span><span class="s2">&quot;Laptop&quot;</span>,<span class="w"> </span><span class="m">1000</span>.0<span class="o">)</span>
+
+<span class="w">        </span><span class="c1"># Act</span>
+&gt;<span class="w">       </span>processor.process_order<span class="o">(</span>product,<span class="w"> </span><span class="nv">quantity</span><span class="o">=</span><span class="m">8</span>,<span class="w"> </span><span class="nv">card_details</span><span class="o">=</span><span class="s2">&quot;1234-5678&quot;</span><span class="o">)</span>
+
+tests/test_order_processor.py:50:<span class="w"> </span>
+_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>
+src/order_processor.py:19:<span class="w"> </span><span class="k">in</span><span class="w"> </span>process_order
+<span class="w">    </span>raise<span class="w"> </span>ValueError<span class="o">(</span><span class="s2">&quot;Not enough stock.&quot;</span><span class="o">)</span>
+E<span class="w">   </span>ValueError:<span class="w"> </span>Not<span class="w"> </span>enough<span class="w"> </span>stock.
+<span class="o">===========================</span><span class="w"> </span>short<span class="w"> </span><span class="nb">test</span><span class="w"> </span>summary<span class="w"> </span><span class="nv">info</span><span class="w"> </span><span class="o">============================</span>
+FAILED<span class="w"> </span>tests/test_order_processor.py::test_process_order_with_real_dependencies_fails_on_second_run<span class="w"> </span>-<span class="w"> </span>ValueError:<span class="w"> </span>Not<span class="w"> </span>enough<span class="w"> </span>stock.
+<span class="o">=========================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>failed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">=========================</span>
+</code></pre></div>
+
+<h3 id="diagnostic-analysis-reading-the-failure_1">Diagnostic Analysis: Reading the Failure</h3>
+<p><strong>The complete output</strong>: The first run passed, but the second run failed with a <code>ValueError</code>.</p>
+<p><strong>Let's parse this section by section</strong>:</p>
+<ol>
+<li>
+<p><strong>The summary line</strong>: <code>FAILED ... - ValueError: Not enough stock.</code></p>
+<ul>
+<li><strong>What this tells us</strong>: The test failed because our application code raised a <code>ValueError</code> with a specific message. This wasn't an <code>AssertionError</code>; the test crashed before it could even get to the assertion.</li>
+</ul>
+</li>
+<li>
+<p><strong>The traceback</strong>:
+    <code>python
+    src/order_processor.py:19: in process_order
+        raise ValueError("Not enough stock.")</code></p>
+<ul>
+<li><strong>What this tells us</strong>: The crash happened inside our application code, in the <code>process_order</code> method, when it tried to raise the "Not enough stock" error. This means the <code>inventory.check_stock(product, quantity)</code> call must have returned <code>False</code>.</li>
+</ul>
+</li>
+</ol>
+<p><strong>Root cause identified</strong>: The first test run reduced the stock of "Laptop" from 10 to 2. The second test run tried to order 8 more, but since only 2 were available, <code>check_stock</code> returned <code>False</code>, and our code correctly raised an exception. The test failed because of a side effect from a previous run.</p>
+<p><strong>What we need</strong>: A way to control the behavior of the dependencies within our test. We need an <code>InventorySystem</code> that we can configure with any stock level we want, and that doesn't affect other tests. We need a <code>PaymentGateway</code> that doesn't actually make network calls but simply tells us if it was called correctly.</p>
+<h3 id="the-solution-fakes-and-mocks">The Solution: Fakes and Mocks</h3>
+<p>We will create "Fake" objects—simplified, in-memory implementations of our dependencies that are designed for testing.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/fakes.py (New File)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.product</span><span class="w"> </span><span class="kn">import</span> <span class="n">Product</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">FakeInventory</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">stock</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">]):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_stock</span> <span class="o">=</span> <span class="n">stock</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stock_reduced_for</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">check_stock</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">product</span><span class="p">:</span> <span class="n">Product</span><span class="p">,</span> <span class="n">quantity</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_stock</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">product</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="n">quantity</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">reduce_stock</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">product</span><span class="p">:</span> <span class="n">Product</span><span class="p">,</span> <span class="n">quantity</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_stock</span><span class="p">[</span><span class="n">product</span><span class="o">.</span><span class="n">name</span><span class="p">]</span> <span class="o">-=</span> <span class="n">quantity</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stock_reduced_for</span> <span class="o">=</span> <span class="n">product</span><span class="o">.</span><span class="n">name</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">FakePaymentGateway</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">charged_amount</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">charged_card</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">charge</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">amount</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">card_details</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">charged_amount</span> <span class="o">=</span> <span class="n">amount</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">charged_card</span> <span class="o">=</span> <span class="n">card_details</span>
+        <span class="k">return</span> <span class="kc">True</span>
+</code></pre></div>
+
+<p>These fakes mimic the interface of the real objects but give us complete control. We can set the initial stock and inspect their state after the test (<code>charged_amount</code>, <code>stock_reduced_for</code>) to verify interactions.</p>
+<p>Now, let's rewrite our test using these fakes.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_order_processor.py (Rewritten with Fakes)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.order_processor</span><span class="w"> </span><span class="kn">import</span> <span class="n">OrderProcessor</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.product</span><span class="w"> </span><span class="kn">import</span> <span class="n">Product</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.fakes</span><span class="w"> </span><span class="kn">import</span> <span class="n">FakeInventory</span><span class="p">,</span> <span class="n">FakePaymentGateway</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">product</span><span class="p">():</span>
+    <span class="k">return</span> <span class="n">Product</span><span class="p">(</span><span class="s2">&quot;Laptop&quot;</span><span class="p">,</span> <span class="mf">1000.0</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_order_successfully</span><span class="p">(</span><span class="n">product</span><span class="p">):</span>
+    <span class="c1"># Arrange</span>
+    <span class="n">inventory</span> <span class="o">=</span> <span class="n">FakeInventory</span><span class="p">(</span><span class="n">stock</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;Laptop&quot;</span><span class="p">:</span> <span class="mi">10</span><span class="p">})</span>
+    <span class="n">payment</span> <span class="o">=</span> <span class="n">FakePaymentGateway</span><span class="p">()</span>
+    <span class="n">processor</span> <span class="o">=</span> <span class="n">OrderProcessor</span><span class="p">(</span><span class="n">inventory</span><span class="p">,</span> <span class="n">payment</span><span class="p">)</span>
+
+    <span class="c1"># Act</span>
+    <span class="n">processor</span><span class="o">.</span><span class="n">process_order</span><span class="p">(</span><span class="n">product</span><span class="p">,</span> <span class="n">quantity</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">card_details</span><span class="o">=</span><span class="s2">&quot;1234-5678&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Assert</span>
+    <span class="c1"># 1. Check interactions with dependencies</span>
+    <span class="k">assert</span> <span class="n">inventory</span><span class="o">.</span><span class="n">stock_reduced_for</span> <span class="o">==</span> <span class="s2">&quot;Laptop&quot;</span>
+    <span class="k">assert</span> <span class="n">payment</span><span class="o">.</span><span class="n">charged_amount</span> <span class="o">==</span> <span class="mf">8000.0</span>
+    <span class="k">assert</span> <span class="n">payment</span><span class="o">.</span><span class="n">charged_card</span> <span class="o">==</span> <span class="s2">&quot;1234-5678&quot;</span>
+
+    <span class="c1"># 2. Check internal state of the object under test</span>
+    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">processor</span><span class="o">.</span><span class="n">processed_orders</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_order_fails_when_not_enough_stock</span><span class="p">(</span><span class="n">product</span><span class="p">):</span>
+    <span class="c1"># Arrange</span>
+    <span class="n">inventory</span> <span class="o">=</span> <span class="n">FakeInventory</span><span class="p">(</span><span class="n">stock</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;Laptop&quot;</span><span class="p">:</span> <span class="mi">5</span><span class="p">})</span> <span class="c1"># Not enough stock</span>
+    <span class="n">payment</span> <span class="o">=</span> <span class="n">FakePaymentGateway</span><span class="p">()</span>
+    <span class="n">processor</span> <span class="o">=</span> <span class="n">OrderProcessor</span><span class="p">(</span><span class="n">inventory</span><span class="p">,</span> <span class="n">payment</span><span class="p">)</span>
+
+    <span class="c1"># Act &amp; Assert</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="ne">ValueError</span><span class="p">,</span> <span class="n">match</span><span class="o">=</span><span class="s2">&quot;Not enough stock.&quot;</span><span class="p">):</span>
+        <span class="n">processor</span><span class="o">.</span><span class="n">process_order</span><span class="p">(</span><span class="n">product</span><span class="p">,</span> <span class="n">quantity</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">card_details</span><span class="o">=</span><span class="s2">&quot;1234-5678&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>These tests are now fast, reliable, and isolated. They test the logic of <code>OrderProcessor</code> without touching any external systems. We have successfully unit-tested code with side effects.</p>
+<p>However, this introduces a new risk: what if our <code>FakeInventory</code> behaves differently from the <code>RealInventory</code>? Our unit tests would pass, but the application would fail in production. This is where integration testing comes in.</p>
+<h2 id="integration-testing-within-your-codebase">Integration Testing Within Your Codebase</h2>
+<h2 id="verifying-the-contracts-between-components">Verifying the Contracts Between Components</h2>
+<p>Unit tests are essential for verifying the logic of a single component in isolation. We've successfully tested our <code>OrderProcessor</code> by replacing its dependencies with fakes.</p>
+<p>But this creates a blind spot. Our tests prove that <code>OrderProcessor</code> works with <code>FakeInventory</code>, but they <em>don't</em> prove it works with the <code>RealInventory</code>. We are trusting that our fake perfectly mimics the real object's contract (method names, arguments, return values, exceptions). If the real <code>InventorySystem</code> changes its <code>reduce_stock</code> method to <code>debit_stock</code>, our unit tests for <code>OrderProcessor</code> would still pass, but the application would break.</p>
+<p><strong>Integration tests</strong> fill this gap. They test the interaction <em>between</em> two or more real components to ensure they work together as expected.</p>
+<h3 id="iteration-5-testing-the-collaboration">Iteration 5: Testing the Collaboration</h3>
+<p>Let's write an integration test that uses the real <code>OrderProcessor</code> and the real <code>InventorySystem</code>. We will still fake the <code>PaymentGateway</code>, as we want to avoid external network calls, but we will test the direct integration between the order logic and the inventory logic.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_integration.py (New File)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.order_processor</span><span class="w"> </span><span class="kn">import</span> <span class="n">OrderProcessor</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.dependencies</span><span class="w"> </span><span class="kn">import</span> <span class="n">InventorySystem</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.product</span><span class="w"> </span><span class="kn">import</span> <span class="n">Product</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.fakes</span><span class="w"> </span><span class="kn">import</span> <span class="n">FakePaymentGateway</span> <span class="c1"># We still fake the external service</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">product</span><span class="p">():</span>
+    <span class="k">return</span> <span class="n">Product</span><span class="p">(</span><span class="s2">&quot;Keyboard&quot;</span><span class="p">,</span> <span class="mf">75.0</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_order_processing_updates_real_inventory</span><span class="p">(</span><span class="n">product</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Unit test for ShoppingCart, mocking the ProductDB dependency.</span>
+<span class="sd">    An integration test to verify OrderProcessor and InventorySystem work together.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="c1"># Arrange</span>
-    <span class="c1"># Create a mock ProductDB that returns specific prices for our test</span>
-    <span class="n">mock_db</span> <span class="o">=</span> <span class="n">mocker</span><span class="o">.</span><span class="n">Mock</span><span class="p">(</span><span class="n">spec</span><span class="o">=</span><span class="n">ProductDB</span><span class="p">)</span>
-    <span class="n">mock_db</span><span class="o">.</span><span class="n">get_price</span><span class="o">.</span><span class="n">side_effect</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">item_id</span><span class="p">:</span> <span class="p">{</span><span class="s2">&quot;apple&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">,</span> <span class="s2">&quot;banana&quot;</span><span class="p">:</span> <span class="mf">0.5</span><span class="p">}</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">item_id</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+    <span class="c1"># Use the REAL InventorySystem</span>
+    <span class="n">inventory</span> <span class="o">=</span> <span class="n">InventorySystem</span><span class="p">()</span> 
+    <span class="c1"># Use a FAKE PaymentGateway to avoid external calls</span>
+    <span class="n">payment</span> <span class="o">=</span> <span class="n">FakePaymentGateway</span><span class="p">()</span>
+    <span class="n">processor</span> <span class="o">=</span> <span class="n">OrderProcessor</span><span class="p">(</span><span class="n">inventory</span><span class="p">,</span> <span class="n">payment</span><span class="p">)</span>
 
-    <span class="n">cart</span> <span class="o">=</span> <span class="n">ShoppingCart</span><span class="p">(</span><span class="n">db</span><span class="o">=</span><span class="n">mock_db</span><span class="p">,</span> <span class="n">tax_rate</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>
-    <span class="n">cart</span><span class="o">.</span><span class="n">add_item</span><span class="p">(</span><span class="s2">&quot;apple&quot;</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
-    <span class="n">cart</span><span class="o">.</span><span class="n">add_item</span><span class="p">(</span><span class="s2">&quot;banana&quot;</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span>
-
-    <span class="c1"># Act</span>
-    <span class="n">total_price</span> <span class="o">=</span> <span class="n">cart</span><span class="o">.</span><span class="n">get_total_price</span><span class="p">()</span>
-
-    <span class="c1"># Assert</span>
-    <span class="c1"># Subtotal = (2 * 1.0) + (3 * 0.5) = 3.5</span>
-    <span class="c1"># Total = 3.5 * 1.1 = 3.85</span>
-    <span class="k">assert</span> <span class="n">total_price</span> <span class="o">==</span> <span class="n">pytest</span><span class="o">.</span><span class="n">approx</span><span class="p">(</span><span class="mf">3.85</span><span class="p">)</span>
-
-    <span class="c1"># We can also assert that the dependency was called correctly</span>
-    <span class="k">assert</span> <span class="n">mock_db</span><span class="o">.</span><span class="n">get_price</span><span class="o">.</span><span class="n">call_count</span> <span class="o">==</span> <span class="mi">2</span>
-    <span class="n">mock_db</span><span class="o">.</span><span class="n">get_price</span><span class="o">.</span><span class="n">assert_any_call</span><span class="p">(</span><span class="s2">&quot;apple&quot;</span><span class="p">)</span>
-    <span class="n">mock_db</span><span class="o">.</span><span class="n">get_price</span><span class="o">.</span><span class="n">assert_any_call</span><span class="p">(</span><span class="s2">&quot;banana&quot;</span><span class="p">)</span>
-</code></pre></div>
-
-<p><strong>Advantages of this unit test:</strong>
-*   <strong>Fast</strong>: No real database connection.
-*   <strong>Isolated</strong>: A failure here points directly to a bug in <code>ShoppingCart</code>, not <code>ProductDB</code>.
-*   <strong>Controllable</strong>: We can easily simulate any scenario, like an item not being in the database, by configuring our mock.</p>
-<h3 id="path-2-the-integration-test-with-real-objects">Path 2: The Integration Test (with Real Objects)</h3>
-<p>The unit test gives us confidence that <code>ShoppingCart</code>'s logic is correct. But does it work with the <em>real</em> <code>ProductDB</code>? An integration test will answer that.</p>
-<p>For this test, we instantiate <em>both</em> real objects and have them interact.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_models_integration.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">app.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">ShoppingCart</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">app.db</span><span class="w"> </span><span class="kn">import</span> <span class="n">ProductDB</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_cart_and_db_integration</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Integration test verifying ShoppingCart and ProductDB work together.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># Arrange: Create real instances of both classes</span>
-    <span class="n">db</span> <span class="o">=</span> <span class="n">ProductDB</span><span class="p">()</span>
-    <span class="n">cart</span> <span class="o">=</span> <span class="n">ShoppingCart</span><span class="p">(</span><span class="n">db</span><span class="o">=</span><span class="n">db</span><span class="p">,</span> <span class="n">tax_rate</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>
-
-    <span class="n">cart</span><span class="o">.</span><span class="n">add_item</span><span class="p">(</span><span class="s2">&quot;apple&quot;</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
-    <span class="n">cart</span><span class="o">.</span><span class="n">add_item</span><span class="p">(</span><span class="s2">&quot;orange&quot;</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
+    <span class="c1"># Check initial stock level</span>
+    <span class="k">assert</span> <span class="n">inventory</span><span class="o">.</span><span class="n">check_stock</span><span class="p">(</span><span class="n">product</span><span class="p">,</span> <span class="mi">20</span><span class="p">)</span> <span class="o">==</span> <span class="kc">True</span>
 
     <span class="c1"># Act</span>
-    <span class="n">total_price</span> <span class="o">=</span> <span class="n">cart</span><span class="o">.</span><span class="n">get_total_price</span><span class="p">()</span>
+    <span class="n">processor</span><span class="o">.</span><span class="n">process_order</span><span class="p">(</span><span class="n">product</span><span class="p">,</span> <span class="n">quantity</span><span class="o">=</span><span class="mi">15</span><span class="p">,</span> <span class="n">card_details</span><span class="o">=</span><span class="s2">&quot;valid-card&quot;</span><span class="p">)</span>
 
     <span class="c1"># Assert</span>
-    <span class="c1"># Subtotal = (2 * 1.0) + (4 * 0.75) = 2.0 + 3.0 = 5.0</span>
-    <span class="c1"># Total = 5.0 * 1.1 = 5.5</span>
-    <span class="k">assert</span> <span class="n">total_price</span> <span class="o">==</span> <span class="n">pytest</span><span class="o">.</span><span class="n">approx</span><span class="p">(</span><span class="mf">5.5</span><span class="p">)</span>
+    <span class="c1"># Verify the side effect on the real inventory object</span>
+    <span class="k">assert</span> <span class="n">inventory</span><span class="o">.</span><span class="n">check_stock</span><span class="p">(</span><span class="n">product</span><span class="p">,</span> <span class="mi">11</span><span class="p">)</span> <span class="o">==</span> <span class="kc">False</span> <span class="c1"># 25 - 15 = 10 left</span>
+    <span class="k">assert</span> <span class="n">inventory</span><span class="o">.</span><span class="n">check_stock</span><span class="p">(</span><span class="n">product</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span> <span class="o">==</span> <span class="kc">True</span>
 </code></pre></div>
 
-<p><strong>Advantages of this integration test:</strong>
-*   <strong>High Confidence</strong>: It proves the two components are correctly wired together and can communicate. It tests the contract between them.
-*   <strong>Realistic</strong>: It more closely simulates how the application will run in production.</p>
-<h3 id="the-testing-pyramid">The Testing Pyramid</h3>
-<p>In a professional project, you need both types of tests. The general guideline is the "Testing Pyramid":</p>
-<ol>
-<li><strong>Lots of fast Unit Tests</strong> at the base, providing detailed coverage of individual components.</li>
-<li><strong>Fewer, slightly slower Integration Tests</strong> in the middle, ensuring components work together.</li>
-<li><strong>Very few End-to-End Tests</strong> at the top, which test the entire application through its user interface.</li>
-</ol>
-<p>By testing your synchronous code at both the unit and integration levels, you create a safety net that catches bugs in individual components and in the critical connections between them.</p>
+<p>This test provides a higher level of confidence. It proves that <code>OrderProcessor</code> calls the correct methods on <code>InventorySystem</code> and that the state of <code>InventorySystem</code> is updated as expected.</p>
+<h3 id="the-test-pyramid-balancing-unit-and-integration-tests">The Test Pyramid: Balancing Unit and Integration Tests</h3>
+<p>This brings us to the concept of the Test Pyramid.</p>
+<ul>
+<li><strong>Unit Tests (Base)</strong>: You should have many of these. They are fast, stable, and precisely locate failures. Our tests using <code>FakeInventory</code> and <code>FakePaymentGateway</code> are unit tests.</li>
+<li><strong>Integration Tests (Middle)</strong>: You should have a moderate number of these. They are slower and more brittle than unit tests but verify that components collaborate correctly. Our <code>test_order_processing_updates_real_inventory</code> is an integration test.</li>
+<li><strong>End-to-End (E2E) Tests (Top)</strong>: You should have very few of these. They test the entire application stack, often by driving a web browser or a public API. They are very slow, brittle, and expensive to run, but provide the highest confidence that the whole system works.</li>
+</ul>
+<p>You should focus most of your effort on unit tests, as they provide the best return on investment for catching bugs quickly. Use integration tests strategically to cover the critical seams between your application's components.</p>
+<h3 id="the-journey-from-problem-to-solution">The Journey: From Problem to Solution</h3>
+<p>Let's review the path we took to build a robust test suite for our synchronous code.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Iteration</th>
+<th style="text-align: left;">Problem / Failure Mode</th>
+<th style="text-align: left;">Technique Applied</th>
+<th style="text-align: left;">Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">0</td>
+<td style="text-align: left;">Testing a simple, pure function.</td>
+<td style="text-align: left;">Basic <code>assert</code> statement.</td>
+<td style="text-align: left;">Confidence in a single algorithm.</td>
+</tr>
+<tr>
+<td style="text-align: left;">1</td>
+<td style="text-align: left;">Logic moved into a class method.</td>
+<td style="text-align: left;">Instantiate the class in the test.</td>
+<td style="text-align: left;">Test adapted to object-oriented structure.</td>
+</tr>
+<tr>
+<td style="text-align: left;">2</td>
+<td style="text-align: left;">Shared class instance causes test interdependence.</td>
+<td style="text-align: left;"><code>pytest.fixture</code> for test isolation.</td>
+<td style="text-align: left;">Each test gets a fresh instance; tests are reliable.</td>
+</tr>
+<tr>
+<td style="text-align: left;">3</td>
+<td style="text-align: left;">Temptation to test private methods.</td>
+<td style="text-align: left;">Philosophy: Test public behavior, not implementation.</td>
+<td style="text-align: left;">A robust test suite that isn't brittle to refactoring.</td>
+</tr>
+<tr>
+<td style="text-align: left;">4</td>
+<td style="text-align: left;">Side effects (database, API) make tests slow/unreliable.</td>
+<td style="text-align: left;">Test Doubles (Fakes) and Dependency Injection.</td>
+<td style="text-align: left;">Fast, isolated unit tests for complex logic.</td>
+</tr>
+<tr>
+<td style="text-align: left;">5</td>
+<td style="text-align: left;">Unit tests don't verify component contracts.</td>
+<td style="text-align: left;">Integration tests for key component collaborations.</td>
+<td style="text-align: left;">Confidence that components work together correctly.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="final-implementation">Final Implementation</h3>
+<p>Here is the final state of our <code>OrderProcessor</code> and a selection of the tests we built, representing a healthy mix of unit and integration testing.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/order_processor.py (Final)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">uuid</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.product</span><span class="w"> </span><span class="kn">import</span> <span class="n">Product</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.dependencies</span><span class="w"> </span><span class="kn">import</span> <span class="n">InventorySystem</span><span class="p">,</span> <span class="n">PaymentGateway</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">OrderProcessor</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inventory</span><span class="p">:</span> <span class="n">InventorySystem</span><span class="p">,</span> <span class="n">payment</span><span class="p">:</span> <span class="n">PaymentGateway</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">inventory</span> <span class="o">=</span> <span class="n">inventory</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">payment</span> <span class="o">=</span> <span class="n">payment</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">processed_orders</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_generate_order_id</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;ORD-</span><span class="si">{</span><span class="n">uuid</span><span class="o">.</span><span class="n">uuid4</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">process_order</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">product</span><span class="p">:</span> <span class="n">Product</span><span class="p">,</span> <span class="n">quantity</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">card_details</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">inventory</span><span class="o">.</span><span class="n">check_stock</span><span class="p">(</span><span class="n">product</span><span class="p">,</span> <span class="n">quantity</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Not enough stock.&quot;</span><span class="p">)</span>
+
+        <span class="n">total_price</span> <span class="o">=</span> <span class="n">product</span><span class="o">.</span><span class="n">price</span> <span class="o">*</span> <span class="n">quantity</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">payment</span><span class="o">.</span><span class="n">charge</span><span class="p">(</span><span class="n">total_price</span><span class="p">,</span> <span class="n">card_details</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Payment failed.&quot;</span><span class="p">)</span>
+
+        <span class="bp">self</span><span class="o">.</span><span class="n">inventory</span><span class="o">.</span><span class="n">reduce_stock</span><span class="p">(</span><span class="n">product</span><span class="p">,</span> <span class="n">quantity</span><span class="p">)</span>
+
+        <span class="n">order_id</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_generate_order_id</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">processed_orders</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">order_id</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">order_id</span>
+
+<span class="c1"># tests/test_order_processor.py (Final Unit Test)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_order_successfully</span><span class="p">(</span><span class="n">product</span><span class="p">):</span>
+    <span class="c1"># Arrange</span>
+    <span class="n">inventory</span> <span class="o">=</span> <span class="n">FakeInventory</span><span class="p">(</span><span class="n">stock</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;Laptop&quot;</span><span class="p">:</span> <span class="mi">10</span><span class="p">})</span>
+    <span class="n">payment</span> <span class="o">=</span> <span class="n">FakePaymentGateway</span><span class="p">()</span>
+    <span class="n">processor</span> <span class="o">=</span> <span class="n">OrderProcessor</span><span class="p">(</span><span class="n">inventory</span><span class="p">,</span> <span class="n">payment</span><span class="p">)</span>
+
+    <span class="c1"># Act</span>
+    <span class="n">processor</span><span class="o">.</span><span class="n">process_order</span><span class="p">(</span><span class="n">product</span><span class="p">,</span> <span class="n">quantity</span><span class="o">=</span><span class="mi">8</span><span class="p">,</span> <span class="n">card_details</span><span class="o">=</span><span class="s2">&quot;1234-5678&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Assert</span>
+    <span class="k">assert</span> <span class="n">inventory</span><span class="o">.</span><span class="n">stock_reduced_for</span> <span class="o">==</span> <span class="s2">&quot;Laptop&quot;</span>
+    <span class="k">assert</span> <span class="n">payment</span><span class="o">.</span><span class="n">charged_amount</span> <span class="o">==</span> <span class="mf">8000.0</span>
+    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">processor</span><span class="o">.</span><span class="n">processed_orders</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
+
+<span class="c1"># tests/test_integration.py (Final Integration Test)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_order_processing_updates_real_inventory</span><span class="p">(</span><span class="n">product</span><span class="p">):</span>
+    <span class="c1"># Arrange</span>
+    <span class="n">inventory</span> <span class="o">=</span> <span class="n">InventorySystem</span><span class="p">()</span> 
+    <span class="n">payment</span> <span class="o">=</span> <span class="n">FakePaymentGateway</span><span class="p">()</span>
+    <span class="n">processor</span> <span class="o">=</span> <span class="n">OrderProcessor</span><span class="p">(</span><span class="n">inventory</span><span class="p">,</span> <span class="n">payment</span><span class="p">)</span>
+
+    <span class="c1"># Act</span>
+    <span class="n">processor</span><span class="o">.</span><span class="n">process_order</span><span class="p">(</span><span class="n">product</span><span class="p">,</span> <span class="n">quantity</span><span class="o">=</span><span class="mi">15</span><span class="p">,</span> <span class="n">card_details</span><span class="o">=</span><span class="s2">&quot;valid-card&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Assert</span>
+    <span class="k">assert</span> <span class="n">inventory</span><span class="o">.</span><span class="n">check_stock</span><span class="p">(</span><span class="n">product</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span> <span class="o">==</span> <span class="kc">True</span>
+</code></pre></div>
+
+<h3 id="decision-framework-unit-vs-integration-test">Decision Framework: Unit vs. Integration Test</h3>
+<p>When should you write which type of test?</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Characteristic</th>
+<th style="text-align: left;">Choose a <strong>Unit Test</strong> When...</th>
+<th style="text-align: left;">Choose an <strong>Integration Test</strong> When...</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>Goal</strong></td>
+<td style="text-align: left;">You want to verify the internal logic of a single component.</td>
+<td style="text-align: left;">You want to verify the contract/collaboration between components.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Dependencies</strong></td>
+<td style="text-align: left;">All external dependencies (DB, API, other classes) are replaced with Test Doubles.</td>
+<td style="text-align: left;">One or more dependencies are real, concrete objects.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Speed</strong></td>
+<td style="text-align: left;">You need the test to be extremely fast (milliseconds).</td>
+<td style="text-align: left;">You can tolerate a slower test (tens or hundreds of ms).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Scope</strong></td>
+<td style="text-align: left;">The test focuses on edge cases, business rules, and algorithms within one class.</td>
+<td style="text-align: left;">The test focuses on data flow and side effects across classes.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Failure Insight</strong></td>
+<td style="text-align: left;">A failure precisely pinpoints the bug in a specific class.</td>
+<td style="text-align: left;">A failure indicates a problem in the interaction, requiring more debugging.</td>
+</tr>
+</tbody>
+</table>
         </div>
         <div class="footer">
-            Generated on 2025-11-22 17:25:04 | Made with ❤️ by GitHub Pages Generator
+            Generated on 2025-11-24 14:31:16 | Made with ❤️ by GitHub Pages Generator
         </div>
     </div>
     <script>

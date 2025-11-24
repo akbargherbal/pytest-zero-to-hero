@@ -359,436 +359,740 @@
         <div class="content">
             <h1 id="chapter-11-testing-asynchronous-code">Chapter 11: Testing Asynchronous Code</h1>
 <h2 id="the-basics-of-asyncawait">The Basics of Async/Await</h2>
-<h2 id="the-basics-of-asyncawait_1">The Basics of Async/Await</h2>
-<p>Before we can test asynchronous code, we need a solid mental model of what it is and why it exists. Modern applications spend a lot of time waiting: waiting for a database query to return, for a web API to respond, or for a file to be read from a disk. This is called <strong>I/O-bound</strong> work.</p>
-<p>Imagine a chef in a kitchen. A synchronous chef would:
-1.  Put a pot of water on the stove to boil.
-2.  Stare at the pot until it boils.
-3.  Chop vegetables.</p>
-<p>This is incredibly inefficient. The chef is blocked, doing nothing, while waiting for the water.</p>
-<p>An asynchronous chef works differently:
-1.  Put a pot of water on the stove to boil.
-2.  While the water is heating up, start chopping vegetables.
-3.  When the water boils, pause chopping and pour the pasta in.
-4.  While the pasta cooks, finish chopping the vegetables.</p>
-<p>The asynchronous chef can manage multiple tasks by switching between them whenever one is "waiting." This is the core idea behind Python's <code>asyncio</code>. The keywords <code>async</code> and <code>await</code> are the tools that let us write code like the asynchronous chef.</p>
-<ul>
-<li><code>async def</code>: This defines a function as a <strong>coroutine</strong>. It's a special kind of function that can be paused and resumed. Putting water on the stove is like starting a coroutine.</li>
-<li><code>await</code>: This keyword says, "This is a waiting point. Pause this coroutine here, and let the event loop run other tasks until this one is ready to continue." This is the chef turning to chop vegetables while the water heats up.</li>
-</ul>
-<p>Let's see this in a simple Python example. We'll create a function that simulates fetching data from a slow network API.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># src/data_fetcher.py</span>
+<h2 id="the-challenge-of-asynchronous-code">The Challenge of Asynchronous Code</h2>
+<p>Modern applications often perform tasks that don't require immediate computation, such as waiting for a network response, reading a file from a disk, or querying a database. In traditional synchronous programming, the entire application would block and wait for these I/O-bound operations to complete, wasting valuable CPU cycles.</p>
+<p>Asynchronous programming, particularly with Python's <code>asyncio</code> library, solves this problem. It allows a program to start a long-running task (like a network request) and then switch to working on other tasks instead of waiting idly. When the long-running task is finished, the program can switch back to handle the result. This is managed by an <strong>event loop</strong>, which orchestrates the execution of these tasks.</p>
+<h3 id="core-concepts-async-and-await">Core Concepts: <code>async</code> and <code>await</code></h3>
+<p>Python provides two keywords to support this model: <code>async</code> and <code>await</code>.</p>
+<ol>
+<li>
+<p><strong><code>async def</code></strong>: This syntax is used to define a <strong>coroutine function</strong>. When you call a coroutine function, it doesn't execute immediately. Instead, it returns a <strong>coroutine object</strong>—a blueprint for the work that needs to be done.</p>
+</li>
+<li>
+<p><strong><code>await</code></strong>: This keyword is used inside a coroutine function to pause its execution and hand control back to the event loop. You can only <code>await</code> other <strong>awaitables</strong> (like other coroutine objects or tasks). The event loop will then run another task. When the awaited operation is complete, the event loop will resume the paused coroutine right where it left off.</p>
+</li>
+</ol>
+<p>Let's see a simple example.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># a_simple_async_program.py</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 
-<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">fetch_data</span><span class="p">(</span><span class="n">source</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Simulates fetching data from a slow source.&quot;&quot;&quot;</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Start fetching from </span><span class="si">{</span><span class="n">source</span><span class="si">}</span><span class="s2">...&quot;</span><span class="p">)</span>
-    <span class="c1"># asyncio.sleep is the asynchronous version of time.sleep.</span>
-    <span class="c1"># It pauses the coroutine without blocking the entire program.</span>
-    <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Done fetching from </span><span class="si">{</span><span class="n">source</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
-    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;source&quot;</span><span class="p">:</span> <span class="n">source</span><span class="p">,</span> <span class="s2">&quot;data&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">]}</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">fetch_data</span><span class="p">(</span><span class="n">source</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">delay</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A coroutine that simulates a slow network call.&quot;&quot;&quot;</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Fetching data from </span><span class="si">{</span><span class="n">source</span><span class="si">}</span><span class="s2">...&quot;</span><span class="p">)</span>
+    <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">delay</span><span class="p">)</span>  <span class="c1"># Pause here, let other tasks run</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Data fetched from </span><span class="si">{</span><span class="n">source</span><span class="si">}</span><span class="s2">.&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;Data from </span><span class="si">{</span><span class="n">source</span><span class="si">}</span><span class="s2">&quot;</span>
 
 <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;A main function to run our coroutine.&quot;&quot;&quot;</span>
-    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">fetch_data</span><span class="p">(</span><span class="s2">&quot;API Server&quot;</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Received: </span><span class="si">{</span><span class="n">result</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;The main entry point for our async program.&quot;&quot;&quot;</span>
+    <span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Starting concurrent fetches.&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Schedule both coroutines to run concurrently on the event loop</span>
+    <span class="n">task1</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">fetch_data</span><span class="p">(</span><span class="s2">&quot;API 1&quot;</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+    <span class="n">task2</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">fetch_data</span><span class="p">(</span><span class="s2">&quot;Database&quot;</span><span class="p">,</span> <span class="mi">3</span><span class="p">))</span>
+
+    <span class="c1"># Now, wait for both tasks to complete</span>
+    <span class="n">result1</span> <span class="o">=</span> <span class="k">await</span> <span class="n">task1</span>
+    <span class="n">result2</span> <span class="o">=</span> <span class="k">await</span> <span class="n">task2</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Result 1: </span><span class="si">{</span><span class="n">result1</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Result 2: </span><span class="si">{</span><span class="n">result2</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="n">end_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Total time: </span><span class="si">{</span><span class="n">end_time</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">start_time</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> seconds.&quot;</span><span class="p">)</span>
 
 <span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
-    <span class="c1"># asyncio.run() starts the event loop and runs the coroutine until it&#39;s complete.</span>
+    <span class="c1"># To run the top-level &#39;main&#39; coroutine, we need to use asyncio.run()</span>
+    <span class="c1"># This creates an event loop, runs the coroutine until it&#39;s done,</span>
+    <span class="c1"># and then closes the loop.</span>
     <span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">main</span><span class="p">())</span>
 </code></pre></div>
 
-<p>If you run this file, you'll see the output with a 1-second delay, just as you'd expect.</p>
-<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>python<span class="w"> </span>src/data_fetcher.py
-Start<span class="w"> </span>fetching<span class="w"> </span>from<span class="w"> </span>API<span class="w"> </span>Server...
-Done<span class="w"> </span>fetching<span class="w"> </span>from<span class="w"> </span>API<span class="w"> </span>Server.
-Received:<span class="w"> </span><span class="o">{</span><span class="s1">&#39;source&#39;</span>:<span class="w"> </span><span class="s1">&#39;API Server&#39;</span>,<span class="w"> </span><span class="s1">&#39;data&#39;</span>:<span class="w"> </span><span class="o">[</span><span class="m">1</span>,<span class="w"> </span><span class="m">2</span>,<span class="w"> </span><span class="m">3</span><span class="o">]}</span>
+<p>When you run this script, you'll see output like this:</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>python<span class="w"> </span>a_simple_async_program.py
+Starting<span class="w"> </span>concurrent<span class="w"> </span>fetches.
+Fetching<span class="w"> </span>data<span class="w"> </span>from<span class="w"> </span>API<span class="w"> </span><span class="m">1</span>...
+Fetching<span class="w"> </span>data<span class="w"> </span>from<span class="w"> </span>Database...
+Data<span class="w"> </span>fetched<span class="w"> </span>from<span class="w"> </span>API<span class="w"> </span><span class="m">1</span>.
+Data<span class="w"> </span>fetched<span class="w"> </span>from<span class="w"> </span>Database.
+Result<span class="w"> </span><span class="m">1</span>:<span class="w"> </span>Data<span class="w"> </span>from<span class="w"> </span>API<span class="w"> </span><span class="m">1</span>
+Result<span class="w"> </span><span class="m">2</span>:<span class="w"> </span>Data<span class="w"> </span>from<span class="w"> </span>Database
+Total<span class="w"> </span>time:<span class="w"> </span><span class="m">3</span>.01<span class="w"> </span>seconds.
 </code></pre></div>
 
-<p>The key takeaway is that an <code>async def</code> function doesn't run like a normal function. Calling it just creates a coroutine object. You need an event loop runner (like <code>asyncio.run()</code>) to actually execute it. This has a major implication for testing: vanilla pytest doesn't know how to run these coroutine objects.</p>
+<p>Notice that the total time is approximately 3 seconds (the duration of the longest task), not 5 seconds (2 + 3). This is the power of concurrency. Both <code>asyncio.sleep()</code> calls were running "at the same time."</p>
+<p>The challenge for us is that pytest, by default, doesn't know how to handle <code>async def</code> functions. It doesn't know how to create an event loop or <code>await</code> the coroutine objects our tests will return. This is where we need a specialized plugin.</p>
 <h2 id="testing-coroutines-with-pytest-asyncio">Testing Coroutines with pytest-asyncio</h2>
-<h2 id="testing-coroutines-with-pytest-asyncio_1">Testing Coroutines with pytest-asyncio</h2>
-<p>Let's try to write a test for our <code>fetch_data</code> function using what we know so far.</p>
-<h3 id="the-problem-pytest-doesnt-speak-async-natively">The Problem: Pytest Doesn't Speak Async Natively</h3>
-<p>If you write a test like a regular function call, you'll get a warning, and the test won't actually run the asynchronous code.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_data_fetcher_problem.py</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.data_fetcher</span><span class="w"> </span><span class="kn">import</span> <span class="n">fetch_data</span>
+<h2 id="phase-1-establish-the-reference-implementation">Phase 1: Establish the Reference Implementation</h2>
+<p>To explore async testing, we need a realistic piece of asynchronous code to test. We'll build a simple client for a hypothetical weather API. This is a perfect use case for <code>asyncio</code>, as its primary job is to make network requests, which are I/O-bound.</p>
+<p>Our anchor example will be this <code>WeatherAPIClient</code>.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># weather_client.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_fetch_data_incorrectly</span><span class="p">():</span>
-    <span class="c1"># This just creates a coroutine object, it doesn&#39;t run it!</span>
-    <span class="n">coro</span> <span class="o">=</span> <span class="n">fetch_data</span><span class="p">(</span><span class="s2">&quot;API Server&quot;</span><span class="p">)</span>
-    <span class="c1"># This test will pass, but it doesn&#39;t actually test the coroutine&#39;s logic.</span>
-    <span class="c1"># You&#39;ll get a RuntimeWarning from pytest.</span>
-    <span class="k">assert</span> <span class="n">coro</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ExternalServiceError</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Custom exception for API failures.&quot;&quot;&quot;</span>
+    <span class="k">pass</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">WeatherAPIClient</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A simple client for a weather API.&quot;&quot;&quot;</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_current_temperature</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">city</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Fetches the current temperature for a given city.</span>
+<span class="sd">        This simulates a network call that can fail.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Fetching temperature for </span><span class="si">{</span><span class="n">city</span><span class="si">}</span><span class="s2">...&quot;</span><span class="p">)</span>
+        <span class="c1"># Simulate a network delay</span>
+        <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="n">city</span> <span class="o">==</span> <span class="s2">&quot;error&quot;</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ExternalServiceError</span><span class="p">(</span><span class="s2">&quot;API request failed&quot;</span><span class="p">)</span>
+
+        <span class="c1"># In a real app, this would be the result of a network call</span>
+        <span class="n">temp</span> <span class="o">=</span> <span class="mf">20.0</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">city</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Temperature for </span><span class="si">{</span><span class="n">city</span><span class="si">}</span><span class="s2"> is </span><span class="si">{</span><span class="n">temp</span><span class="si">}</span><span class="s2">°C&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">temp</span>
 </code></pre></div>
 
-<p>Running this gives you a warning because the coroutine was never <code>await</code>ed.</p>
-<div class="codehilite"><pre><span></span><code><span class="o">=============================</span><span class="w"> </span>warnings<span class="w"> </span><span class="nv">summary</span><span class="w"> </span><span class="o">=============================</span>
-tests/test_data_fetcher_problem.py::test_fetch_data_incorrectly
-<span class="w">  </span>/path/to/tests/test_data_fetcher_problem.py:6:<span class="w"> </span>RuntimeWarning:<span class="w"> </span>coroutine<span class="w"> </span><span class="s1">&#39;fetch_data&#39;</span><span class="w"> </span>was<span class="w"> </span>never<span class="w"> </span>awaited
-<span class="w">    </span><span class="nv">coro</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>fetch_data<span class="o">(</span><span class="s2">&quot;API Server&quot;</span><span class="o">)</span>
+<h3 id="iteration-0-the-naive-attempt">Iteration 0: The Naive Attempt</h3>
+<p>Let's try to write a pytest test for this client just like we would for any synchronous code. We'll define our test function using <code>async def</code> because it needs to <code>await</code> the method we're testing.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_weather_client_v1.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">weather_client</span><span class="w"> </span><span class="kn">import</span> <span class="n">WeatherAPIClient</span>
+
+<span class="c1"># This is a coroutine function</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_get_current_temperature_naive</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    A naive attempt to test an async function.</span>
+<span class="sd">    This will NOT work as expected.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">client</span> <span class="o">=</span> <span class="n">WeatherAPIClient</span><span class="p">()</span>
+    <span class="n">temperature</span> <span class="o">=</span> <span class="k">await</span> <span class="n">client</span><span class="o">.</span><span class="n">get_current_temperature</span><span class="p">(</span><span class="s2">&quot;London&quot;</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">temperature</span> <span class="o">==</span> <span class="mf">20.0</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="s2">&quot;London&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>Now, let's run this with pytest. The result is not a pass or a fail, but a warning.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-q<span class="w"> </span>test_weather_client_v1.py
+.
+<span class="m">1</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>warning<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.01s
+
+<span class="o">===============================</span><span class="w"> </span>warnings<span class="w"> </span><span class="nv">summary</span><span class="w"> </span><span class="o">===============================</span>
+test_weather_client_v1.py:4
+<span class="w">  </span>/path/to/test_weather_client_v1.py:4:<span class="w"> </span>PytestRemovedIn8Warning:
+<span class="w">  </span>Defining<span class="w"> </span><span class="s1">&#39;async def&#39;</span><span class="w"> </span>tests<span class="w"> </span>without<span class="w"> </span><span class="s1">&#39;asyncio&#39;</span><span class="w"> </span>marker<span class="w"> </span>is<span class="w"> </span>deprecated.
+<span class="w">  </span>Please<span class="w"> </span>add<span class="w"> </span><span class="s1">&#39;@pytest.mark.asyncio&#39;</span><span class="w"> </span>to<span class="w"> </span>all<span class="w"> </span>your<span class="w"> </span>async<span class="w"> </span>tests.
+<span class="w">  </span>See<span class="w"> </span>https://...<span class="w"> </span><span class="k">for</span><span class="w"> </span>details.
+<span class="w">    </span>async<span class="w"> </span>def<span class="w"> </span>test_get_current_temperature_naive<span class="o">()</span>:
 
 --<span class="w"> </span>Docs:<span class="w"> </span>https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-<span class="o">========================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>warning<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.01s<span class="w"> </span><span class="o">========================</span>
 </code></pre></div>
 
-<p>The test passed, but it didn't do what we wanted. It only tested that the function call created an object, not that the object, when run, produces the correct result.</p>
-<h3 id="the-solution-pytest-asyncio">The Solution: <code>pytest-asyncio</code></h3>
-<p>To bridge this gap, we use a powerful plugin called <code>pytest-asyncio</code>. It automatically handles the asyncio event loop for your tests.</p>
+<h3 id="diagnostic-analysis-reading-the-failure">Diagnostic Analysis: Reading the Failure</h3>
+<p>This output is subtle and dangerous. Pytest says <code>1 passed</code>, but it also gives a critical warning. In older versions of pytest, this test would silently do nothing. Modern versions provide this warning to guide you.</p>
+<p><strong>The complete output</strong>:</p>
+<div class="codehilite"><pre><span></span><code><span class="o">=============================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==============================</span>
+...
+collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
+
+test_weather_client_v1.py<span class="w"> </span>.<span class="w">                                              </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">===============================</span><span class="w"> </span>warnings<span class="w"> </span><span class="nv">summary</span><span class="w"> </span><span class="o">===============================</span>
+test_weather_client_v1.py:4
+<span class="w">  </span>/path/to/test_weather_client_v1.py:4:<span class="w"> </span>PytestRemovedIn8Warning:<span class="w"> </span>Defining<span class="w"> </span><span class="s1">&#39;async def&#39;</span><span class="w"> </span>tests<span class="w"> </span>without<span class="w"> </span><span class="s1">&#39;asyncio&#39;</span><span class="w"> </span>marker<span class="w"> </span>is<span class="w"> </span>deprecated.<span class="w"> </span>Please<span class="w"> </span>add<span class="w"> </span><span class="s1">&#39;@pytest.mark.asyncio&#39;</span><span class="w"> </span>to<span class="w"> </span>all<span class="w"> </span>your<span class="w"> </span>async<span class="w"> </span>tests.
+...
+<span class="o">=========================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>warning<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">==========================</span>
+</code></pre></div>
+
+<p><strong>Let's parse this</strong>:</p>
+<ol>
+<li><strong>The summary line</strong>: <code>1 passed, 1 warning</code>. This is misleading. The test "passed" only because pytest didn't execute the coroutine, so no <code>AssertionError</code> could possibly be raised. The test did nothing.</li>
+<li><strong>The warning</strong>: <code>PytestRemovedIn8Warning: Defining 'async def' tests without 'asyncio' marker is deprecated. Please add '@pytest.mark.asyncio' to all your async tests.</code> This is the key. Pytest recognizes the <code>async def</code> syntax but is telling us it doesn't have a built-in way to handle it. It's pointing us directly to the solution.</li>
+</ol>
+<p><strong>Root cause identified</strong>: Pytest's default test runner does not know how to run a coroutine. It sees the <code>async def</code> test, creates the coroutine object, but never <code>await</code>s it or runs it in an event loop.</p>
+<p><strong>Why the current approach can't solve this</strong>: We are missing the machinery to manage the <code>asyncio</code> event loop for our test function.</p>
+<p><strong>What we need</strong>: A pytest plugin that integrates <code>asyncio</code>, providing an event loop and properly running <code>async def</code> tests.</p>
+<h3 id="iteration-1-introducing-pytest-asyncio">Iteration 1: Introducing <code>pytest-asyncio</code></h3>
+<p>The solution is the <code>pytest-asyncio</code> plugin. It's the standard tool for this job.</p>
 <p>First, install it:</p>
 <div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>pytest-asyncio
 </code></pre></div>
 
-<p>Now, we can write our test correctly. We need to do two things:
-1.  Define the test function with <code>async def</code>.
-2.  Mark it with <code>@pytest.mark.asyncio</code>.</p>
-<p>This marker tells <code>pytest-asyncio</code> that this is an asynchronous test that needs an event loop to run. Inside the test, we can now use the <code>await</code> keyword.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_data_fetcher.py</span>
+<p>This plugin provides a marker, <code>@pytest.mark.asyncio</code>, which signals to pytest that the decorated test function is a coroutine and should be run inside an <code>asyncio</code> event loop.</p>
+<p>Let's apply this fix to our test.</p>
+<p><strong>Before:</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_weather_client_v1.py (problematic)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">weather_client</span><span class="w"> </span><span class="kn">import</span> <span class="n">WeatherAPIClient</span>
+
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_get_current_temperature_naive</span><span class="p">():</span>
+    <span class="n">client</span> <span class="o">=</span> <span class="n">WeatherAPIClient</span><span class="p">()</span>
+    <span class="n">temperature</span> <span class="o">=</span> <span class="k">await</span> <span class="n">client</span><span class="o">.</span><span class="n">get_current_temperature</span><span class="p">(</span><span class="s2">&quot;London&quot;</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">temperature</span> <span class="o">==</span> <span class="mf">20.0</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="s2">&quot;London&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p><strong>After:</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_weather_client_v2.py (solution)</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.data_fetcher</span><span class="w"> </span><span class="kn">import</span> <span class="n">fetch_data</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">weather_client</span><span class="w"> </span><span class="kn">import</span> <span class="n">WeatherAPIClient</span><span class="p">,</span> <span class="n">ExternalServiceError</span>
 
 <span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">asyncio</span>
-<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_fetch_data_successfully</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests that our async function runs and returns the expected dict.&quot;&quot;&quot;</span>
-    <span class="c1"># Now we can use &#39;await&#39; inside our test function</span>
-    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">fetch_data</span><span class="p">(</span><span class="s2">&quot;Test Source&quot;</span><span class="p">)</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_get_current_temperature</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests the successful retrieval of temperature.&quot;&quot;&quot;</span>
+    <span class="n">client</span> <span class="o">=</span> <span class="n">WeatherAPIClient</span><span class="p">()</span>
+    <span class="n">temperature</span> <span class="o">=</span> <span class="k">await</span> <span class="n">client</span><span class="o">.</span><span class="n">get_current_temperature</span><span class="p">(</span><span class="s2">&quot;London&quot;</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">temperature</span> <span class="o">==</span> <span class="mf">25.0</span>
 
-    <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="nb">dict</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">result</span><span class="p">[</span><span class="s2">&quot;source&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;Test Source&quot;</span>
-    <span class="k">assert</span> <span class="n">result</span><span class="p">[</span><span class="s2">&quot;data&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">]</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">asyncio</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_get_current_temperature_error</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests the case where the external API fails.&quot;&quot;&quot;</span>
+    <span class="n">client</span> <span class="o">=</span> <span class="n">WeatherAPIClient</span><span class="p">()</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">ExternalServiceError</span><span class="p">,</span> <span class="n">match</span><span class="o">=</span><span class="s2">&quot;API request failed&quot;</span><span class="p">):</span>
+        <span class="k">await</span> <span class="n">client</span><span class="o">.</span><span class="n">get_current_temperature</span><span class="p">(</span><span class="s2">&quot;error&quot;</span><span class="p">)</span>
 </code></pre></div>
 
-<p>Let's run this test.</p>
-<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>tests/test_data_fetcher.py
+<p>Now, let's run the corrected tests.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>test_weather_client_v2.py
 <span class="o">=============================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==============================</span>
 ...
-collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
+collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
 
-tests/test_data_fetcher.py::test_fetch_data_successfully
-Start<span class="w"> </span>fetching<span class="w"> </span>from<span class="w"> </span>Test<span class="w"> </span>Source...
-Done<span class="w"> </span>fetching<span class="w"> </span>from<span class="w"> </span>Test<span class="w"> </span>Source.
-PASSED<span class="w">                               </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+test_weather_client_v2.py::test_get_current_temperature
+Fetching<span class="w"> </span>temperature<span class="w"> </span><span class="k">for</span><span class="w"> </span>London...
+Temperature<span class="w"> </span><span class="k">for</span><span class="w"> </span>London<span class="w"> </span>is<span class="w"> </span><span class="m">25</span>.0°C
+PASSED<span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
 
-<span class="o">==============================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">1</span>.02s<span class="w"> </span><span class="o">===============================</span>
+test_weather_client_v2.py::test_get_current_temperature_error
+Fetching<span class="w"> </span>temperature<span class="w"> </span><span class="k">for</span><span class="w"> </span>error...
+PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">==============================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">2</span>.05s<span class="w"> </span><span class="o">===============================</span>
 </code></pre></div>
 
-<p>Success! The <code>pytest-asyncio</code> plugin detected the marker, set up an event loop, ran our <code>await fetch_data(...)</code> call, and then tore down the loop. We have successfully tested our first coroutine. The "magic" is simply the plugin providing the <code>asyncio.run()</code> equivalent for each test function marked appropriately.</p>
+<p>Success! The tests now run correctly. Notice the total time is around 2 seconds, because each test's <code>asyncio.sleep(1.0)</code> was executed. The <code>@pytest.mark.asyncio</code> marker instructed <code>pytest-asyncio</code> to:
+1.  Create and manage an <code>asyncio</code> event loop for the test.
+2.  Run the test coroutine (<code>test_get_current_temperature</code>) on that event loop until it completes.
+3.  Handle the results (pass/fail) just like a regular test.</p>
+<p>This solves our initial problem, but our tests are still creating a new <code>WeatherAPIClient</code> instance inside each function. This is a perfect use case for a fixture.</p>
 <h2 id="fixtures-for-async-tests">Fixtures for Async Tests</h2>
-<h2 id="fixtures-for-async-tests_1">Fixtures for Async Tests</h2>
-<p>Just like regular tests, async tests need setup and teardown logic. Pytest fixtures work seamlessly with <code>pytest-asyncio</code>, and they can even be asynchronous themselves. This is incredibly useful for setting up resources that require async operations, like a database connection pool or an API client session.</p>
-<h3 id="asynchronous-fixtures">Asynchronous Fixtures</h3>
-<p>To create an asynchronous fixture, you simply define it with <code>async def</code>. You can then <code>await</code> other coroutines inside it. Tests that use this fixture must also be <code>async def</code> functions.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/conftest.py</span>
+<h2 id="iteration-2-creating-asynchronous-fixtures">Iteration 2: Creating Asynchronous Fixtures</h2>
+<p>Our tests now work, but they repeat the <code>client = WeatherAPIClient()</code> setup. Let's refactor this into a fixture.</p>
+<p>A synchronous fixture is straightforward:</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># A standard, synchronous fixture</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">client</span><span class="p">():</span>
+    <span class="k">return</span> <span class="n">WeatherAPIClient</span><span class="p">()</span>
+</code></pre></div>
+
+<p>But what if our fixture needs to perform asynchronous operations for setup or teardown? For example, it might need to establish an async database connection or authenticate with a service.</p>
+<h3 id="the-problem-fixtures-that-need-to-be-async">The Problem: Fixtures that Need to be <code>async</code></h3>
+<p>Let's imagine our <code>WeatherAPIClient</code> required some asynchronous initialization. We would need an <code>async def</code> fixture.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_weather_client_v3.py</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">weather_client</span><span class="w"> </span><span class="kn">import</span> <span class="n">WeatherAPIClient</span><span class="p">,</span> <span class="n">ExternalServiceError</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">client</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    An async fixture to provide a WeatherAPIClient instance.</span>
+<span class="sd">    This simulates async setup, e.g., acquiring a resource from a pool.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># In a real scenario, you might await an async connection function here.</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">(Setting up async client)&quot;</span><span class="p">)</span>
+    <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.01</span><span class="p">)</span>
+    <span class="k">yield</span> <span class="n">WeatherAPIClient</span><span class="p">()</span>
+    <span class="c1"># And here, you might await an async teardown function.</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">(Tearing down async client)&quot;</span><span class="p">)</span>
+    <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.01</span><span class="p">)</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">asyncio</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_get_current_temperature</span><span class="p">(</span><span class="n">client</span><span class="p">:</span> <span class="n">WeatherAPIClient</span><span class="p">):</span>
+    <span class="n">temperature</span> <span class="o">=</span> <span class="k">await</span> <span class="n">client</span><span class="o">.</span><span class="n">get_current_temperature</span><span class="p">(</span><span class="s2">&quot;Tokyo&quot;</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">temperature</span> <span class="o">==</span> <span class="mf">25.0</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">asyncio</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_get_current_temperature_error</span><span class="p">(</span><span class="n">client</span><span class="p">:</span> <span class="n">WeatherAPIClient</span><span class="p">):</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">ExternalServiceError</span><span class="p">):</span>
+        <span class="k">await</span> <span class="n">client</span><span class="o">.</span><span class="n">get_current_temperature</span><span class="p">(</span><span class="s2">&quot;error&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>Let's run this. You might expect this to fail, as a regular pytest runner wouldn't know how to handle an <code>async</code> fixture.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>-s<span class="w"> </span>test_weather_client_v3.py
+<span class="o">=============================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==============================</span>
+...
+collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
+
+test_weather_client_v3.py::test_get_current_temperature
+<span class="o">(</span>Setting<span class="w"> </span>up<span class="w"> </span>async<span class="w"> </span>client<span class="o">)</span>
+Fetching<span class="w"> </span>temperature<span class="w"> </span><span class="k">for</span><span class="w"> </span>Tokyo...
+Temperature<span class="w"> </span><span class="k">for</span><span class="w"> </span>Tokyo<span class="w"> </span>is<span class="w"> </span><span class="m">25</span>.0°C
+PASSED
+<span class="o">(</span>Tearing<span class="w"> </span>down<span class="w"> </span>async<span class="w"> </span>client<span class="o">)</span>
+
+test_weather_client_v3.py::test_get_current_temperature_error
+<span class="o">(</span>Setting<span class="w"> </span>up<span class="w"> </span>async<span class="w"> </span>client<span class="o">)</span>
+Fetching<span class="w"> </span>temperature<span class="w"> </span><span class="k">for</span><span class="w"> </span>error...
+PASSED
+<span class="o">(</span>Tearing<span class="w"> </span>down<span class="w"> </span>async<span class="w"> </span>client<span class="o">)</span>
+
+<span class="o">==============================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">2</span>.08s<span class="w"> </span><span class="o">===============================</span>
+</code></pre></div>
+
+<p>It just works! This is one of the most powerful features of <code>pytest-asyncio</code>.</p>
+<p><strong>How it works</strong>: When a test is marked with <code>@pytest.mark.asyncio</code>, the plugin extends its magic to fixtures as well. If it encounters a fixture defined with <code>async def</code>, it will correctly run it within the same event loop as the test, <code>await</code>ing the setup part before the test runs and the teardown part after it completes.</p>
+<p>This seamless integration allows you to build complex, asynchronous setup and teardown logic into your fixtures, keeping your tests clean and readable, without needing any special syntax beyond <code>async def</code>.</p>
+<p>Our tests are now well-structured, but they are integration tests. They rely on the (simulated) behavior of an external service. To create true unit tests, we need to mock the I/O-bound part of our code.</p>
+<h2 id="mocking-async-functions">Mocking Async Functions</h2>
+<h2 id="iteration-3-unit-testing-with-async-mocks">Iteration 3: Unit Testing with Async Mocks</h2>
+<p>Our current tests for <code>get_current_temperature</code> are slow because of <code>asyncio.sleep(1.0)</code>. More importantly, they test the integration with a (simulated) external service. A unit test should isolate the code being tested from its dependencies. In our case, the dependency is the "network call."</p>
+<p>Let's refactor our client slightly to make the network-facing part easier to mock.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># weather_client_v2.py</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
 
-<span class="k">class</span><span class="w"> </span><span class="nc">AsyncDatabaseClient</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;A mock async database client for demonstration.&quot;&quot;&quot;</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">db_name</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_db_name</span> <span class="o">=</span> <span class="n">db_name</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_is_connected</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">ExternalServiceError</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Custom exception for API failures.&quot;&quot;&quot;</span>
+    <span class="k">pass</span>
 
-    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">connect</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Simulate an async connection.&quot;&quot;&quot;</span>
-        <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_is_connected</span> <span class="o">=</span> <span class="kc">True</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Connected to </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_db_name</span><span class="si">}</span><span class="s2">!&quot;</span><span class="p">)</span>
-
-    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">disconnect</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Simulate an async disconnection.&quot;&quot;&quot;</span>
-        <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">_is_connected</span> <span class="o">=</span> <span class="kc">False</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">Disconnected from </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">_db_name</span><span class="si">}</span><span class="s2">!&quot;</span><span class="p">)</span>
-
-    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">query</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">sql</span><span class="p">):</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">_is_connected</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ConnectionError</span><span class="p">(</span><span class="s2">&quot;Database is not connected&quot;</span><span class="p">)</span>
-        <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.2</span><span class="p">)</span>
-        <span class="k">return</span> <span class="p">[{</span><span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;test_user&quot;</span><span class="p">}]</span>
-
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
-<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">db_client</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;An async fixture to set up and tear down a database client.&quot;&quot;&quot;</span>
-    <span class="n">client</span> <span class="o">=</span> <span class="n">AsyncDatabaseClient</span><span class="p">(</span><span class="s2">&quot;test_db&quot;</span><span class="p">)</span>
-    <span class="k">await</span> <span class="n">client</span><span class="o">.</span><span class="n">connect</span><span class="p">()</span>
-    <span class="k">yield</span> <span class="n">client</span>
-    <span class="k">await</span> <span class="n">client</span><span class="o">.</span><span class="n">disconnect</span><span class="p">()</span>
-</code></pre></div>
-
-<p>Here, our <code>db_client</code> fixture is a coroutine. It creates a client, <code>await</code>s its connection, <code>yield</code>s the client to the test, and then <code>await</code>s its disconnection after the test is complete.</p>
-<p>Now, let's use this fixture in a test.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_async_db.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">asyncio</span>
-<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_database_query</span><span class="p">(</span><span class="n">db_client</span><span class="p">):</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">WeatherAPIClient</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Tests a query using the async db_client fixture.</span>
-<span class="sd">    The test function must be async to use an async fixture.</span>
+<span class="sd">    A refactored client with a separate method for data fetching,</span>
+<span class="sd">    making it easier to mock.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db_client</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="s2">&quot;SELECT * FROM users;&quot;</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="p">[{</span><span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;test_user&quot;</span><span class="p">}]</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_fetch_data</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">city</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Internal method simulating the actual network call.&quot;&quot;&quot;</span>
+        <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">city</span> <span class="o">==</span> <span class="s2">&quot;error&quot;</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ExternalServiceError</span><span class="p">(</span><span class="s2">&quot;API request failed&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="mf">20.0</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">city</span><span class="p">)</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_current_temperature</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">city</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Public method containing business logic.&quot;&quot;&quot;</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Fetching temperature for </span><span class="si">{</span><span class="n">city</span><span class="si">}</span><span class="s2">...&quot;</span><span class="p">)</span>
+        <span class="n">temp</span> <span class="o">=</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fetch_data</span><span class="p">(</span><span class="n">city</span><span class="p">)</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Temperature for </span><span class="si">{</span><span class="n">city</span><span class="si">}</span><span class="s2"> is </span><span class="si">{</span><span class="n">temp</span><span class="si">}</span><span class="s2">°C&quot;</span><span class="p">)</span>
+        <span class="c1"># Imagine more logic here, e.g., unit conversion, caching, etc.</span>
+        <span class="k">return</span> <span class="n">temp</span>
 </code></pre></div>
 
-<p>When you run this test, you'll see the connect and disconnect messages from the fixture, proving the setup and teardown logic ran correctly around the test.</p>
-<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>-s<span class="w"> </span>tests/test_async_db.py
-<span class="o">=============================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==============================</span>
-...
-collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
-
-tests/test_async_db.py::test_database_query
-Connected<span class="w"> </span>to<span class="w"> </span>test_db!
-PASSED
-Disconnected<span class="w"> </span>from<span class="w"> </span>test_db!
-
-<span class="o">==============================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.43s<span class="w"> </span><span class="o">===============================</span>
-</code></pre></div>
-
-<h3 id="using-synchronous-fixtures-in-async-tests">Using Synchronous Fixtures in Async Tests</h3>
-<p>You are not required to make all your fixtures async. Regular, synchronous fixtures work perfectly fine when passed to an async test.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/conftest.py (add this fixture)</span>
-
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">user_payload</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;A regular, synchronous fixture.&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;username&quot;</span><span class="p">:</span> <span class="s2">&quot;test_user&quot;</span><span class="p">,</span> <span class="s2">&quot;email&quot;</span><span class="p">:</span> <span class="s2">&quot;test@example.com&quot;</span><span class="p">}</span>
-
-<span class="c1"># tests/test_async_db.py (add this test)</span>
-
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">asyncio</span>
-<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_with_sync_and_async_fixtures</span><span class="p">(</span><span class="n">db_client</span><span class="p">,</span> <span class="n">user_payload</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    This async test uses both an async fixture (db_client)</span>
-<span class="sd">    and a sync fixture (user_payload).</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Testing with payload: </span><span class="si">{</span><span class="n">user_payload</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">db_client</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="s2">&quot;SELECT * FROM users;&quot;</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-</code></pre></div>
-
-<p>This works exactly as you'd expect. Pytest resolves all fixtures first—awaiting the async ones—before running the async test body. The rule is simple: if your fixture needs to <code>await</code> something, make it <code>async def</code>. Otherwise, a regular <code>def</code> is fine.</p>
-<h2 id="mocking-async-functions">Mocking Async Functions</h2>
-<h2 id="mocking-async-functions_1">Mocking Async Functions</h2>
-<p>Mocking is essential for isolating the code you're testing from its dependencies, especially slow or unreliable ones like network calls. However, mocking asynchronous functions presents a new challenge: the mock object itself must be "awaitable."</p>
-<h3 id="the-problem-a-regular-mock-isnt-awaitable">The Problem: A Regular Mock Isn't Awaitable</h3>
-<p>Let's go back to our <code>fetch_data</code> example. Imagine we have another function that uses it.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># src/data_processor.py</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">.data_fetcher</span><span class="w"> </span><span class="kn">import</span> <span class="n">fetch_data</span>
-
-<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">process_data_from_source</span><span class="p">(</span><span class="n">source</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fetches and processes data.&quot;&quot;&quot;</span>
-    <span class="n">data</span> <span class="o">=</span> <span class="k">await</span> <span class="n">fetch_data</span><span class="p">(</span><span class="n">source</span><span class="p">)</span>
-    <span class="c1"># In a real app, more complex processing would happen here.</span>
-    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;Processed data for </span><span class="si">{</span><span class="n">data</span><span class="p">[</span><span class="s1">&#39;source&#39;</span><span class="p">]</span><span class="si">}</span><span class="s2"> with </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">data</span><span class="p">[</span><span class="s1">&#39;data&#39;</span><span class="p">])</span><span class="si">}</span><span class="s2"> items.&quot;</span>
-</code></pre></div>
-
-<p>To test <code>process_data_from_source</code> in isolation, we must mock <code>fetch_data</code>. Let's see what happens if we try to use a standard <code>unittest.mock.Mock</code>.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_data_processor_problem.py</span>
+<p>Our goal is to test <code>get_current_temperature</code> without actually executing <code>_fetch_data</code>.</p>
+<h3 id="the-problem-mocking-a-coroutine">The Problem: Mocking a Coroutine</h3>
+<p>Let's try to mock <code>_fetch_data</code> using <code>unittest.mock.MagicMock</code> and <code>monkeypatch</code>, as we learned in Chapter 9.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_weather_client_v4_failure.py</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">patch</span><span class="p">,</span> <span class="n">Mock</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.data_processor</span><span class="w"> </span><span class="kn">import</span> <span class="n">process_data_from_source</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">MagicMock</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">weather_client_v2</span><span class="w"> </span><span class="kn">import</span> <span class="n">WeatherAPIClient</span>
 
 <span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">asyncio</span>
-<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_process_data_with_regular_mock</span><span class="p">():</span>
-    <span class="n">mock_fetch</span> <span class="o">=</span> <span class="n">Mock</span><span class="p">(</span>
-        <span class="n">return_value</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;source&quot;</span><span class="p">:</span> <span class="s2">&quot;mock&quot;</span><span class="p">,</span> <span class="s2">&quot;data&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">]}</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_with_standard_mock</span><span class="p">(</span><span class="n">monkeypatch</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;This test will fail!&quot;&quot;&quot;</span>
+    <span class="n">mock_response</span> <span class="o">=</span> <span class="mf">30.0</span>
+    <span class="c1"># Create a standard mock</span>
+    <span class="n">mock_fetch</span> <span class="o">=</span> <span class="n">MagicMock</span><span class="p">(</span><span class="n">return_value</span><span class="o">=</span><span class="n">mock_response</span><span class="p">)</span>
+
+    <span class="c1"># Patch the internal method</span>
+    <span class="n">monkeypatch</span><span class="o">.</span><span class="n">setattr</span><span class="p">(</span>
+        <span class="n">WeatherAPIClient</span><span class="p">,</span>
+        <span class="s2">&quot;_fetch_data&quot;</span><span class="p">,</span>
+        <span class="n">mock_fetch</span>
     <span class="p">)</span>
-    <span class="k">with</span> <span class="n">patch</span><span class="p">(</span><span class="s2">&quot;src.data_processor.fetch_data&quot;</span><span class="p">,</span> <span class="n">new</span><span class="o">=</span><span class="n">mock_fetch</span><span class="p">):</span>
-        <span class="c1"># This will fail!</span>
-        <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">process_data_from_source</span><span class="p">(</span><span class="s2">&quot;any_source&quot;</span><span class="p">)</span>
-        <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="s2">&quot;Processed data for mock with 2 items.&quot;</span>
+
+    <span class="n">client</span> <span class="o">=</span> <span class="n">WeatherAPIClient</span><span class="p">()</span>
+    <span class="c1"># This &#39;await&#39; will cause a TypeError</span>
+    <span class="n">temperature</span> <span class="o">=</span> <span class="k">await</span> <span class="n">client</span><span class="o">.</span><span class="n">get_current_temperature</span><span class="p">(</span><span class="s2">&quot;TestCity&quot;</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">temperature</span> <span class="o">==</span> <span class="n">mock_response</span>
 </code></pre></div>
 
 <p>Running this test results in a <code>TypeError</code>.</p>
-<div class="codehilite"><pre><span></span><code><span class="k">&gt; </span><span class="ge">      result = await process_data_from_source(&quot;any_source&quot;)</span>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>test_weather_client_v4_failure.py
+<span class="o">=============================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==============================</span>
 ...
-<span class="k">&gt; </span><span class="ge">      data = await fetch_data(source)</span>
-E       TypeError: object Mock can&#39;t be used in &#39;await&#39; expression
+collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
+
+test_weather_client_v4_failure.py<span class="w"> </span>F<span class="w">                                      </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">===================================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">===================================</span>
+_________________________<span class="w"> </span>test_with_standard_mock<span class="w"> </span>__________________________
+
+<span class="nv">monkeypatch</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>&lt;_pytest.monkeypatch.MonkeyPatch<span class="w"> </span>object<span class="w"> </span>at<span class="w"> </span>0x...&gt;
+
+<span class="w">    </span>@pytest.mark.asyncio
+<span class="w">    </span>async<span class="w"> </span>def<span class="w"> </span>test_with_standard_mock<span class="o">(</span>monkeypatch<span class="o">)</span>:
+<span class="w">        </span><span class="s2">&quot;&quot;&quot;This test will fail!&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="nv">mock_response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="m">30</span>.0
+<span class="w">        </span><span class="c1"># Create a standard mock</span>
+<span class="w">        </span><span class="nv">mock_fetch</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>MagicMock<span class="o">(</span><span class="nv">return_value</span><span class="o">=</span>mock_response<span class="o">)</span>
+
+<span class="w">        </span><span class="c1"># Patch the internal method</span>
+<span class="w">        </span>monkeypatch.setattr<span class="o">(</span>
+<span class="w">            </span>WeatherAPIClient,
+<span class="w">            </span><span class="s2">&quot;_fetch_data&quot;</span>,
+<span class="w">            </span>mock_fetch
+<span class="w">        </span><span class="o">)</span>
+
+<span class="w">        </span><span class="nv">client</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>WeatherAPIClient<span class="o">()</span>
+<span class="w">        </span><span class="c1"># This &#39;await&#39; will cause a TypeError</span>
+&gt;<span class="w">       </span><span class="nv">temperature</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>await<span class="w"> </span>client.get_current_temperature<span class="o">(</span><span class="s2">&quot;TestCity&quot;</span><span class="o">)</span>
+
+test_weather_client_v4_failure.py:22:
+_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_
+weather_client_v2.py:19:<span class="w"> </span><span class="k">in</span><span class="w"> </span>get_current_temperature
+<span class="w">    </span><span class="nv">temp</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>await<span class="w"> </span>self._fetch_data<span class="o">(</span>city<span class="o">)</span>
+E<span class="w">   </span>TypeError:<span class="w"> </span>object<span class="w"> </span>MagicMock<span class="w"> </span>can<span class="s1">&#39;t be used in &#39;</span>await<span class="err">&#39;</span><span class="w"> </span><span class="nv">expression</span>
+<span class="o">===========================</span><span class="w"> </span>short<span class="w"> </span><span class="nb">test</span><span class="w"> </span>summary<span class="w"> </span><span class="nv">info</span><span class="w"> </span><span class="o">============================</span>
+FAILED<span class="w"> </span>test_weather_client_v4_failure.py::test_with_standard_mock<span class="w"> </span>-<span class="w"> </span>TypeError...
+<span class="o">==============================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>failed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.12s<span class="w"> </span><span class="o">===============================</span>
 </code></pre></div>
 
-<p>The error message is crystal clear. The <code>await</code> keyword expects an awaitable object (like a coroutine), but we gave it a regular <code>Mock</code> instance.</p>
-<h3 id="the-solution-asyncmock">The Solution: <code>AsyncMock</code></h3>
-<p>Since Python 3.8, the standard <code>unittest.mock</code> library includes <code>AsyncMock</code>, which is designed specifically for this purpose. An <code>AsyncMock</code> instance is awaitable, and it provides special assertion methods like <code>assert_awaited_once</code>.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_data_processor.py</span>
+<h3 id="diagnostic-analysis-reading-the-failure_1">Diagnostic Analysis: Reading the Failure</h3>
+<p><strong>The complete output</strong>: The traceback clearly points to the <code>await</code> line and ends with <code>TypeError: object MagicMock can't be used in 'await' expression</code>.</p>
+<p><strong>Let's parse this section by section</strong>:</p>
+<ol>
+<li><strong>The summary line</strong>: <code>FAILED ... - TypeError: object MagicMock can't be used in 'await' expression</code>. This is incredibly descriptive. It tells us the exact type of error and what caused it.</li>
+<li><strong>The traceback</strong>: It shows the call chain: our test called <code>get_current_temperature</code>, which in turn tried to <code>await self._fetch_data(city)</code>.</li>
+<li><strong>The assertion introspection</strong>: Not applicable here as the error happened before the assertion.</li>
+<li><strong>The key line</strong>: <code>E   TypeError: object MagicMock can't be used in 'await' expression</code>.</li>
+</ol>
+<p><strong>Root cause identified</strong>: The <code>await</code> keyword requires an "awaitable" object. A coroutine is an awaitable. A standard <code>MagicMock</code> instance is not. When our code tried to <code>await</code> the mock object returned by the patched <code>_fetch_data</code>, Python raised a <code>TypeError</code>.</p>
+<p><strong>Why the current approach can't solve this</strong>: <code>MagicMock</code> is designed for synchronous code. It doesn't have the necessary internal machinery (<code>__await__</code> method) to be compatible with the <code>await</code> keyword.</p>
+<p><strong>What we need</strong>: A special kind of mock object that is itself awaitable.</p>
+<h3 id="the-solution-unittestmockasyncmock">The Solution: <code>unittest.mock.AsyncMock</code></h3>
+<p>Since Python 3.8, the standard <code>unittest.mock</code> library includes <code>AsyncMock</code>, which is designed specifically for this purpose. An <code>AsyncMock</code> behaves like a <code>MagicMock</code> but is also an awaitable.</p>
+<p>Let's fix our test using <code>AsyncMock</code>.</p>
+<p><strong>Before:</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_weather_client_v4_failure.py (problematic part)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">MagicMock</span>
+
+<span class="c1"># ...</span>
+<span class="n">mock_fetch</span> <span class="o">=</span> <span class="n">MagicMock</span><span class="p">(</span><span class="n">return_value</span><span class="o">=</span><span class="n">mock_response</span><span class="p">)</span>
+<span class="c1"># ...</span>
+</code></pre></div>
+
+<p><strong>After:</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_weather_client_v4_solution.py</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">patch</span><span class="p">,</span> <span class="n">AsyncMock</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.data_processor</span><span class="w"> </span><span class="kn">import</span> <span class="n">process_data_from_source</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">AsyncMock</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">weather_client_v2</span><span class="w"> </span><span class="kn">import</span> <span class="n">WeatherAPIClient</span><span class="p">,</span> <span class="n">ExternalServiceError</span>
 
 <span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">asyncio</span>
-<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_process_data_with_async_mock</span><span class="p">():</span>
-    <span class="c1"># Create an AsyncMock. It&#39;s awaitable!</span>
-    <span class="c1"># We set the return value of the *awaited* mock.</span>
-    <span class="n">mock_fetch</span> <span class="o">=</span> <span class="n">AsyncMock</span><span class="p">(</span>
-        <span class="n">return_value</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;source&quot;</span><span class="p">:</span> <span class="s2">&quot;mock&quot;</span><span class="p">,</span> <span class="s2">&quot;data&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">]}</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_get_current_temperature_mocked</span><span class="p">(</span><span class="n">monkeypatch</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests the public method with the internal fetcher mocked.&quot;&quot;&quot;</span>
+    <span class="c1"># AsyncMock returns an awaitable that resolves to this value.</span>
+    <span class="n">mock_response</span> <span class="o">=</span> <span class="mf">30.0</span>
+
+    <span class="c1"># Use AsyncMock instead of MagicMock</span>
+    <span class="n">mock_fetch</span> <span class="o">=</span> <span class="n">AsyncMock</span><span class="p">(</span><span class="n">return_value</span><span class="o">=</span><span class="n">mock_response</span><span class="p">)</span>
+
+    <span class="n">monkeypatch</span><span class="o">.</span><span class="n">setattr</span><span class="p">(</span><span class="n">WeatherAPIClient</span><span class="p">,</span> <span class="s2">&quot;_fetch_data&quot;</span><span class="p">,</span> <span class="n">mock_fetch</span><span class="p">)</span>
+
+    <span class="n">client</span> <span class="o">=</span> <span class="n">WeatherAPIClient</span><span class="p">()</span>
+    <span class="n">temperature</span> <span class="o">=</span> <span class="k">await</span> <span class="n">client</span><span class="o">.</span><span class="n">get_current_temperature</span><span class="p">(</span><span class="s2">&quot;TestCity&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Assert our logic works</span>
+    <span class="k">assert</span> <span class="n">temperature</span> <span class="o">==</span> <span class="n">mock_response</span>
+
+    <span class="c1"># Assert the mock was called correctly</span>
+    <span class="n">mock_fetch</span><span class="o">.</span><span class="n">assert_awaited_once_with</span><span class="p">(</span><span class="s2">&quot;TestCity&quot;</span><span class="p">)</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">asyncio</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_get_current_temperature_mocked_error</span><span class="p">(</span><span class="n">monkeypatch</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests that exceptions from the fetcher are propagated.&quot;&quot;&quot;</span>
+    <span class="c1"># We can also mock side effects, like raising exceptions.</span>
+    <span class="n">mock_fetch</span> <span class="o">=</span> <span class="n">AsyncMock</span><span class="p">(</span><span class="n">side_effect</span><span class="o">=</span><span class="n">ExternalServiceError</span><span class="p">(</span><span class="s2">&quot;Network down&quot;</span><span class="p">))</span>
+    <span class="n">monkeypatch</span><span class="o">.</span><span class="n">setattr</span><span class="p">(</span><span class="n">WeatherAPIClient</span><span class="p">,</span> <span class="s2">&quot;_fetch_data&quot;</span><span class="p">,</span> <span class="n">mock_fetch</span><span class="p">)</span>
+
+    <span class="n">client</span> <span class="o">=</span> <span class="n">WeatherAPIClient</span><span class="p">()</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">ExternalServiceError</span><span class="p">,</span> <span class="n">match</span><span class="o">=</span><span class="s2">&quot;Network down&quot;</span><span class="p">):</span>
+        <span class="k">await</span> <span class="n">client</span><span class="o">.</span><span class="n">get_current_temperature</span><span class="p">(</span><span class="s2">&quot;TestCity&quot;</span><span class="p">)</span>
+
+    <span class="n">mock_fetch</span><span class="o">.</span><span class="n">assert_awaited_once_with</span><span class="p">(</span><span class="s2">&quot;TestCity&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<p>Let's run the corrected tests.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>test_weather_client_v4_solution.py
+<span class="o">=============================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==============================</span>
+...
+collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
+
+test_weather_client_v4_solution.py::test_get_current_temperature_mocked
+Fetching<span class="w"> </span>temperature<span class="w"> </span><span class="k">for</span><span class="w"> </span>TestCity...
+Temperature<span class="w"> </span><span class="k">for</span><span class="w"> </span>TestCity<span class="w"> </span>is<span class="w"> </span><span class="m">30</span>.0°C
+PASSED<span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+
+test_weather_client_v4_solution.py::test_get_current_temperature_mocked_error
+Fetching<span class="w"> </span>temperature<span class="w"> </span><span class="k">for</span><span class="w"> </span>TestCity...
+PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">==============================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.05s<span class="w"> </span><span class="o">===============================</span>
+</code></pre></div>
+
+<p>The tests now pass, and they are lightning-fast! We have successfully isolated our <code>get_current_temperature</code> method from its I/O dependency.</p>
+<p>Notice the new assertion methods provided by <code>AsyncMock</code>:
+-   <code>mock.assert_awaited_once_with(...)</code>: Checks that the mock was awaited exactly once with the specified arguments.
+-   <code>mock.await_count</code>: An attribute to check how many times the mock was awaited.
+-   <code>mock.await_args</code>: The arguments for the last await.</p>
+<p>This gives us full power to test the interactions with our asynchronous dependencies.</p>
+<h2 id="common-pitfalls-in-async-testing">Common Pitfalls in Async Testing</h2>
+<p>Asynchronous code introduces new patterns and, consequently, new ways for things to go wrong. Here are some of the most common failure modes you'll encounter when testing async code with pytest.</p>
+<h3 id="common-failure-modes-and-their-signatures">Common Failure Modes and Their Signatures</h3>
+<h4 id="symptom-runtimewarning-coroutine-was-never-awaited">Symptom: <code>RuntimeWarning: coroutine '...' was never awaited</code></h4>
+<p>This is the classic mistake when starting with <code>asyncio</code>.</p>
+<p><strong>Pytest output pattern</strong>:</p>
+<div class="codehilite"><pre><span></span><code><span class="o">===============================</span><span class="w"> </span>warnings<span class="w"> </span><span class="nv">summary</span><span class="w"> </span><span class="o">===============================</span>
+test_my_async.py::test_forgot_marker
+<span class="w">  </span>/path/to/test_my_async.py:5:<span class="w"> </span>PytestRemovedIn8Warning:<span class="w"> </span>Defining<span class="w"> </span><span class="s1">&#39;async def&#39;</span><span class="w"> </span>tests<span class="w"> </span>without<span class="w"> </span><span class="s1">&#39;asyncio&#39;</span><span class="w"> </span>marker<span class="w"> </span>is<span class="w"> </span>deprecated.
+<span class="w">    </span>async<span class="w"> </span>def<span class="w"> </span>test_forgot_marker<span class="o">()</span>:
+</code></pre></div>
+
+<p>In older versions or different contexts, you might see:</p>
+<div class="codehilite"><pre><span></span><code><span class="n">RuntimeWarning</span><span class="o">:</span><span class="w"> </span><span class="n">coroutine</span><span class="w"> </span><span class="s1">&#39;test_forgot_marker&#39;</span><span class="w"> </span><span class="n">was</span><span class="w"> </span><span class="n">never</span><span class="w"> </span><span class="n">awaited</span>
+</code></pre></div>
+
+<p><strong>Diagnostic clues</strong>:
+-   The test "passes" but seems to do nothing.
+-   A <code>PytestRemovedIn8Warning</code> or <code>RuntimeWarning</code> is present in the output.
+-   Breakpoints inside the test are never hit.</p>
+<p><strong>Root cause</strong>: You have defined an <code>async def</code> test but have forgotten to add the <code>@pytest.mark.asyncio</code> marker. Pytest calls the function, gets a coroutine object back, and then discards it without running it.</p>
+<p><strong>Solution</strong>: Add <code>@pytest.mark.asyncio</code> to the test function.</p>
+<h4 id="symptom-typeerror-object-magicmock-cant-be-used-in-await-expression">Symptom: <code>TypeError: object MagicMock can't be used in 'await' expression</code></h4>
+<p>We just saw this one in detail. It's what happens when you mix synchronous mocks with asynchronous code.</p>
+<p><strong>Pytest output pattern</strong>:</p>
+<div class="codehilite"><pre><span></span><code>_________________________<span class="w"> </span>test_with_standard_mock<span class="w"> </span>__________________________
+...
+E<span class="w">   </span>TypeError:<span class="w"> </span>object<span class="w"> </span>MagicMock<span class="w"> </span>can<span class="s1">&#39;t be used in &#39;</span>await<span class="err">&#39;</span><span class="w"> </span>expression
+</code></pre></div>
+
+<p><strong>Diagnostic clues</strong>:
+-   The traceback points to a line with an <code>await</code> keyword.
+-   The object being awaited is a <code>MagicMock</code> or <code>Mock</code> instance.</p>
+<p><strong>Root cause</strong>: You are trying to <code>await</code> a standard <code>unittest.mock.MagicMock</code> object, which is not an awaitable.</p>
+<p><strong>Solution</strong>: Replace <code>MagicMock</code> with <code>unittest.mock.AsyncMock</code>.</p>
+<h4 id="symptom-calling-a-regular-function-with-await">Symptom: Calling a regular function with <code>await</code></h4>
+<p>This is the reverse of the previous problem.</p>
+<p><strong>Pytest output pattern</strong>:</p>
+<div class="codehilite"><pre><span></span><code>____________________________<span class="w"> </span>test_awaiting_sync<span class="w"> </span>____________________________
+...
+<span class="w">    </span>async<span class="w"> </span>def<span class="w"> </span>my_test<span class="o">()</span>:
+&gt;<span class="w">       </span>await<span class="w"> </span>my_sync_function<span class="o">()</span>
+E<span class="w">       </span>TypeError:<span class="w"> </span>object<span class="w"> </span>NoneType<span class="w"> </span>can<span class="s1">&#39;t be used in &#39;</span>await<span class="err">&#39;</span><span class="w"> </span>expression
+</code></pre></div>
+
+<p><em>(Note: The type might be different from <code>NoneType</code> depending on what the sync function returns.)</em></p>
+<p><strong>Diagnostic clues</strong>:
+-   A <code>TypeError</code> occurs on an <code>await</code> line.
+-   The function being awaited was defined with <code>def</code>, not <code>async def</code>.</p>
+<p><strong>Root cause</strong>: The <code>await</code> keyword can only be used with awaitable objects (like coroutines). You are trying to use it on the return value of a regular synchronous function.</p>
+<p><strong>Solution</strong>: Ensure you only <code>await</code> functions defined with <code>async def</code>. If you need to call a synchronous function that is blocking, you may need to run it in a separate thread pool using <code>asyncio.to_thread</code> (Python 3.9+) to avoid blocking the event loop.</p>
+<h2 id="testing-concurrent-code">Testing Concurrent Code</h2>
+<h2 id="iteration-4-testing-asynciogather">Iteration 4: Testing <code>asyncio.gather</code></h2>
+<p>A major benefit of <code>asyncio</code> is running multiple I/O-bound tasks concurrently. A common pattern is to use <code>asyncio.gather</code> to schedule and await multiple coroutines at once.</p>
+<p>Let's add a new method to our <code>WeatherAPIClient</code> that fetches temperatures for several cities concurrently.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># weather_client_v3.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">ExternalServiceError</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+    <span class="k">pass</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">WeatherAPIClient</span><span class="p">:</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">_fetch_data</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">city</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+        <span class="c1"># This remains our &quot;external dependency&quot;</span>
+        <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span> <span class="c1"># Reduced sleep for faster example</span>
+        <span class="k">if</span> <span class="n">city</span> <span class="o">==</span> <span class="s2">&quot;error&quot;</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">ExternalServiceError</span><span class="p">(</span><span class="s2">&quot;API request failed&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="mf">20.0</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">city</span><span class="p">)</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_current_temperature</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">city</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+        <span class="k">return</span> <span class="k">await</span> <span class="bp">self</span><span class="o">.</span><span class="n">_fetch_data</span><span class="p">(</span><span class="n">city</span><span class="p">)</span>
+
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">get_temperatures_for_cities</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">cities</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Fetches temperatures for multiple cities concurrently.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">tasks</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">get_current_temperature</span><span class="p">(</span><span class="n">city</span><span class="p">)</span> <span class="k">for</span> <span class="n">city</span> <span class="ow">in</span> <span class="n">cities</span><span class="p">]</span>
+        <span class="n">results</span> <span class="o">=</span> <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="o">*</span><span class="n">tasks</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">dict</span><span class="p">(</span><span class="nb">zip</span><span class="p">(</span><span class="n">cities</span><span class="p">,</span> <span class="n">results</span><span class="p">))</span>
+</code></pre></div>
+
+<p>How do we test <code>get_temperatures_for_cities</code>? We want to verify two things:
+1.  It returns the correct dictionary of cities and temperatures.
+2.  It calls <code>get_current_temperature</code> for each city.</p>
+<p>Mocking is essential here. We don't want to wait for multiple <code>asyncio.sleep</code> calls. We also need our mock to return different values for different inputs.</p>
+<h3 id="the-technique-asyncmock-with-side_effect">The Technique: <code>AsyncMock</code> with <code>side_effect</code></h3>
+<p>The <code>side_effect</code> attribute of a mock is perfect for this. We can assign it a function (or a dictionary) that determines the return value based on the arguments the mock was called with.</p>
+<p>Let's write a test for our new concurrent method.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_weather_client_v5.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">AsyncMock</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">weather_client_v3</span><span class="w"> </span><span class="kn">import</span> <span class="n">WeatherAPIClient</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">asyncio</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_get_temperatures_for_cities_concurrently</span><span class="p">(</span><span class="n">monkeypatch</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests that the concurrent fetching method works correctly.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Define a mapping of inputs to desired outputs for our mock</span>
+    <span class="n">mock_responses</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;London&quot;</span><span class="p">:</span> <span class="mf">25.0</span><span class="p">,</span>
+        <span class="s2">&quot;Tokyo&quot;</span><span class="p">:</span> <span class="mf">28.0</span><span class="p">,</span>
+        <span class="s2">&quot;Cairo&quot;</span><span class="p">:</span> <span class="mf">35.0</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="c1"># The side_effect function will be called with the same args as the mock</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">mock_get_temp</span><span class="p">(</span><span class="n">city</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">mock_responses</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">city</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">)</span>
+
+    <span class="c1"># We patch the method that is called concurrently</span>
+    <span class="n">monkeypatch</span><span class="o">.</span><span class="n">setattr</span><span class="p">(</span>
+        <span class="n">WeatherAPIClient</span><span class="p">,</span>
+        <span class="s2">&quot;get_current_temperature&quot;</span><span class="p">,</span>
+        <span class="n">AsyncMock</span><span class="p">(</span><span class="n">side_effect</span><span class="o">=</span><span class="n">mock_get_temp</span><span class="p">)</span>
     <span class="p">)</span>
 
-    <span class="c1"># Patch the function in the module where it is *used*.</span>
-    <span class="k">with</span> <span class="n">patch</span><span class="p">(</span><span class="s2">&quot;src.data_processor.fetch_data&quot;</span><span class="p">,</span> <span class="n">new</span><span class="o">=</span><span class="n">mock_fetch</span><span class="p">):</span>
-        <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">process_data_from_source</span><span class="p">(</span><span class="s2">&quot;any_source&quot;</span><span class="p">)</span>
-        <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="s2">&quot;Processed data for mock with 2 items.&quot;</span>
+    <span class="n">client</span> <span class="o">=</span> <span class="n">WeatherAPIClient</span><span class="p">()</span>
+    <span class="n">cities_to_test</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;London&quot;</span><span class="p">,</span> <span class="s2">&quot;Tokyo&quot;</span><span class="p">,</span> <span class="s2">&quot;Cairo&quot;</span><span class="p">]</span>
 
-    <span class="c1"># You can assert that the async mock was awaited.</span>
-    <span class="n">mock_fetch</span><span class="o">.</span><span class="n">assert_awaited_once</span><span class="p">()</span>
-    <span class="n">mock_fetch</span><span class="o">.</span><span class="n">assert_awaited_once_with</span><span class="p">(</span><span class="s2">&quot;any_source&quot;</span><span class="p">)</span>
+    <span class="c1"># Run the method under test</span>
+    <span class="n">temperatures</span> <span class="o">=</span> <span class="k">await</span> <span class="n">client</span><span class="o">.</span><span class="n">get_temperatures_for_cities</span><span class="p">(</span><span class="n">cities_to_test</span><span class="p">)</span>
+
+    <span class="c1"># Verify the final result</span>
+    <span class="n">expected_temperatures</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s2">&quot;London&quot;</span><span class="p">:</span> <span class="mf">25.0</span><span class="p">,</span>
+        <span class="s2">&quot;Tokyo&quot;</span><span class="p">:</span> <span class="mf">28.0</span><span class="p">,</span>
+        <span class="s2">&quot;Cairo&quot;</span><span class="p">:</span> <span class="mf">35.0</span><span class="p">,</span>
+    <span class="p">}</span>
+    <span class="k">assert</span> <span class="n">temperatures</span> <span class="o">==</span> <span class="n">expected_temperatures</span>
+
+    <span class="c1"># Verify the interactions with the mock</span>
+    <span class="n">mocked_method</span> <span class="o">=</span> <span class="n">WeatherAPIClient</span><span class="o">.</span><span class="n">get_current_temperature</span>
+    <span class="k">assert</span> <span class="n">mocked_method</span><span class="o">.</span><span class="n">await_count</span> <span class="o">==</span> <span class="mi">3</span>
+
+    <span class="c1"># Check that it was called with all the cities we expected</span>
+    <span class="c1"># Note: asyncio.gather does not guarantee call order, so we check unsorted.</span>
+    <span class="n">called_cities</span> <span class="o">=</span> <span class="p">[</span><span class="n">call</span><span class="o">.</span><span class="n">args</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">call</span> <span class="ow">in</span> <span class="n">mocked_method</span><span class="o">.</span><span class="n">await_args_list</span><span class="p">]</span>
+    <span class="k">assert</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">called_cities</span><span class="p">)</span> <span class="o">==</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">cities_to_test</span><span class="p">)</span>
 </code></pre></div>
 
-<p>This test now passes. By replacing <code>Mock</code> with <code>AsyncMock</code>, we provide an object that satisfies the <code>await</code> expression, allowing our test to run correctly while still isolating our function from the real <code>fetch_data</code> dependency.</p>
-<h3 id="autospeccing-with-create_autospec">Autospeccing with <code>create_autospec</code></h3>
-<p>A best practice when patching is to use <code>autospeccing</code> to ensure your mock has the same signature as the original object. This works perfectly with async functions too. <code>patch</code> will automatically use an <code>AsyncMock</code> if the target it's replacing is an <code>async</code> function.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_data_processor.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">patch</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.data_processor</span><span class="w"> </span><span class="kn">import</span> <span class="n">process_data_from_source</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.data_fetcher</span><span class="w"> </span><span class="kn">import</span> <span class="n">fetch_data</span> <span class="c1"># Import for autospeccing</span>
+<p>Let's run this test.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>test_weather_client_v5.py
+<span class="o">=============================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==============================</span>
+...
+collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
 
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">asyncio</span>
-<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_process_data_with_autospec</span><span class="p">():</span>
-    <span class="c1"># Using autospec=True is often the best approach.</span>
-    <span class="c1"># It automatically creates an awaitable mock because fetch_data is an async def.</span>
-    <span class="k">with</span> <span class="n">patch</span><span class="p">(</span><span class="s2">&quot;src.data_processor.fetch_data&quot;</span><span class="p">,</span> <span class="n">autospec</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">as</span> <span class="n">mock_fetch</span><span class="p">:</span>
-        <span class="c1"># The return value must be configured on the mock</span>
-        <span class="n">mock_fetch</span><span class="o">.</span><span class="n">return_value</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;source&quot;</span><span class="p">:</span> <span class="s2">&quot;mock_spec&quot;</span><span class="p">,</span> <span class="s2">&quot;data&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">]}</span>
+test_weather_client_v5.py::test_get_temperatures_for_cities_concurrently<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
 
-        <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">process_data_from_source</span><span class="p">(</span><span class="s2">&quot;spec_source&quot;</span><span class="p">)</span>
-        <span class="k">assert</span> <span class="n">result</span> <span class="o">==</span> <span class="s2">&quot;Processed data for mock_spec with 3 items.&quot;</span>
-
-    <span class="n">mock_fetch</span><span class="o">.</span><span class="n">assert_awaited_once_with</span><span class="p">(</span><span class="s2">&quot;spec_source&quot;</span><span class="p">)</span>
+<span class="o">==============================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.03s<span class="w"> </span><span class="o">===============================</span>
 </code></pre></div>
 
-<p>Using <code>autospec=True</code> is highly recommended. It prevents you from mocking a function with the wrong arguments, which can hide bugs. If the signature of <code>fetch_data</code> changes, this test will fail, alerting you to the necessary update.</p>
-<h2 id="common-pitfalls-in-async-testing">Common Pitfalls in Async Testing</h2>
-<h2 id="common-pitfalls-in-async-testing_1">Common Pitfalls in Async Testing</h2>
-<p>Asynchronous programming introduces new kinds of errors. Being able to recognize them in your test failures will save you a lot of debugging time.</p>
-<h3 id="pitfall-1-forgetting-await">Pitfall 1: Forgetting <code>await</code></h3>
-<p>This is by far the most common mistake. You call a coroutine function but forget to <code>await</code> the result.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_pitfalls.py</span>
+<p>The test passes instantly. By mocking the coroutine called inside <code>asyncio.gather</code>, we can test the orchestrating logic of <code>get_temperatures_for_cities</code> without performing any real I/O or waiting. The <code>side_effect</code> gives us precise control over the behavior of our dependency, allowing us to simulate complex scenarios with ease.</p>
+<h3 id="the-journey-from-problem-to-solution">The Journey: From Problem to Solution</h3>
+<table>
+<thead>
+<tr>
+<th>Iteration</th>
+<th>Failure Mode / Problem</th>
+<th>Technique Applied</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td><code>RuntimeWarning: coroutine was never awaited</code></td>
+<td>None (Naive <code>async def</code> test)</td>
+<td>Test does not run, gives a warning.</td>
+</tr>
+<tr>
+<td>1</td>
+<td>Pytest doesn't have an asyncio event loop.</td>
+<td><code>pip install pytest-asyncio</code>, <code>@pytest.mark.asyncio</code></td>
+<td>Async tests run correctly.</td>
+</tr>
+<tr>
+<td>2</td>
+<td>How to handle async setup/teardown?</td>
+<td><code>async def</code> fixtures</td>
+<td>Fixtures can perform async operations seamlessly.</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>TypeError</code> when mocking coroutines with <code>MagicMock</code>.</td>
+<td><code>unittest.mock.AsyncMock</code></td>
+<td>Coroutines can be mocked, enabling fast unit tests.</td>
+</tr>
+<tr>
+<td>4</td>
+<td>How to test concurrent <code>asyncio.gather</code> calls?</td>
+<td><code>AsyncMock(side_effect=...)</code></td>
+<td>Logic that orchestrates multiple coroutines can be tested reliably.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="final-implementation">Final Implementation</h3>
+<p>Here is the final, robust set of tests for our <code>WeatherAPIClient</code>, incorporating all the techniques we've learned.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_weather_client_final.py</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.data_fetcher</span><span class="w"> </span><span class="kn">import</span> <span class="n">fetch_data</span>
-
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">asyncio</span>
-<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_forgot_await</span><span class="p">():</span>
-    <span class="c1"># PITFALL: We called fetch_data but didn&#39;t await it.</span>
-    <span class="n">result_coro</span> <span class="o">=</span> <span class="n">fetch_data</span><span class="p">(</span><span class="s2">&quot;some_source&quot;</span><span class="p">)</span>
-
-    <span class="c1"># This assertion is on the coroutine object, not its result!</span>
-    <span class="c1"># This test will fail, but for a confusing reason.</span>
-    <span class="k">assert</span> <span class="k">await</span> <span class="n">result_coro</span> <span class="o">==</span> <span class="p">{</span><span class="s2">&quot;source&quot;</span><span class="p">:</span> <span class="s2">&quot;some_source&quot;</span><span class="p">,</span> <span class="s2">&quot;data&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">]}</span>
-    <span class="c1"># If the assertion was `assert result_coro is not None`, the test would</span>
-    <span class="c1"># pass silently with a RuntimeWarning, which is even worse!</span>
-</code></pre></div>
-
-<p>When you forget to <code>await</code> a call, you get a coroutine object back instead of the function's result. Your test might fail on a later assertion, or it might even pass if you're not careful, while printing a <code>RuntimeWarning: coroutine '...' was never awaited</code>.</p>
-<p><strong>The Fix:</strong> Always be vigilant about <code>await</code>ing any call to an <code>async def</code> function. If you see that warning, it's a red flag that your test isn't actually executing the code you think it is.</p>
-<h3 id="pitfall-2-using-blocking-io-in-async-tests">Pitfall 2: Using Blocking I/O in Async Tests</h3>
-<p>The purpose of <code>asyncio</code> is to prevent the program from blocking on I/O. If you use a blocking call like <code>time.sleep()</code> instead of <code>asyncio.sleep()</code>, you defeat the purpose and can cause problems for the event loop.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_pitfalls.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">AsyncMock</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">weather_client_v3</span><span class="w"> </span><span class="kn">import</span> <span class="n">WeatherAPIClient</span><span class="p">,</span> <span class="n">ExternalServiceError</span>
 
+<span class="c1"># An async fixture for our client</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">client</span><span class="p">():</span>
+    <span class="c1"># Simulate async setup if needed</span>
+    <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.01</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">WeatherAPIClient</span><span class="p">()</span>
+
+<span class="c1"># Test for the single-city method (mocked)</span>
 <span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">asyncio</span>
-<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_blocking_sleep</span><span class="p">():</span>
-    <span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">monotonic</span><span class="p">()</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_get_current_temperature_mocked</span><span class="p">(</span><span class="n">monkeypatch</span><span class="p">):</span>
+    <span class="n">mock_fetch</span> <span class="o">=</span> <span class="n">AsyncMock</span><span class="p">(</span><span class="n">return_value</span><span class="o">=</span><span class="mf">30.0</span><span class="p">)</span>
+    <span class="n">monkeypatch</span><span class="o">.</span><span class="n">setattr</span><span class="p">(</span><span class="n">WeatherAPIClient</span><span class="p">,</span> <span class="s2">&quot;_fetch_data&quot;</span><span class="p">,</span> <span class="n">mock_fetch</span><span class="p">)</span>
 
-    <span class="c1"># PITFALL: Using time.sleep() blocks the entire event loop.</span>
-    <span class="c1"># No other async tasks could run during this second.</span>
-    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">client</span> <span class="o">=</span> <span class="n">WeatherAPIClient</span><span class="p">()</span>
+    <span class="n">temperature</span> <span class="o">=</span> <span class="k">await</span> <span class="n">client</span><span class="o">.</span><span class="n">get_current_temperature</span><span class="p">(</span><span class="s2">&quot;TestCity&quot;</span><span class="p">)</span>
 
-    <span class="c1"># This is the correct, non-blocking way.</span>
-    <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">temperature</span> <span class="o">==</span> <span class="mf">30.0</span>
+    <span class="n">mock_fetch</span><span class="o">.</span><span class="n">assert_awaited_once_with</span><span class="p">(</span><span class="s2">&quot;TestCity&quot;</span><span class="p">)</span>
 
-    <span class="n">duration</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">monotonic</span><span class="p">()</span> <span class="o">-</span> <span class="n">start_time</span>
-    <span class="k">assert</span> <span class="n">duration</span> <span class="o">&gt;</span> <span class="mf">1.1</span>
-</code></pre></div>
-
-<p>While this test will pass, using <code>time.sleep()</code> is an anti-pattern in async code. In a simple test, it's less harmful, but in a complex application, it can grind everything to a halt. Always use the <code>async</code> versions of libraries when working in an async context (e.g., <code>httpx</code> instead of <code>requests</code>, <code>asyncpg</code> instead of <code>psycopg2</code>).</p>
-<h3 id="pitfall-3-manually-managing-the-event-loop">Pitfall 3: Manually Managing the Event Loop</h3>
-<p><code>pytest-asyncio</code> provides an event loop for you. In almost all cases, you should not try to manage it yourself. Code like <code>loop = asyncio.get_event_loop()</code> or <code>asyncio.run()</code> inside a test is usually a sign that something is wrong.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_pitfalls.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.data_fetcher</span><span class="w"> </span><span class="kn">import</span> <span class="n">fetch_data</span>
-
+<span class="c1"># Test for the concurrent method (mocked)</span>
 <span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">asyncio</span>
-<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_manual_loop_management_is_unnecessary</span><span class="p">():</span>
-    <span class="c1"># PITFALL: You don&#39;t need to do this.</span>
-    <span class="c1"># pytest-asyncio provides the loop.</span>
-    <span class="c1"># In some complex cases this can even cause errors.</span>
-    <span class="n">loop</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">get_running_loop</span><span class="p">()</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_get_temperatures_for_cities_mocked</span><span class="p">(</span><span class="n">monkeypatch</span><span class="p">):</span>
+    <span class="n">mock_responses</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;London&quot;</span><span class="p">:</span> <span class="mf">25.0</span><span class="p">,</span> <span class="s2">&quot;Tokyo&quot;</span><span class="p">:</span> <span class="mf">28.0</span><span class="p">}</span>
+    <span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">mock_get_temp</span><span class="p">(</span><span class="n">city</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">mock_responses</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">city</span><span class="p">)</span>
 
-    <span class="c1"># The test body already runs inside the loop context.</span>
-    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">fetch_data</span><span class="p">(</span><span class="s2">&quot;source&quot;</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">result</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-</code></pre></div>
+    <span class="n">monkeypatch</span><span class="o">.</span><span class="n">setattr</span><span class="p">(</span>
+        <span class="n">WeatherAPIClient</span><span class="p">,</span>
+        <span class="s2">&quot;get_current_temperature&quot;</span><span class="p">,</span>
+        <span class="n">AsyncMock</span><span class="p">(</span><span class="n">side_effect</span><span class="o">=</span><span class="n">mock_get_temp</span><span class="p">)</span>
+    <span class="p">)</span>
 
-<p><strong>The Fix:</strong> Trust the plugin. Write your test code with <code>async def</code> and <code>await</code>, and let <code>pytest-asyncio</code> handle the loop setup and teardown. The only time you might need to interact with the loop is for advanced scheduling tasks, which is rare for most application testing.</p>
-<h2 id="testing-concurrent-code">Testing Concurrent Code</h2>
-<h2 id="testing-concurrent-code_1">Testing Concurrent Code</h2>
-<p>The real power of <code>asyncio</code> shines when you run multiple I/O-bound tasks concurrently. A common pattern is to use <code>asyncio.gather()</code> to start several tasks and wait for them all to complete. Testing this is a great way to combine our knowledge of async tests and mocking.</p>
-<p>Let's define a function that fetches data from multiple sources concurrently.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># src/concurrent_fetcher.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">.data_fetcher</span><span class="w"> </span><span class="kn">import</span> <span class="n">fetch_data</span>
+    <span class="n">client</span> <span class="o">=</span> <span class="n">WeatherAPIClient</span><span class="p">()</span>
+    <span class="n">cities</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;London&quot;</span><span class="p">,</span> <span class="s2">&quot;Tokyo&quot;</span><span class="p">]</span>
+    <span class="n">temperatures</span> <span class="o">=</span> <span class="k">await</span> <span class="n">client</span><span class="o">.</span><span class="n">get_temperatures_for_cities</span><span class="p">(</span><span class="n">cities</span><span class="p">)</span>
 
-<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">fetch_all_data</span><span class="p">(</span><span class="n">sources</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fetches data from multiple sources concurrently.&quot;&quot;&quot;</span>
-    <span class="n">tasks</span> <span class="o">=</span> <span class="p">[]</span>
-    <span class="k">for</span> <span class="n">source</span> <span class="ow">in</span> <span class="n">sources</span><span class="p">:</span>
-        <span class="c1"># Create a task for each coroutine. This schedules them on the event loop.</span>
-        <span class="n">task</span> <span class="o">=</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">create_task</span><span class="p">(</span><span class="n">fetch_data</span><span class="p">(</span><span class="n">source</span><span class="p">))</span>
-        <span class="n">tasks</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">task</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">temperatures</span> <span class="o">==</span> <span class="p">{</span><span class="s2">&quot;London&quot;</span><span class="p">:</span> <span class="mf">25.0</span><span class="p">,</span> <span class="s2">&quot;Tokyo&quot;</span><span class="p">:</span> <span class="mf">28.0</span><span class="p">}</span>
 
-    <span class="c1"># asyncio.gather() waits for all tasks in the sequence to complete.</span>
-    <span class="n">results</span> <span class="o">=</span> <span class="k">await</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">gather</span><span class="p">(</span><span class="o">*</span><span class="n">tasks</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">results</span>
-</code></pre></div>
+    <span class="n">mocked_method</span> <span class="o">=</span> <span class="n">WeatherAPIClient</span><span class="o">.</span><span class="n">get_current_temperature</span>
+    <span class="k">assert</span> <span class="n">mocked_method</span><span class="o">.</span><span class="n">await_count</span> <span class="o">==</span> <span class="mi">2</span>
 
-<p>This function takes a list of sources, creates a "task" for each <code>fetch_data</code> call, and then uses <code>asyncio.gather</code> to run them all at the same time. If each <code>fetch_data</code> call takes 1 second, fetching three sources will still take only about 1 second, not 3.</p>
-<p>How do we test this? We need to mock <code>fetch_data</code> in a way that allows us to provide different return values for different calls. The <code>side_effect</code> attribute of a mock is perfect for this.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_concurrent_fetcher.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">patch</span><span class="p">,</span> <span class="n">AsyncMock</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.concurrent_fetcher</span><span class="w"> </span><span class="kn">import</span> <span class="n">fetch_all_data</span>
-
+<span class="c1"># An integration test (unmocked) using the fixture</span>
 <span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">asyncio</span>
-<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_fetch_all_data</span><span class="p">():</span>
-    <span class="n">sources</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;API_1&quot;</span><span class="p">,</span> <span class="s2">&quot;API_2&quot;</span><span class="p">,</span> <span class="s2">&quot;DB_1&quot;</span><span class="p">]</span>
-
-    <span class="c1"># We can use side_effect to return different values on each await.</span>
-    <span class="n">mock_results</span> <span class="o">=</span> <span class="p">[</span>
-        <span class="p">{</span><span class="s2">&quot;source&quot;</span><span class="p">:</span> <span class="s2">&quot;API_1&quot;</span><span class="p">,</span> <span class="s2">&quot;data&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">1</span><span class="p">]},</span>
-        <span class="p">{</span><span class="s2">&quot;source&quot;</span><span class="p">:</span> <span class="s2">&quot;API_2&quot;</span><span class="p">,</span> <span class="s2">&quot;data&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">]},</span>
-        <span class="p">{</span><span class="s2">&quot;source&quot;</span><span class="p">:</span> <span class="s2">&quot;DB_1&quot;</span><span class="p">,</span> <span class="s2">&quot;data&quot;</span><span class="p">:</span> <span class="p">[</span><span class="mi">4</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">6</span><span class="p">]},</span>
-    <span class="p">]</span>
-
-    <span class="c1"># Patch the function where it is used.</span>
-    <span class="k">with</span> <span class="n">patch</span><span class="p">(</span><span class="s2">&quot;src.concurrent_fetcher.fetch_data&quot;</span><span class="p">,</span> <span class="n">new</span><span class="o">=</span><span class="n">AsyncMock</span><span class="p">())</span> <span class="k">as</span> <span class="n">mock_fetch</span><span class="p">:</span>
-        <span class="n">mock_fetch</span><span class="o">.</span><span class="n">side_effect</span> <span class="o">=</span> <span class="n">mock_results</span>
-
-        <span class="c1"># Run the function under test</span>
-        <span class="n">results</span> <span class="o">=</span> <span class="k">await</span> <span class="n">fetch_all_data</span><span class="p">(</span><span class="n">sources</span><span class="p">)</span>
-
-    <span class="c1"># Assert that the mock was awaited for each source</span>
-    <span class="k">assert</span> <span class="n">mock_fetch</span><span class="o">.</span><span class="n">await_count</span> <span class="o">==</span> <span class="mi">3</span>
-    <span class="n">mock_fetch</span><span class="o">.</span><span class="n">assert_any_await</span><span class="p">(</span><span class="s2">&quot;API_1&quot;</span><span class="p">)</span>
-    <span class="n">mock_fetch</span><span class="o">.</span><span class="n">assert_any_await</span><span class="p">(</span><span class="s2">&quot;API_2&quot;</span><span class="p">)</span>
-    <span class="n">mock_fetch</span><span class="o">.</span><span class="n">assert_any_await</span><span class="p">(</span><span class="s2">&quot;DB_1&quot;</span><span class="p">)</span>
-
-    <span class="c1"># Assert that the results from gather are correct</span>
-    <span class="k">assert</span> <span class="n">results</span> <span class="o">==</span> <span class="n">mock_results</span>
+<span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">test_get_current_temperature_integration</span><span class="p">(</span><span class="n">client</span><span class="p">:</span> <span class="n">WeatherAPIClient</span><span class="p">):</span>
+    <span class="c1"># This test performs the actual asyncio.sleep</span>
+    <span class="n">temperature</span> <span class="o">=</span> <span class="k">await</span> <span class="n">client</span><span class="o">.</span><span class="n">get_current_temperature</span><span class="p">(</span><span class="s2">&quot;London&quot;</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">temperature</span> <span class="o">==</span> <span class="mf">26.0</span> <span class="c1"># 20.0 + len(&quot;London&quot;)</span>
 </code></pre></div>
 
-<p>This test effectively validates the logic of <code>fetch_all_data</code>:
-1.  We patch the dependency, <code>fetch_data</code>, with an <code>AsyncMock</code>.
-2.  We use <code>side_effect</code> to provide an iterable of return values. The mock will return the next item from the iterable each time it is awaited.
-3.  We call our concurrent function.
-4.  We assert that the mock was awaited three times, once for each source. <code>assert_any_await</code> is useful here because <code>gather</code> does not guarantee the execution order.
-5.  Finally, we check that the aggregated result is what we expect.</p>
-<p>This pattern gives you a powerful way to test the orchestration logic of your concurrent code without performing any actual I/O.</p>
+<h3 id="lessons-learned">Lessons Learned</h3>
+<p>Testing asynchronous code in Python might seem daunting, but the principles are a direct extension of synchronous testing, with a few key additions:</p>
+<ol>
+<li><strong>Embrace the Plugin</strong>: Don't fight the framework. <code>pytest-asyncio</code> is the standard and solves the core problem of integrating <code>asyncio</code>'s event loop with pytest's runner. Use <code>@pytest.mark.asyncio</code> for all your async tests.</li>
+<li><strong>Async Fixtures are Free</strong>: <code>pytest-asyncio</code> makes <code>async def</code> fixtures work just like regular ones, allowing you to build clean, asynchronous test setups.</li>
+<li><strong>Use the Right Mock</strong>: For any coroutine you need to mock, <code>unittest.mock.AsyncMock</code> is the tool. It prevents <code>TypeError</code>s and provides async-specific assertions like <code>assert_awaited_once_with</code>.</li>
+<li><strong>Isolate Concurrency</strong>: When testing functions that use <code>asyncio.gather</code>, mock the underlying concurrent tasks. This lets you test your orchestration logic quickly and reliably without performing the actual concurrent I/O.</li>
+</ol>
         </div>
         <div class="footer">
-            Generated on 2025-11-22 17:25:04 | Made with ❤️ by GitHub Pages Generator
+            Generated on 2025-11-24 14:31:16 | Made with ❤️ by GitHub Pages Generator
         </div>
     </div>
     <script>

@@ -360,436 +360,588 @@
             <h1 id="chapter-2-understanding-test-fundamentals">Chapter 2: Understanding Test Fundamentals</h1>
 <h2 id="assertions-the-heart-of-testing">Assertions: The Heart of Testing</h2>
 <h2 id="assertions-the-heart-of-testing_1">Assertions: The Heart of Testing</h2>
-<p>At its core, every test performs a simple, crucial action: it checks if something is true. This check is called an <strong>assertion</strong>. If the assertion is true, the test passes. If it's false, the test fails. Everything else in a testing framework is built to support this fundamental operation.</p>
-<p>A test without an assertion is like a detective who gathers clues but never identifies a suspect. It might run, but it doesn't prove anything.</p>
-<p>Pytest uses Python's built-in <code>assert</code> statement, making your tests clean, readable, and Pythonic. Let's see it in action with a simple function to test.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># src/wallet.py</span>
+<p>At its core, every test performs a simple, crucial task: it checks if something is true. In programming, we call this check an <strong>assertion</strong>. An assertion is a statement that declares a condition we expect to be true at a specific point in our code's execution. If the condition is true, the test passes silently. If it's false, the test fails loudly, stopping execution and telling us exactly what went wrong.</p>
+<p>Pytest uses Python's built-in <code>assert</code> statement, enhancing it with powerful introspection to provide detailed failure messages. This makes your tests clean, readable, and incredibly informative when they fail.</p>
+<h3 id="phase-1-establish-the-reference-implementation">Phase 1: Establish the Reference Implementation</h3>
+<p>Let's anchor our learning in a concrete example. Imagine we're building an e-commerce platform. A key piece of business logic is calculating customer discounts. Here is our initial function, which lives in a file named <code>pricing.py</code>.</p>
+<p><strong>Anchor Example</strong>: <code>calculate_discount()</code></p>
+<p>This function is supposed to give a 10% discount on orders of $100 or more, and a 5% discount on orders between $20 and $99.99.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/ecommerce/pricing.py</span>
 
-<span class="k">class</span><span class="w"> </span><span class="nc">InsufficientAmount</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
-    <span class="k">pass</span>
-
-<span class="k">class</span><span class="w"> </span><span class="nc">Wallet</span><span class="p">:</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">initial_amount</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">=</span> <span class="n">initial_amount</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">spend_cash</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">amount</span><span class="p">):</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">&lt;</span> <span class="n">amount</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="n">InsufficientAmount</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Not enough available to spend </span><span class="si">{</span><span class="n">amount</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">-=</span> <span class="n">amount</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">add_cash</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">amount</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">+=</span> <span class="n">amount</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">calculate_discount</span><span class="p">(</span><span class="n">order_total</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Calculates a discount based on the order total.</span>
+<span class="sd">    - 10% for orders &gt;= $100</span>
+<span class="sd">    - 5% for orders &gt;= $20</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">order_total</span> <span class="o">&gt;=</span> <span class="mi">100</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">order_total</span> <span class="o">*</span> <span class="mf">0.10</span>
+    <span class="k">elif</span> <span class="n">order_total</span> <span class="o">&gt;</span> <span class="mi">20</span><span class="p">:</span>  <span class="c1"># A subtle bug is lurking here!</span>
+        <span class="k">return</span> <span class="n">order_total</span> <span class="o">*</span> <span class="mf">0.05</span>
+    <span class="k">return</span> <span class="mf">0.0</span>
 </code></pre></div>
 
-<p>Now, let's write a test for the <code>add_cash</code> method using an <code>assert</code> statement.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_wallet.py</span>
+<p>Now, let's write our first test to verify the 10% discount for a high-value order. We'll create a <code>tests</code> directory and place our test file there.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_pricing.py</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.wallet</span><span class="w"> </span><span class="kn">import</span> <span class="n">Wallet</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.ecommerce.pricing</span><span class="w"> </span><span class="kn">import</span> <span class="n">calculate_discount</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_initial_amount</span><span class="p">():</span>
-    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">()</span>
-    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">0</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_calculate_discount_for_high_value_order</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests that a 10% discount is applied for orders of $100 or more.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Arrange: Set up the test data</span>
+    <span class="n">order_total</span> <span class="o">=</span> <span class="mf">200.0</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_wallet_add_cash</span><span class="p">():</span>
-    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
-    <span class="n">wallet</span><span class="o">.</span><span class="n">add_cash</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">30</span>
+    <span class="c1"># Act: Call the function we are testing</span>
+    <span class="n">discount</span> <span class="o">=</span> <span class="n">calculate_discount</span><span class="p">(</span><span class="n">order_total</span><span class="p">)</span>
+
+    <span class="c1"># Assert: Check if the result is what we expect</span>
+    <span class="k">assert</span> <span class="n">discount</span> <span class="o">==</span> <span class="mf">20.0</span>
 </code></pre></div>
 
-<p>Here, <code>assert wallet.balance == 30</code> is the heart of the test. It declares our expectation: "After adding 20 to a wallet with 10, the balance <em>must be</em> 30."</p>
-<h3 id="the-power-of-plain-assertions">The Power of Plain Assertions</h3>
-<p>If you've used other testing frameworks like Python's built-in <code>unittest</code>, you might be familiar with methods like <code>self.assertEqual()</code>, <code>self.assertTrue()</code>, or <code>self.assertIn()</code>.</p>
-<p>Pytest intentionally avoids these. Why? This is a core part of the pytest philosophy: <strong>keep tests simple and readable</strong>. Using the plain <code>assert</code> statement means you don't have to learn dozens of different assertion methods. You just use the same <code>assert</code> you might use for debugging or sanity checks in your application code.</p>
-<h3 id="what-happens-when-an-assertion-fails">What Happens When an Assertion Fails?</h3>
-<p>The real power of pytest's assertion system shines when a test fails. Pytest rewrites Python's <code>assert</code> statement to provide incredibly detailed and helpful output, a feature called <strong>assertion introspection</strong>.</p>
-<p>Let's introduce a bug into our <code>add_cash</code> method to see what happens.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># src/wallet.py (with a bug)</span>
-
-<span class="k">class</span><span class="w"> </span><span class="nc">InsufficientAmount</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
-    <span class="k">pass</span>
-
-<span class="k">class</span><span class="w"> </span><span class="nc">Wallet</span><span class="p">:</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">initial_amount</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">=</span> <span class="n">initial_amount</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">spend_cash</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">amount</span><span class="p">):</span>
-        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">&lt;</span> <span class="n">amount</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="n">InsufficientAmount</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Not enough available to spend </span><span class="si">{</span><span class="n">amount</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">-=</span> <span class="n">amount</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">add_cash</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">amount</span><span class="p">):</span>
-        <span class="c1"># Oops! A bug is introduced here.</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">+=</span> <span class="n">amount</span> <span class="o">*</span> <span class="mi">2</span>
-</code></pre></div>
-
-<p>Now, let's run our test again.</p>
+<p>This test follows the classic "Arrange-Act-Assert" pattern:
+1.  <strong>Arrange</strong>: We set up the necessary inputs. Here, an <code>order_total</code> of 200.0.
+2.  <strong>Act</strong>: We execute the code under test. We call <code>calculate_discount()</code>.
+3.  <strong>Assert</strong>: We check the outcome. We assert that the <code>discount</code> is equal to 20.0.</p>
+<p>Let's run this test. It should pass, as our function's logic for orders over $100 seems correct.</p>
 <div class="codehilite"><pre><span></span><code>$<span class="w"> </span><span class="nv">pytest</span>
-<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+...
+collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
+
+tests/test_pricing.py<span class="w"> </span>.<span class="w">                                          </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">==========================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">==========================</span>
+</code></pre></div>
+
+<h3 id="iteration-1-exposing-a-bug-with-a-new-assertion">Iteration 1: Exposing a Bug with a New Assertion</h3>
+<p>Our first test passed, but does that mean the function is perfect? A single test case rarely covers all business logic. Let's add a test for the 5% discount tier. According to the rules, an order of exactly $20.00 should receive a 5% discount, which is $1.00.</p>
+<p>Here's the new test added to our file:</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_pricing.py (updated)</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.ecommerce.pricing</span><span class="w"> </span><span class="kn">import</span> <span class="n">calculate_discount</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_calculate_discount_for_high_value_order</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests that a 10% discount is applied for orders of $100 or more.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">assert</span> <span class="n">calculate_discount</span><span class="p">(</span><span class="mf">200.0</span><span class="p">)</span> <span class="o">==</span> <span class="mf">20.0</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_calculate_discount_at_lower_boundary</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Tests that a 5% discount is applied for an order of exactly $20.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Arrange</span>
+    <span class="n">order_total</span> <span class="o">=</span> <span class="mf">20.0</span>
+    <span class="n">expected_discount</span> <span class="o">=</span> <span class="mf">1.0</span>
+
+    <span class="c1"># Act</span>
+    <span class="n">actual_discount</span> <span class="o">=</span> <span class="n">calculate_discount</span><span class="p">(</span><span class="n">order_total</span><span class="p">)</span>
+
+    <span class="c1"># Assert</span>
+    <span class="k">assert</span> <span class="n">actual_discount</span> <span class="o">==</span> <span class="n">expected_discount</span>
+</code></pre></div>
+
+<p>Now, let's run pytest again and see what happens.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span><span class="nv">pytest</span>
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
 ...
 collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
 
-tests/test_wallet.py<span class="w"> </span>.F<span class="w">                                                </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+tests/test_pricing.py<span class="w"> </span>.F<span class="w">                                         </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
 
-<span class="o">=================================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">=================================</span>
-___________________________<span class="w"> </span>test_wallet_add_cash<span class="w"> </span>___________________________
+<span class="o">===============================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">===============================</span>
+___________<span class="w"> </span>test_calculate_discount_at_lower_boundary<span class="w"> </span>____________
 
-<span class="w">    </span>def<span class="w"> </span>test_wallet_add_cash<span class="o">()</span>:
-<span class="w">        </span><span class="nv">wallet</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>Wallet<span class="o">(</span><span class="m">10</span><span class="o">)</span>
-<span class="w">        </span>wallet.add_cash<span class="o">(</span><span class="m">20</span><span class="o">)</span>
-&gt;<span class="w">       </span>assert<span class="w"> </span>wallet.balance<span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">30</span>
-E<span class="w">       </span>assert<span class="w"> </span><span class="nv">50</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">30</span>
-E<span class="w">        </span>+<span class="w">  </span>where<span class="w"> </span><span class="nv">50</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">&amp;</span>lt<span class="p">;</span>Wallet<span class="w"> </span>object<span class="w"> </span>at<span class="w"> </span>0x...<span class="p">&amp;</span>gt<span class="p">;</span>.balance
+<span class="w">    </span>def<span class="w"> </span>test_calculate_discount_at_lower_boundary<span class="o">()</span>:
+<span class="w">        </span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        Tests that a 5% discount is applied for an order of exactly </span><span class="nv">$20</span><span class="s2">.</span>
+<span class="s2">        &quot;&quot;&quot;</span>
+<span class="w">        </span><span class="c1"># Arrange</span>
+<span class="w">        </span><span class="nv">order_total</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="m">20</span>.0
+<span class="w">        </span><span class="nv">expected_discount</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="m">1</span>.0
 
-tests/test_wallet.py:12:<span class="w"> </span><span class="nv">AssertionError</span>
-<span class="o">=========================</span><span class="w"> </span>short<span class="w"> </span><span class="nb">test</span><span class="w"> </span>summary<span class="w"> </span><span class="nv">info</span><span class="w"> </span><span class="o">==========================</span>
-FAILED<span class="w"> </span>tests/test_wallet.py::test_wallet_add_cash<span class="w"> </span>-<span class="w"> </span>assert<span class="w"> </span><span class="nv">50</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nv">30</span>
-<span class="o">=======================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>failed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">=======================</span>
+<span class="w">        </span><span class="c1"># Act</span>
+<span class="w">        </span><span class="nv">actual_discount</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>calculate_discount<span class="o">(</span>order_total<span class="o">)</span>
+
+<span class="w">        </span><span class="c1"># Assert</span>
+&gt;<span class="w">       </span>assert<span class="w"> </span><span class="nv">actual_discount</span><span class="w"> </span><span class="o">==</span><span class="w"> </span>expected_discount
+E<span class="w">       </span>assert<span class="w"> </span><span class="m">0</span>.0<span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">1</span>.0
+
+tests/test_pricing.py:22:<span class="w"> </span><span class="nv">AssertionError</span>
+<span class="o">=======================</span><span class="w"> </span>short<span class="w"> </span><span class="nb">test</span><span class="w"> </span>summary<span class="w"> </span><span class="nv">info</span><span class="w"> </span><span class="o">========================</span>
+FAILED<span class="w"> </span>tests/test_pricing.py::test_calculate_discount_at_lower_boundary<span class="w"> </span>-<span class="w"> </span>assert<span class="w"> </span><span class="m">0</span>.0<span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">1</span>.0
+<span class="o">=====================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>failed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">=====================</span>
 </code></pre></div>
 
-<p>This failure report is a goldmine of information. Don't just see it as an error; see it as a detailed map to the problem.</p>
+<h3 id="diagnostic-analysis-reading-the-failure">Diagnostic Analysis: Reading the Failure</h3>
+<p>This output is a goldmine of information. Let's treat it as data, not a judgment.</p>
+<p><strong>The complete output</strong>:</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span><span class="nv">pytest</span>
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+...
+collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
+
+tests/test_pricing.py<span class="w"> </span>.F<span class="w">                                         </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">===============================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">===============================</span>
+___________<span class="w"> </span>test_calculate_discount_at_lower_boundary<span class="w"> </span>____________
+
+<span class="w">    </span>def<span class="w"> </span>test_calculate_discount_at_lower_boundary<span class="o">()</span>:
+<span class="w">        </span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        Tests that a 5% discount is applied for an order of exactly </span><span class="nv">$20</span><span class="s2">.</span>
+<span class="s2">        &quot;&quot;&quot;</span>
+<span class="w">        </span><span class="c1"># Arrange</span>
+<span class="w">        </span><span class="nv">order_total</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="m">20</span>.0
+<span class="w">        </span><span class="nv">expected_discount</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="m">1</span>.0
+
+<span class="w">        </span><span class="c1"># Act</span>
+<span class="w">        </span><span class="nv">actual_discount</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>calculate_discount<span class="o">(</span>order_total<span class="o">)</span>
+
+<span class="w">        </span><span class="c1"># Assert</span>
+&gt;<span class="w">       </span>assert<span class="w"> </span><span class="nv">actual_discount</span><span class="w"> </span><span class="o">==</span><span class="w"> </span>expected_discount
+E<span class="w">       </span>assert<span class="w"> </span><span class="m">0</span>.0<span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">1</span>.0
+
+tests/test_pricing.py:22:<span class="w"> </span><span class="nv">AssertionError</span>
+<span class="o">=======================</span><span class="w"> </span>short<span class="w"> </span><span class="nb">test</span><span class="w"> </span>summary<span class="w"> </span><span class="nv">info</span><span class="w"> </span><span class="o">========================</span>
+FAILED<span class="w"> </span>tests/test_pricing.py::test_calculate_discount_at_lower_boundary<span class="w"> </span>-<span class="w"> </span>assert<span class="w"> </span><span class="m">0</span>.0<span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">1</span>.0
+<span class="o">=====================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>failed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">=====================</span>
+</code></pre></div>
+
+<p><strong>Let's parse this section by section</strong>:</p>
 <ol>
-<li><code>&gt; assert wallet.balance == 30</code>: Pytest shows you the exact line that failed.</li>
-<li><code>E assert 50 == 30</code>: It tells you what the values were at the moment of failure. The <code>E</code> stands for "Error line".</li>
-<li><code>E  +  where 50 = &lt;Wallet object ...&gt;.balance</code>: This is the magic of introspection. Pytest inspects the expression and tells you that the value <code>50</code> came from <code>wallet.balance</code>. You don't have to add <code>print()</code> statements or use a debugger to see what the value was.</li>
+<li>
+<p><strong>The summary line</strong>: <code>FAILED tests/test_pricing.py::test_calculate_discount_at_lower_boundary - assert 0.0 == 1.0</code></p>
+<ul>
+<li><strong>What this tells us</strong>: The exact test function that failed (<code>test_calculate_discount_at_lower_boundary</code> in the file <code>tests/test_pricing.py</code>) and a summary of the assertion that broke.</li>
+</ul>
+</li>
+<li>
+<p><strong>The traceback</strong>:
+    ```python
+    &gt;       assert actual_discount == expected_discount
+    E       assert 0.0 == 1.0</p>
+<p>tests/test_pricing.py:22: AssertionError
+<code>``
+-   **What this tells us**: The failure happened on line 22 of</code>tests/test_pricing.py<code>. The</code>&gt;<code>points to the exact line of code.
+-   **Key line**: The line starting with</code>E` (for Error) shows the values that were being compared when the assertion failed.</p>
+</li>
+<li>
+<p><strong>The assertion introspection</strong>:
+    <code>assert 0.0 == 1.0</code></p>
+<ul>
+<li><strong>What this tells us</strong>: This is pytest's magic. It didn't just tell us the assertion failed; it inspected the variables in the <code>assert</code> statement and showed us their values. We were expecting <code>actual_discount</code> to be <code>1.0</code>, but it was actually <code>0.0</code>. We don't need to add <code>print()</code> statements or use a debugger to see what went wrong.</li>
+</ul>
+</li>
 </ol>
-<p>This rich feedback loop is a cornerstone of pytest's design. It helps you diagnose problems faster by giving you all the context you need directly in the test report.</p>
+<p><strong>Root cause identified</strong>: The function returned a discount of <code>0.0</code> for an order of <code>20.0</code>, when we expected <code>1.0</code>.
+<strong>Why the current approach can't solve this</strong>: Looking back at the source code, the bug is clear: <code>elif order_total &gt; 20:</code>. This condition is not met for an order of exactly 20. It should be <code>order_total &gt;= 20</code>.
+<strong>What we need</strong>: A fix in the business logic to correctly handle the boundary condition.</p>
+<h3 id="the-fix-and-verification">The Fix and Verification</h3>
+<p>Let's correct the bug in <code>src/ecommerce/pricing.py</code>.</p>
+<p><strong>Before</strong>:</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/ecommerce/pricing.py (buggy version)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">calculate_discount</span><span class="p">(</span><span class="n">order_total</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+    <span class="o">...</span>
+    <span class="k">elif</span> <span class="n">order_total</span> <span class="o">&gt;</span> <span class="mi">20</span><span class="p">:</span>  <span class="c1"># The bug is here</span>
+        <span class="k">return</span> <span class="n">order_total</span> <span class="o">*</span> <span class="mf">0.05</span>
+    <span class="o">...</span>
+</code></pre></div>
+
+<p><strong>After</strong>:</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># src/ecommerce/pricing.py (fixed version)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">calculate_discount</span><span class="p">(</span><span class="n">order_total</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Calculates a discount based on the order total.</span>
+<span class="sd">    - 10% for orders &gt;= $100</span>
+<span class="sd">    - 5% for orders &gt;= $20</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">order_total</span> <span class="o">&gt;=</span> <span class="mi">100</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">order_total</span> <span class="o">*</span> <span class="mf">0.10</span>
+    <span class="k">elif</span> <span class="n">order_total</span> <span class="o">&gt;=</span> <span class="mi">20</span><span class="p">:</span>  <span class="c1"># The fix is here</span>
+        <span class="k">return</span> <span class="n">order_total</span> <span class="o">*</span> <span class="mf">0.05</span>
+    <span class="k">return</span> <span class="mf">0.0</span>
+</code></pre></div>
+
+<p>Now, we re-run our tests to verify the fix.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span><span class="nv">pytest</span>
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+...
+collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
+
+tests/test_pricing.py<span class="w"> </span>..<span class="w">                                         </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">==========================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">==========================</span>
+</code></pre></div>
+
+<p>Success! The failing test now passes, and our first test still passes, giving us confidence that our fix didn't break existing functionality. This is the fundamental cycle of testing: write a test that captures a requirement, see it fail, write the code to make it pass, and repeat. The <code>assert</code> statement is the gatekeeper of this entire process.</p>
 <h2 id="test-functions-vs-other-functions">Test Functions vs. Other Functions</h2>
 <h2 id="test-functions-vs-other-functions_1">Test Functions vs. Other Functions</h2>
-<p>A pytest test function is, for the most part, a regular Python function. It can contain any valid Python code. However, a few key characteristics distinguish it from a non-test function.</p>
-<table>
-<thead>
-<tr>
-<th>Characteristic</th>
-<th>Test Function (<code>test_*</code>)</th>
-<th>Regular/Helper Function</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Purpose</strong></td>
-<td>To verify behavior with assertions.</td>
-<td>To perform a task, calculate a value, or cause an effect.</td>
-</tr>
-<tr>
-<td><strong>Naming</strong></td>
-<td>Must be prefixed with <code>test_</code>.</td>
-<td>Can have any name that doesn't start with <code>test_</code>.</td>
-</tr>
-<tr>
-<td><strong>Return Value</strong></td>
-<td>Almost never returns a value. Its success is its completion.</td>
-<td>Often returns a value.</td>
-</tr>
-<tr>
-<td><strong>Execution</strong></td>
-<td>Run automatically by the pytest test runner.</td>
-<td>Called explicitly by your code (or a test function).</td>
-</tr>
-</tbody>
-</table>
-<p>Let's look at an example. Imagine we need to create a wallet with a specific setup for multiple tests. We could write a helper function.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_wallet_helpers.py</span>
-
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.wallet</span><span class="w"> </span><span class="kn">import</span> <span class="n">Wallet</span>
-
-<span class="c1"># This is a HELPER function, not a test.</span>
-<span class="c1"># Pytest will ignore it because its name doesn&#39;t start with `test_`.</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">create_wallet_with_transactions</span><span class="p">(</span><span class="n">initial_amount</span><span class="p">,</span> <span class="n">transactions</span><span class="p">):</span>
-    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="n">initial_amount</span><span class="p">)</span>
-    <span class="k">for</span> <span class="n">amount</span> <span class="ow">in</span> <span class="n">transactions</span><span class="p">:</span>
-        <span class="k">if</span> <span class="n">amount</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
-            <span class="n">wallet</span><span class="o">.</span><span class="n">add_cash</span><span class="p">(</span><span class="n">amount</span><span class="p">)</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="c1"># spending is represented by negative numbers</span>
-            <span class="n">wallet</span><span class="o">.</span><span class="n">spend_cash</span><span class="p">(</span><span class="nb">abs</span><span class="p">(</span><span class="n">amount</span><span class="p">))</span>
-    <span class="k">return</span> <span class="n">wallet</span>
-
-<span class="c1"># This is a TEST function.</span>
-<span class="c1"># Pytest will discover and run it.</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_wallet_creation_with_transactions</span><span class="p">():</span>
-    <span class="c1"># It calls our helper function.</span>
-    <span class="n">my_wallet</span> <span class="o">=</span> <span class="n">create_wallet_with_transactions</span><span class="p">(</span><span class="mi">50</span><span class="p">,</span> <span class="p">[</span><span class="mi">10</span><span class="p">,</span> <span class="o">-</span><span class="mi">20</span><span class="p">,</span> <span class="mi">5</span><span class="p">])</span>
-
-    <span class="c1"># It contains the assertion.</span>
-    <span class="k">assert</span> <span class="n">my_wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">45</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_another_scenario</span><span class="p">():</span>
-    <span class="c1"># We can reuse the helper.</span>
-    <span class="n">my_wallet</span> <span class="o">=</span> <span class="n">create_wallet_with_transactions</span><span class="p">(</span><span class="mi">100</span><span class="p">,</span> <span class="p">[</span><span class="o">-</span><span class="mi">30</span><span class="p">,</span> <span class="o">-</span><span class="mi">50</span><span class="p">])</span>
-    <span class="k">assert</span> <span class="n">my_wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">20</span>
+<p>In our test file, we have functions like <code>test_calculate_discount...</code>. These look like normal Python functions, but they are special. A <strong>test function</strong> is a function that pytest recognizes and executes as a test case. A regular Python function, by contrast, executes business logic or acts as a helper.</p>
+<p>What makes a function a <em>test function</em> in the eyes of pytest? It's all about <strong>convention</strong>.</p>
+<p>Let's compare the function we are testing with the function that tests it.</p>
+<p><strong>Function Under Test (in <code>src/ecommerce/pricing.py</code>)</strong>:</p>
+<div class="codehilite"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">calculate_discount</span><span class="p">(</span><span class="n">order_total</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+    <span class="c1"># ... business logic ...</span>
+    <span class="k">return</span> <span class="n">discount</span>
 </code></pre></div>
 
-<p>In this example:
-- <code>create_wallet_with_transactions</code> is a standard Python function. It takes arguments and returns a value. Pytest does not run it directly because its name doesn't start with <code>test_</code>. It exists only to support our tests and reduce code duplication.
-- <code>test_wallet_creation_with_transactions</code> is a test function. It has no arguments (for now) and returns nothing. Its job is to set up a scenario (by calling the helper), execute the code under test, and make an assertion. Pytest will find and run this function.</p>
-<p>This separation is crucial. Helper functions make your tests cleaner and more maintainable, while test functions provide the entry points for the test runner. The naming convention is the simple, powerful rule that allows pytest to tell them apart.</p>
+<p><strong>Test Function (in <code>tests/test_pricing.py</code>)</strong>:</p>
+<div class="codehilite"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">test_calculate_discount_at_lower_boundary</span><span class="p">():</span>
+    <span class="c1"># ... arrange, act, assert ...</span>
+    <span class="k">assert</span> <span class="n">actual_discount</span> <span class="o">==</span> <span class="n">expected_discount</span>
+</code></pre></div>
+
+<h3 id="key-differences">Key Differences</h3>
+<ol>
+<li>
+<p><strong>Purpose</strong>:</p>
+<ul>
+<li><code>calculate_discount</code>: Performs a business task. It takes data, processes it, and <strong>returns a value</strong>. This is production code.</li>
+<li><code>test_calculate_discount...</code>: Verifies behavior. It sets up a scenario, calls the production code, and <strong>makes an assertion</strong>. It typically <strong>does not return a value</strong>. Its success or failure is communicated by passing the assertion or raising an <code>AssertionError</code>.</li>
+</ul>
+</li>
+<li>
+<p><strong>Naming</strong>:</p>
+<ul>
+<li><code>calculate_discount</code>: Named for what it <em>does</em>.</li>
+<li><code>test_calculate_discount...</code>: Must be prefixed with <code>test_</code>. This is the primary signal pytest uses to identify it as a test.</li>
+</ul>
+</li>
+<li>
+<p><strong>Execution</strong>:</p>
+<ul>
+<li><code>calculate_discount</code>: Called by your application's logic.</li>
+<li><code>test_calculate_discount...</code>: Called automatically by the pytest test runner. You almost never call a test function directly yourself.</li>
+</ul>
+</li>
+</ol>
+<h3 id="helper-functions-in-test-files">Helper Functions in Test Files</h3>
+<p>You can, and should, have other functions in your test files that are <em>not</em> tests. These are often called "helper functions." They exist to reduce code duplication and make your tests more readable.</p>
+<p>Imagine we need to create complex order objects for our tests. We could write a helper.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_pricing.py (with a helper)</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.ecommerce.pricing</span><span class="w"> </span><span class="kn">import</span> <span class="n">calculate_discount</span>
+
+<span class="c1"># This is a HELPER function, not a test function.</span>
+<span class="c1"># Pytest will ignore it because its name doesn&#39;t start with &quot;test_&quot;.</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">create_order_with_total</span><span class="p">(</span><span class="n">total</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A helper to create a sample order dictionary.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;customer_id&quot;</span><span class="p">:</span> <span class="mi">123</span><span class="p">,</span> <span class="s2">&quot;total&quot;</span><span class="p">:</span> <span class="n">total</span><span class="p">,</span> <span class="s2">&quot;items&quot;</span><span class="p">:</span> <span class="p">[]}</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_calculate_discount_for_high_value_order</span><span class="p">():</span>
+    <span class="n">order</span> <span class="o">=</span> <span class="n">create_order_with_total</span><span class="p">(</span><span class="mf">200.0</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">calculate_discount</span><span class="p">(</span><span class="n">order</span><span class="p">[</span><span class="s2">&quot;total&quot;</span><span class="p">])</span> <span class="o">==</span> <span class="mf">20.0</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_calculate_discount_at_lower_boundary</span><span class="p">():</span>
+    <span class="n">order</span> <span class="o">=</span> <span class="n">create_order_with_total</span><span class="p">(</span><span class="mf">20.0</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">calculate_discount</span><span class="p">(</span><span class="n">order</span><span class="p">[</span><span class="s2">&quot;total&quot;</span><span class="p">])</span> <span class="o">==</span> <span class="mf">1.0</span>
+</code></pre></div>
+
+<p>In this example, <code>create_order_with_total</code> is a regular Python function. Pytest ignores it during test collection because its name doesn't start with <code>test_</code>. It simply serves to make the test functions cleaner.</p>
+<p>This distinction is fundamental to the next topic: how pytest knows which functions to run in the first place.</p>
 <h2 id="test-discovery-how-pytest-finds-your-tests">Test Discovery: How Pytest Finds Your Tests</h2>
 <h2 id="test-discovery-how-pytest-finds-your-tests_1">Test Discovery: How Pytest Finds Your Tests</h2>
-<p>When you type <code>pytest</code> in your terminal, it seems like magic. Pytest scans your project, finds all the relevant files and functions, and runs them. But this isn't magic; it's a well-defined process called <strong>test discovery</strong>. Understanding this process is key to structuring your projects effectively.</p>
-<p>Pytest follows a simple set of rules by default:</p>
-<ol>
-<li><strong>File Discovery</strong>: It looks for files named <code>test_*.py</code> or <code>*_test.py</code>.</li>
-<li><strong>Function Discovery</strong>: Within those files, it looks for functions prefixed with <code>test_</code>.</li>
-<li><strong>Class Discovery</strong>: It also discovers methods prefixed with <code>test_</code> inside classes prefixed with <code>Test</code>. (We'll cover class-based testing in Chapter 10).</li>
-</ol>
-<h3 id="seeing-discovery-in-action">Seeing Discovery in Action</h3>
-<p>To demystify this process, you can ask pytest to show you what it finds without actually running the tests. This is done with the <code>--collect-only</code> flag. It's one of the most useful commands for debugging your test setup.</p>
-<p>Let's create a project structure with a few files, some of which should be ignored.</p>
-<p><strong>Project Structure:</strong></p>
-<div class="codehilite"><pre><span></span><code>project/
-├── src/
-│   └── wallet.py
-└── tests/
-    ├── test_wallet.py
-    ├── wallet_helpers.py
-    └── check_spending.py
+<p>When you type <code>pytest</code> in your terminal, it springs into action, searching your project for tests to run. This process is called <strong>test discovery</strong>. It's not magic; it's a simple set of rules and conventions. If you don't follow them, pytest won't find your tests.</p>
+<h3 id="iteration-2-breaking-discovery">Iteration 2: Breaking Discovery</h3>
+<p>Let's see this in action by deliberately breaking the convention. We'll take one of our working tests and rename it so it no longer starts with <code>test_</code>.</p>
+<p><strong>Current State</strong>: Our <code>tests/test_pricing.py</code> file has two test functions that are correctly discovered and run.</p>
+<p><strong>Limitation</strong>: Our understanding of <em>why</em> they are discovered is based on an assumption. Let's prove it.</p>
+<p><strong>New Scenario</strong>: What happens if we rename <code>test_calculate_discount_at_lower_boundary</code> to <code>check_discount_at_lower_boundary</code>?</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_pricing.py (with renamed function)</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.ecommerce.pricing</span><span class="w"> </span><span class="kn">import</span> <span class="n">calculate_discount</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_calculate_discount_for_high_value_order</span><span class="p">():</span>
+    <span class="k">assert</span> <span class="n">calculate_discount</span><span class="p">(</span><span class="mf">200.0</span><span class="p">)</span> <span class="o">==</span> <span class="mf">20.0</span>
+
+<span class="c1"># This function will NOT be discovered by pytest</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">check_discount_at_lower_boundary</span><span class="p">():</span>
+    <span class="k">assert</span> <span class="n">calculate_discount</span><span class="p">(</span><span class="mf">20.0</span><span class="p">)</span> <span class="o">==</span> <span class="mf">1.0</span>
 </code></pre></div>
 
-<p>Here's the content of the new files:</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_wallet.py</span>
-<span class="c1"># (This file contains our existing tests like test_wallet_add_cash)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.wallet</span><span class="w"> </span><span class="kn">import</span> <span class="n">Wallet</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_wallet_add_cash</span><span class="p">():</span>
-    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
-    <span class="n">wallet</span><span class="o">.</span><span class="n">add_cash</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">30</span>
-</code></pre></div>
-
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/wallet_helpers.py</span>
-<span class="c1"># This file contains helper functions, but no tests.</span>
-<span class="c1"># Its name does not start with `test_`.</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">setup_test_user</span><span class="p">():</span>
-    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;test_user&quot;</span><span class="p">,</span> <span class="s2">&quot;id&quot;</span><span class="p">:</span> <span class="mi">123</span><span class="p">}</span>
-</code></pre></div>
-
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/check_spending.py</span>
-<span class="c1"># This file&#39;s name does NOT start with `test_`.</span>
-<span class="c1"># Even though the function inside does, the file will be skipped.</span>
-
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.wallet</span><span class="w"> </span><span class="kn">import</span> <span class="n">Wallet</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_spending_is_correct</span><span class="p">():</span>
-    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
-    <span class="n">wallet</span><span class="o">.</span><span class="n">spend_cash</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">10</span>
-</code></pre></div>
-
-<p>Now, let's run the discovery process from the <code>project/</code> directory.</p>
-<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>--collect-only
-<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+<p>Now, let's run pytest. Pay close attention to the output.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span><span class="nv">pytest</span>
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
 ...
 collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
 
-<span class="p">&amp;</span>lt<span class="p">;</span>Module<span class="w"> </span>tests/test_wallet.py<span class="p">&amp;</span>gt<span class="p">;</span>
-<span class="w">  </span><span class="p">&amp;</span>lt<span class="p">;</span>Function<span class="w"> </span>test_wallet_add_cash<span class="p">&amp;</span>gt<span class="p">;</span>
+tests/test_pricing.py<span class="w"> </span>.<span class="w">                                          </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
 
-<span class="o">========================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>item<span class="w"> </span>collected<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">========================</span>
+<span class="o">==========================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">==========================</span>
 </code></pre></div>
 
-<p>The output clearly shows what pytest is thinking:
-- It found <code>tests/test_wallet.py</code> because the filename matches the <code>test_*.py</code> pattern.
-- Inside that file, it found the function <code>test_wallet_add_cash</code>.
-- It completely ignored <code>tests/wallet_helpers.py</code> because the filename doesn't match.
-- It also ignored <code>tests/check_spending.py</code> for the same reason, even though it contains a function named <code>test_spending_is_correct</code>.</p>
-<p>This demonstrates a critical lesson: <strong>both the file and the function must follow the naming convention.</strong> If you ever write a test and find that it's not running, the first thing to check is your naming and the output of <code>pytest --collect-only</code>.</p>
+<h3 id="diagnostic-analysis-reading-the-failure_1">Diagnostic Analysis: Reading the "Failure"</h3>
+<p>The tests didn't fail, but something is wrong. This is a different kind of failure: a failure of the test suite itself.</p>
+<p><strong>The complete output</strong>:</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span><span class="nv">pytest</span>
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+...
+collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
+
+tests/test_pricing.py<span class="w"> </span>.<span class="w">                                          </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">==========================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">==========================</span>
+</code></pre></div>
+
+<p><strong>Let's parse this</strong>:</p>
+<ol>
+<li>
+<p><strong>The summary line</strong>: <code>collected 1 item</code></p>
+<ul>
+<li><strong>What this tells us</strong>: This is the most important clue. Previously, pytest collected 2 items. Now it only finds one. This means one of our tests has become invisible to the test runner.</li>
+</ul>
+</li>
+<li>
+<p><strong>The test execution line</strong>: <code>tests/test_pricing.py .</code></p>
+<ul>
+<li><strong>What this tells us</strong>: Pytest ran the tests in <code>test_pricing.py</code> and found one test, which passed (indicated by the <code>.</code>).</li>
+</ul>
+</li>
+</ol>
+<p><strong>Root cause identified</strong>: Pytest did not run our second test because its name, <code>check_discount_at_lower_boundary</code>, does not follow the required naming convention.
+<strong>Why the current approach can't solve this</strong>: The function is perfectly valid Python code, but it doesn't conform to the contract pytest expects for a test function.
+<strong>What we need</strong>: To understand and adhere to pytest's discovery rules.</p>
+<h3 id="pytests-discovery-rules">Pytest's Discovery Rules</h3>
+<p>Pytest searches the current directory and subdirectories for test modules and functions based on these default conventions:</p>
+<ol>
+<li><strong>File Names</strong>: It looks for files named <code>test_*.py</code> or <code>*_test.py</code>.</li>
+<li><strong>Function Names</strong>: Inside those files, it looks for functions prefixed with <code>test_</code>.</li>
+<li><strong>Class Names</strong>: It will also discover tests inside classes prefixed with <code>Test</code> (e.g., <code>class TestPricing:</code>), as long as the methods inside are also prefixed with <code>test_</code>. We will cover test classes in a later chapter.</li>
+</ol>
+<p>Our function <code>check_discount_at_lower_boundary</code> failed rule #2.</p>
+<h3 id="banish-magic-with-mechanics-pytest-collect-only">Banish Magic with Mechanics: <code>pytest --collect-only</code></h3>
+<p>How can you see what pytest sees without actually running the tests? Pytest provides a powerful command-line flag for this: <code>--collect-only</code>. This command performs the entire discovery process and then prints a list of all the tests it found.</p>
+<p>Let's run it on our broken version:</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>--collect-only
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+...
+collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
+&lt;Module<span class="w"> </span>tests/test_pricing.py&gt;
+<span class="w">  </span>&lt;Function<span class="w"> </span>test_calculate_discount_for_high_value_order&gt;
+
+<span class="o">=======================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>item<span class="w"> </span>collected<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">=======================</span>
+</code></pre></div>
+
+<p>This output is crystal clear. Pytest reports that it found the module <code>tests/test_pricing.py</code> and, inside it, only one test function: <code>test_calculate_discount_for_high_value_order</code>. Our other function is completely absent from this list.</p>
+<h3 id="the-fix-and-verification_1">The Fix and Verification</h3>
+<p>Let's fix the problem by renaming the function back to its correct form.</p>
+<p><strong>Before</strong>:
+<code>def check_discount_at_lower_boundary():</code></p>
+<p><strong>After</strong>:
+<code>def test_calculate_discount_at_lower_boundary():</code></p>
+<p>Now, let's run <code>pytest --collect-only</code> again.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>--collect-only
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+...
+collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
+&lt;Module<span class="w"> </span>tests/test_pricing.py&gt;
+<span class="w">  </span>&lt;Function<span class="w"> </span>test_calculate_discount_for_high_value_order&gt;
+<span class="w">  </span>&lt;Function<span class="w"> </span>test_calculate_discount_at_lower_boundary&gt;
+
+<span class="o">=======================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>items<span class="w"> </span>collected<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">======================</span>
+</code></pre></div>
+
+<p>As expected, pytest now sees both of our tests. Running <code>pytest</code> will now execute both, and they will both pass. Adhering to the simple <code>test_</code> naming convention is the key that unlocks all of pytest's power.</p>
 <h2 id="naming-conventions-that-matter">Naming Conventions That Matter</h2>
 <h2 id="naming-conventions-that-matter_1">Naming Conventions That Matter</h2>
-<p>We've established that the <code>test_</code> prefix is a technical requirement for test discovery. But good naming goes far beyond that. A well-named test function is a form of documentation. It describes exactly what behavior is being verified.</p>
-<p>Consider these two test names for the same test:
-1.  <code>test_1()</code>
-2.  <code>test_spend_cash_raises_exception_on_insufficient_funds()</code></p>
-<p>When you run pytest, the test report becomes a readable list of your application's features and guarantees.</p>
-<h3 id="the-anatomy-of-a-good-test-name">The Anatomy of a Good Test Name</h3>
-<p>A great test name often follows a pattern: <code>test_UNITOFWORK_SCENARIO_EXPECTEDBEHAVIOR</code>.</p>
-<ul>
-<li><strong><code>test_</code></strong>: The required prefix.</li>
-<li><strong><code>UNITOFWORK</code></strong>: The function, method, or feature you are testing (e.g., <code>spend_cash</code>).</li>
-<li><strong><code>SCENARIO</code></strong>: The specific condition you are testing (e.g., <code>on_insufficient_funds</code>).</li>
-<li><strong><code>EXPECTEDBEHAVIOR</code></strong>: What you expect to happen (e.g., <code>raises_exception</code>).</li>
-</ul>
-<p>Let's write a few tests for our <code>Wallet</code> class using this convention.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_wallet_naming.py</span>
+<p>We've established that test functions must start with <code>test_</code>. But what comes after the prefix is just as important. A well-named test serves as living documentation for your codebase. When a test fails a year from now, a descriptive name can save you hours of debugging.</p>
+<p>Consider these two test names for the same test:</p>
+<ol>
+<li><code>test_function_1()</code></li>
+<li><code>test_calculate_discount_for_order_total_of_20_is_5_percent()</code></li>
+</ol>
+<p>If <code>test_function_1()</code> fails, the output tells you almost nothing. You have to read the test's code to understand what it was trying to do. If the second test fails, you know the <em>exact business rule</em> that was violated before you even look at the code.</p>
+<h3 id="a-practical-naming-pattern-test_when__should_">A Practical Naming Pattern: <code>test_when_..._should_...</code></h3>
+<p>A highly effective and readable convention for naming tests is the "When/Should" or "Given/When/Then" pattern.</p>
+<p>The structure is: <code>test_when_[Action or State]_should_[Expected Outcome]</code></p>
+<p>Let's refactor our existing test names to follow this pattern.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_pricing.py (with improved names)</span>
 
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.wallet</span><span class="w"> </span><span class="kn">import</span> <span class="n">Wallet</span><span class="p">,</span> <span class="n">InsufficientAmount</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">src.ecommerce.pricing</span><span class="w"> </span><span class="kn">import</span> <span class="n">calculate_discount</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_initial_balance_is_zero_by_default</span><span class="p">():</span>
-    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">()</span>
-    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">0</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_when_order_total_is_high_should_apply_10_percent_discount</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Given: An order total of $200</span>
+<span class="sd">    When: The discount is calculated</span>
+<span class="sd">    Then: The discount should be 10% ($20)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">assert</span> <span class="n">calculate_discount</span><span class="p">(</span><span class="mf">200.0</span><span class="p">)</span> <span class="o">==</span> <span class="mf">20.0</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_setting_initial_balance</span><span class="p">():</span>
-    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">100</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_add_cash_increases_balance</span><span class="p">():</span>
-    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
-    <span class="n">wallet</span><span class="o">.</span><span class="n">add_cash</span><span class="p">(</span><span class="mi">90</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">100</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_spend_cash_decreases_balance</span><span class="p">():</span>
-    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
-    <span class="n">wallet</span><span class="o">.</span><span class="n">spend_cash</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">10</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_spend_cash_raises_exception_on_insufficient_funds</span><span class="p">():</span>
-    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
-    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">InsufficientAmount</span><span class="p">):</span>
-        <span class="n">wallet</span><span class="o">.</span><span class="n">spend_cash</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_when_order_total_is_at_5_percent_boundary_should_apply_discount</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Given: An order total of exactly $20</span>
+<span class="sd">    When: The discount is calculated</span>
+<span class="sd">    Then: The discount should be 5% ($1)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">assert</span> <span class="n">calculate_discount</span><span class="p">(</span><span class="mf">20.0</span><span class="p">)</span> <span class="o">==</span> <span class="mf">1.0</span>
 </code></pre></div>
 
-<p>Now, let's run these tests with the verbose (<code>-v</code>) flag to see how the names appear in the output.</p>
-<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>tests/test_wallet_naming.py
-<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+<h3 id="verbose-names-make-for-readable-reports">Verbose Names Make for Readable Reports</h3>
+<p>This might seem overly verbose, but the payoff comes when you run your tests. By default, pytest's output is compact. However, using the verbose flag (<code>-v</code>), pytest will print each test's full name next to its result.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
 ...
-collected<span class="w"> </span><span class="m">5</span><span class="w"> </span>items
+collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
 
-tests/test_wallet_naming.py::test_initial_balance_is_zero_by_default<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">20</span>%<span class="o">]</span>
-tests/test_wallet_naming.py::test_setting_initial_balance<span class="w"> </span>PASSED<span class="w">         </span><span class="o">[</span><span class="w"> </span><span class="m">40</span>%<span class="o">]</span>
-tests/test_wallet_naming.py::test_add_cash_increases_balance<span class="w"> </span>PASSED<span class="w">      </span><span class="o">[</span><span class="w"> </span><span class="m">60</span>%<span class="o">]</span>
-tests/test_wallet_naming.py::test_spend_cash_decreases_balance<span class="w"> </span>PASSED<span class="w">    </span><span class="o">[</span><span class="w"> </span><span class="m">80</span>%<span class="o">]</span>
-tests/test_wallet_naming.py::test_spend_cash_raises_exception_on_insufficient_funds<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+tests/test_pricing.py::test_when_order_total_is_high_should_apply_10_percent_discount<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+tests/test_pricing.py::test_when_order_total_is_at_5_percent_boundary_should_apply_discount<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
 
-<span class="o">============================</span><span class="w"> </span><span class="m">5</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">============================</span>
+<span class="o">==========================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">==========================</span>
 </code></pre></div>
 
-<p>Look at that output. It's not just a test report; it's a specification document. Anyone can read this list and understand what the <code>Wallet</code> class is supposed to do without ever looking at its source code.</p>
-<p>Investing a few extra seconds to name your tests descriptively will save you hours of debugging and documentation work in the future.</p>
+<p>This output reads like a checklist of your system's features. Each line is a verifiable statement about how your code behaves. When a line item turns from <code>PASSED</code> to <code>FAILED</code>, you know precisely which feature broke.</p>
+<p>Good test names are one of the highest-leverage, lowest-effort practices you can adopt for a maintainable codebase.</p>
 <h2 id="organizing-tests-in-your-project">Organizing Tests in Your Project</h2>
 <h2 id="organizing-tests-in-your-project_1">Organizing Tests in Your Project</h2>
-<p>As your project grows, the way you organize your test files becomes increasingly important. There are two primary approaches, and pytest supports both seamlessly.</p>
-<h3 id="approach-1-tests-in-a-dedicated-tests-directory-recommended">Approach 1: Tests in a Dedicated <code>tests/</code> Directory (Recommended)</h3>
-<p>This is the most common and scalable approach. You create a top-level <code>tests</code> directory, which mirrors the structure of your source code.</p>
-<div class="codehilite"><pre><span></span><code>my_project/
+<p>As your project grows, you'll have dozens or even hundreds of test files. A logical and consistent project structure is essential for keeping your test suite manageable.</p>
+<p>There are two common patterns for organizing tests in a Python project.</p>
+<h3 id="pattern-1-the-tests-directory-recommended">Pattern 1: The <code>tests</code> Directory (Recommended)</h3>
+<p>This is the most common and recommended structure. You create a top-level <code>tests</code> directory alongside your source code directory (often called <code>src</code> or named after your project).</p>
+<div class="codehilite"><pre><span></span><code>my_ecommerce_project/
+├── .gitignore
 ├── pyproject.toml
 ├── src/
-│   ├── __init__.py
-│   ├── app/
-│   │   ├── __init__.py
-│   │   └── models.py
-│   └── utils/
+│   └── ecommerce/
 │       ├── __init__.py
-│       └── helpers.py
+│       └── pricing.py      # &lt;-- Code under test
 └── tests/
     ├── __init__.py
-    ├── app/
-    │   ├── __init__.py
-    │   └── test_models.py
-    └── utils/
-        ├── __init__.py
-        └── test_helpers.py
+    └── test_pricing.py     # &lt;-- Our test file
 </code></pre></div>
 
-<p><strong>Pros:</strong>
--   <strong>Clean Separation</strong>: Your application code and test code are completely separate. This makes it easy to package your application for distribution without including the tests.
--   <strong>Scalability</strong>: This structure scales well for large projects with many modules.
--   <strong>Clarity</strong>: It's immediately obvious where to find tests for any given part of the application.</p>
-<p><strong>Cons:</strong>
--   <strong>Import Path Setup</strong>: You need to make sure your <code>src</code> directory is on the Python path so that your tests can import the code they are testing (e.g., <code>from src.app.models import User</code>). This is typically handled by your project's configuration (<code>pyproject.toml</code>) and installing your project in "editable" mode (<code>pip install -e .</code>).</p>
-<h3 id="approach-2-tests-alongside-application-code">Approach 2: Tests Alongside Application Code</h3>
-<p>In this approach, test files live inside your application's source directories.</p>
-<div class="codehilite"><pre><span></span><code>my_project/
+<p><strong>Advantages</strong>:</p>
+<ul>
+<li><strong>Clear Separation</strong>: Production code and test code are completely separate. This prevents you from accidentally packaging your tests into your final application distribution.</li>
+<li><strong>Easy to Run</strong>: You can run all tests by simply typing <code>pytest</code> in the project root. Pytest will automatically discover the <code>tests</code> directory.</li>
+<li><strong>Mirrors Structure</strong>: The structure inside <code>tests</code> can mirror the structure of your <code>src</code> directory, making it easy to find the tests for a specific module (e.g., <code>tests/api/test_client.py</code> tests <code>src/ecommerce/api/client.py</code>).</li>
+</ul>
+<h3 id="pattern-2-tests-alongside-code">Pattern 2: Tests Alongside Code</h3>
+<p>In this pattern, test files are placed directly inside your source code packages.</p>
+<div class="codehilite"><pre><span></span><code>my_ecommerce_project/
+├── .gitignore
 ├── pyproject.toml
 └── src/
-    ├── __init__.py
-    ├── app/
-    │   ├── __init__.py
-    │   ├── models.py
-    │   └── test_models.py
-    └── utils/
+    └── ecommerce/
         ├── __init__.py
-        ├── helpers.py
-        └── test_helpers.py
+        ├── pricing.py
+        └── test_pricing.py  # &lt;-- Test file next to the code
 </code></pre></div>
 
-<p><strong>Pros:</strong>
--   <strong>Proximity</strong>: Tests are located right next to the code they test, which some developers find convenient.
--   <strong>Simpler Imports</strong>: Imports are typically simpler relative imports (e.g., <code>from .models import User</code>).</p>
-<p><strong>Cons:</strong>
--   <strong>Code Bloat</strong>: Your source directories are cluttered with test files.
--   <strong>Packaging Complexity</strong>: You need to configure your packaging tools to exclude <code>test_*.py</code> files when you build a distributable version of your library or application.</p>
-<p>For this book and for most real-world projects, we will use and recommend the dedicated <code>tests/</code> directory. It establishes a professional, maintainable structure from the start. We will cover project setup in detail in Chapter 3.</p>
+<p><strong>Advantages</strong>:</p>
+<ul>
+<li><strong>Proximity</strong>: Tests are located right next to the code they are testing, which can be convenient for small modules.</li>
+</ul>
+<p><strong>Disadvantages</strong>:</p>
+<ul>
+<li><strong>Packaging Complexity</strong>: You need to configure your build system (e.g., in <code>pyproject.toml</code>) to exclude the <code>test_*.py</code> files from your final production package. This is an extra step that is easy to get wrong.</li>
+<li><strong>Clutter</strong>: It can clutter your source directories, mixing production logic with test logic.</li>
+</ul>
+<p>For these reasons, <strong>we will use and recommend the <code>tests</code> directory structure throughout this book.</strong> It is the standard for the vast majority of modern Python projects.</p>
+<h3 id="the-role-of-__init__py">The Role of <code>__init__.py</code></h3>
+<p>You'll notice empty <code>__init__.py</code> files in both the <code>src/ecommerce</code> and <code>tests</code> directories. These files tell Python to treat the directories as "packages." This allows you to use Python's import system cleanly. For example, it's what allows <code>from src.ecommerce.pricing import calculate_discount</code> to work correctly when you run <code>pytest</code> from the project root. Even if the files are empty, their presence is important.</p>
 <h2 id="running-specific-tests">Running Specific Tests</h2>
 <h2 id="running-specific-tests_1">Running Specific Tests</h2>
-<p>Running your entire test suite is essential for CI/CD and releases, but during development, it's often slow and unnecessary. When you're working on a specific feature or fixing a single bug, you want to run only the relevant tests. Pytest provides powerful and flexible options for doing just that.</p>
-<p>Let's assume we have the following test file:</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_advanced_wallet.py</span>
-
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.wallet</span><span class="w"> </span><span class="kn">import</span> <span class="n">Wallet</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_add_positive_amount</span><span class="p">():</span>
-    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
-    <span class="n">wallet</span><span class="o">.</span><span class="n">add_cash</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">30</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_add_negative_amount</span><span class="p">():</span>
-    <span class="c1"># Let&#39;s assume this is a feature we want to prevent</span>
-    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
-    <span class="n">wallet</span><span class="o">.</span><span class="n">add_cash</span><span class="p">(</span><span class="o">-</span><span class="mi">5</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">10</span> <span class="c1"># Balance should not change</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_spend_positive_amount</span><span class="p">():</span>
-    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
-    <span class="n">wallet</span><span class="o">.</span><span class="n">spend_cash</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">15</span>
+<p>As your test suite grows, running every single test every time you make a small change can become slow and inefficient. Pytest provides several powerful ways to run only the tests you care about, which is crucial for a fast and productive development workflow.</p>
+<p>Let's expand our project slightly to demonstrate these features.</p>
+<div class="codehilite"><pre><span></span><code>tests/
+├── __init__.py
+├── test_inventory.py   # &lt;-- New file
+└── test_pricing.py
 </code></pre></div>
 
-<h3 id="running-all-tests-in-a-file">Running All Tests in a File</h3>
-<p>To run only the tests in <code>test_advanced_wallet.py</code>, simply provide the path to the file.</p>
-<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>tests/test_advanced_wallet.py
-<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+<p>Our new <code>test_inventory.py</code> file contains a simple test.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_inventory.py</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_stock_level_is_reduced_on_purchase</span><span class="p">():</span>
+    <span class="c1"># A placeholder test for demonstration</span>
+    <span class="k">assert</span> <span class="kc">True</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_cannot_purchase_out_of_stock_item</span><span class="p">():</span>
+    <span class="c1"># A placeholder test for demonstration</span>
+    <span class="k">assert</span> <span class="kc">True</span>
+</code></pre></div>
+
+<p>Now, if we run <code>pytest --collect-only</code> from the root, we see all four tests.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>--collect-only
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
 ...
-collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items
+collected<span class="w"> </span><span class="m">4</span><span class="w"> </span>items
+&lt;Module<span class="w"> </span>tests/test_inventory.py&gt;
+<span class="w">  </span>&lt;Function<span class="w"> </span>test_stock_level_is_reduced_on_purchase&gt;
+<span class="w">  </span>&lt;Function<span class="w"> </span>test_cannot_purchase_out_of_stock_item&gt;
+&lt;Module<span class="w"> </span>tests/test_pricing.py&gt;
+<span class="w">  </span>&lt;Function<span class="w"> </span>test_when_order_total_is_high_should_apply_10_percent_discount&gt;
+<span class="w">  </span>&lt;Function<span class="w"> </span>test_when_order_total_is_at_5_percent_boundary_should_apply_discount&gt;
 
-tests/test_advanced_wallet.py<span class="w"> </span>...<span class="w">                                      </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
-
-<span class="o">============================</span><span class="w"> </span><span class="m">3</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">============================</span>
+<span class="o">=======================</span><span class="w"> </span><span class="m">4</span><span class="w"> </span>items<span class="w"> </span>collected<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">======================</span>
 </code></pre></div>
 
-<h3 id="running-a-specific-test-function">Running a Specific Test Function</h3>
-<p>If you want to run just one test within a file, you can specify its name after the file path, separated by <code>::</code>.</p>
-<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>tests/test_advanced_wallet.py::test_add_negative_amount
-<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+<h3 id="running-tests-by-file-or-directory">Running Tests by File or Directory</h3>
+<p>The simplest way to select tests is by providing a path.</p>
+<p><strong>To run all tests in a directory</strong>:</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># This will run all tests inside the tests/ directory (which is the default anyway)</span>
+$<span class="w"> </span>pytest<span class="w"> </span>tests/
+
+<span class="c1"># Output will show all 4 tests running</span>
 ...
-collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
-
-tests/test_advanced_wallet.py<span class="w"> </span>.<span class="w">                                        </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
-
-<span class="o">============================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">============================</span>
+<span class="o">==========================</span><span class="w"> </span><span class="m">4</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">==========================</span>
 </code></pre></div>
 
-<p>This is incredibly useful when you are focused on fixing a single failing test.</p>
-<h3 id="running-tests-by-keyword-or-substring">Running Tests by Keyword or Substring</h3>
-<p>Perhaps the most powerful selection method is the <code>-k</code> flag, which runs tests whose names match a given keyword expression.</p>
-<p>Let's say we only want to run tests related to "adding" cash.</p>
-<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-k<span class="w"> </span><span class="s2">&quot;add&quot;</span>
-<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+<p><strong>To run all tests in a single file</strong>:</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># This will only run the 2 tests inside test_pricing.py</span>
+$<span class="w"> </span>pytest<span class="w"> </span>tests/test_pricing.py
+
+<span class="c1"># Output will show only 2 tests running</span>
 ...
-collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items<span class="w"> </span>/<span class="w"> </span><span class="m">1</span><span class="w"> </span>deselected
-
-tests/test_advanced_wallet.py<span class="w"> </span>..<span class="w">                                       </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
-
-<span class="o">======================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>deselected<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">======================</span>
+<span class="o">==========================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">==========================</span>
 </code></pre></div>
 
-<p>Pytest found all three tests but deselected <code>test_spend_positive_amount</code> because its name doesn't contain "add".</p>
-<p>The <code>-k</code> expression can be more complex. You can use <code>and</code>, <code>or</code>, and <code>not</code>. For example, to run tests that involve adding but are <em>not</em> about negative numbers:</p>
-<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-k<span class="w"> </span><span class="s2">&quot;add and not negative&quot;</span>
-<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+<h3 id="running-a-single-test-by-node-id">Running a Single Test by Node ID</h3>
+<p>If you want to run one specific test function, you can specify its "Node ID". The Node ID is the unique path to a test, in the format <code>path/to/file.py::test_function_name</code>.</p>
+<p><strong>To run one specific test function</strong>:</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>tests/test_pricing.py::test_when_order_total_is_high_should_apply_10_percent_discount
+
+<span class="c1"># Output will show only 1 test running</span>
 ...
-collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items<span class="w"> </span>/<span class="w"> </span><span class="m">2</span><span class="w"> </span>deselected
-
-tests/test_advanced_wallet.py<span class="w"> </span>.<span class="w">                                        </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
-
-<span class="o">======================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">2</span><span class="w"> </span>deselected<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">======================</span>
+<span class="o">==========================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">==========================</span>
 </code></pre></div>
 
-<p>This selected only <code>test_add_positive_amount</code>.</p>
-<p>Mastering these selection techniques will dramatically speed up your development workflow. You can iterate quickly on a small subset of tests, ensuring you get fast feedback as you code.</p>
+<p>This is extremely useful when you are focusing on a single function and want immediate feedback without waiting for the entire suite to run.</p>
+<h3 id="running-tests-by-keyword-expression-k">Running Tests by Keyword Expression (<code>-k</code>)</h3>
+<p>Perhaps the most flexible method is using the <code>-k</code> flag, which allows you to select tests based on a keyword expression that matches their names.</p>
+<p><strong>To run tests with "discount" in their name</strong>:</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-k<span class="w"> </span><span class="s2">&quot;discount&quot;</span><span class="w"> </span>-v
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+...
+collected<span class="w"> </span><span class="m">4</span><span class="w"> </span>items<span class="w"> </span>/<span class="w"> </span><span class="m">2</span><span class="w"> </span>deselected<span class="w"> </span>/<span class="w"> </span><span class="m">2</span><span class="w"> </span>selected
+
+tests/test_pricing.py::test_when_order_total_is_high_should_apply_10_percent_discount<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+tests/test_pricing.py::test_when_order_total_is_at_5_percent_boundary_should_apply_discount<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">===================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">2</span><span class="w"> </span>deselected<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">===================</span>
+</code></pre></div>
+
+<p>Notice how pytest reports that it <code>deselected</code> 2 tests and <code>selected</code> 2.</p>
+<p>You can also use boolean operators like <code>and</code>, <code>or</code>, and <code>not</code>. The expression is case-sensitive.</p>
+<p><strong>To run tests with "stock" but NOT "purchase" in their name</strong>:</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-k<span class="w"> </span><span class="s2">&quot;stock and not purchase&quot;</span><span class="w"> </span>-v
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+...
+collected<span class="w"> </span><span class="m">4</span><span class="w"> </span>items<span class="w"> </span>/<span class="w"> </span><span class="m">3</span><span class="w"> </span>deselected<span class="w"> </span>/<span class="w"> </span><span class="m">1</span><span class="w"> </span>selected
+
+tests/test_inventory.py::test_cannot_purchase_out_of_stock_item<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">===================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">3</span><span class="w"> </span>deselected<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">===================</span>
+</code></pre></div>
+
+<p>Mastering these selection techniques is key to an efficient testing workflow. You can quickly zero in on the tests relevant to your current task, get fast feedback, and iterate rapidly.</p>
         </div>
         <div class="footer">
-            Generated on 2025-11-22 17:25:04 | Made with ❤️ by GitHub Pages Generator
+            Generated on 2025-11-24 14:31:15 | Made with ❤️ by GitHub Pages Generator
         </div>
     </div>
     <script>

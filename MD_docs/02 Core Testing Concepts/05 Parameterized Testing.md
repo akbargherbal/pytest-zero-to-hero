@@ -2,522 +2,705 @@
 
 ## Testing Multiple Scenarios Without Repetition
 
-## Testing Multiple Scenarios Without Repetition
+## The Problem: Testing the Same Logic with Different Data
 
-So far, we've written tests that check a single scenario. A function is called with one set of inputs, and we assert one specific outcome. But what happens when a function has different behaviors based on its input?
+In testing, we rarely check just one scenario. For any given function, we need to verify its behavior with various inputs: valid data, invalid data, edge cases, boundary conditions, and more. A robust test suite is one that covers a wide spectrum of possibilities.
 
-Consider a simple function that checks if a number is even.
+Let's establish our anchor example for this chapter: a password validation function. This is a classic use case because the rules for a "valid" password create numerous scenarios we need to test.
 
-```python
-# src/utils.py
+### Phase 1: Establish the Reference Implementation
 
-def is_even(number):
-    """Returns True if a number is even, False otherwise."""
-    if not isinstance(number, int):
-        raise TypeError("Input must be an integer")
-    return number % 2 == 0
-```
+Our initial function, `is_valid_password`, will have a few simple rules:
+1.  Must be at least 8 characters long.
+2.  Must contain at least one number.
+3.  Must contain at least one uppercase letter.
 
-To test this thoroughly, we need to check several cases:
-- A positive even number (e.g., 2)
-- A positive odd number (e.g., 3)
-- Zero (which is even)
-- A negative even number (e.g., -4)
-- A negative odd number (e.g., -5)
-
-### The Wrong Way: Repetition
-
-A beginner's first instinct is often to copy and paste the test, changing the values for each scenario. This is a classic example of "illuminating the path by showing the pits." Let's see what this anti-pattern looks like.
+Here is the implementation.
 
 ```python
-# tests/test_utils_repetitive.py
+# validation.py
 
-from src.utils import is_even
+import re
 
-def test_is_even_with_positive_even():
-    assert is_even(2) is True
-
-def test_is_even_with_positive_odd():
-    assert is_even(3) is False
-
-def test_is_even_with_zero():
-    assert is_even(0) is True
-
-def test_is_even_with_negative_even():
-    assert is_even(-4) is True
-
-def test_is_even_with_negative_odd():
-    assert is_even(-5) is False
+def is_valid_password(password: str) -> bool:
+    """
+    Checks if a password meets the following criteria:
+    1. At least 8 characters long.
+    2. Contains at least one number.
+    3. Contains at least one uppercase letter.
+    """
+    if len(password) < 8:
+        return False
+    if not re.search(r"\d", password):
+        return False
+    if not re.search(r"[A-Z]", password):
+        return False
+    return True
 ```
 
-Let's run these tests.
+Now, let's write some tests for it. The most straightforward, yet most problematic, approach is to write a separate test function for each scenario.
+
+```python
+# test_validation_v1.py
+
+from validation import is_valid_password
+
+def test_valid_password():
+    """A valid password should be accepted."""
+    assert is_valid_password("ValidPass1") is True
+
+def test_password_too_short():
+    """A password shorter than 8 characters should be rejected."""
+    assert is_valid_password("Short1") is False
+
+def test_password_missing_number():
+    """A password without a number should be rejected."""
+    assert is_valid_password("NoNumberPass") is False
+
+def test_password_missing_uppercase():
+    """A password without an uppercase letter should be rejected."""
+    assert is_valid_password("nouppercase1") is False
+```
+
+Let's run these tests to confirm they work as expected.
 
 ```bash
-$ pytest -v tests/test_utils_repetitive.py
+$ pytest -v
 ========================= test session starts ==========================
 ...
-collected 5 items
+collected 4 items
 
-tests/test_utils_repetitive.py::test_is_even_with_positive_even PASSED [ 20%]
-tests/test_utils_repetitive.py::test_is_even_with_positive_odd PASSED  [ 40%]
-tests/test_utils_repetitive.py::test_is_even_with_zero PASSED         [ 60%]
-tests/test_utils_repetitive.py::test_is_even_with_negative_even PASSED [ 80%]
-tests/test_utils_repetitive.py::test_is_even_with_negative_odd PASSED [100%]
+test_validation_v1.py::test_valid_password PASSED                 [ 25%]
+test_validation_v1.py::test_password_too_short PASSED              [ 50%]
+test_validation_v1.py::test_password_missing_number PASSED         [ 75%]
+test_validation_v1.py::test_password_missing_uppercase PASSED      [100%]
 
-========================== 5 passed in ...s ============================
+========================== 4 passed in ...s ==========================
 ```
 
-The tests pass, but this approach has serious flaws:
+### The Pitfall: Code Duplication and Maintenance Burden
 
-1.  **Code Duplication**: The test logic (`assert is_even(...)`) is repeated in every single function. If we need to change the logic, we have to change it in five places.
-2.  **Poor Readability**: It's hard to see all the test cases at a glance. You have to read through five separate function definitions to understand the range of inputs being tested.
-3.  **Maintenance Burden**: Adding a new test case requires writing a whole new function. This discourages comprehensive testing.
+The tests pass, but we've created a maintenance problem. This approach violates the "Don't Repeat Yourself" (DRY) principle.
 
-This violates the fundamental programming principle of **DRY (Don't Repeat Yourself)**. There must be a better way. Pytest provides an elegant solution to this exact problem: **parameterization**. The core idea is to write the test logic *once* and supply it with a list of different inputs and expected outputs.
+**Current Limitation:**
+-   **Repetitive Structure:** Every test function has the exact same structure: call `is_valid_password` with a specific input and assert the expected boolean result.
+-   **High Maintenance:** If the function's signature changes (e.g., it starts returning a reason for failure), we have to update *every single test function*.
+-   **Poor Scalability:** What if we need to test 20 more scenarios? We would have to write 20 more nearly identical functions. The test file would become bloated and hard to read.
+
+This is a "maintenance failure" waiting to happen. The code works today, but it's brittle and expensive to change tomorrow. We need a way to test the *same logic* with a *list of different inputs*. This is the core problem that parametrization solves.
 
 ## @pytest.mark.parametrize Basics
 
-## @pytest.mark.parametrize Basics
+## Iteration 1: Consolidating Tests with `@pytest.mark.parametrize`
 
-The `@pytest.mark.parametrize` decorator is the heart of parameterized testing in pytest. It allows you to define multiple sets of arguments and expected outcomes for a single test function.
+Pytest provides a powerful decorator, `@pytest.mark.parametrize`, to handle this exact situation. It allows you to define multiple sets of arguments for a single test function. Pytest will then run the test function once for each set of arguments.
 
-Let's refactor our repetitive `is_even` tests into one clean, parameterized test.
+**The Concept Before the Syntax:**
+Instead of thinking "I need four tests," we shift our thinking to "I need one test that verifies password validity, and I have four *scenarios* to check."
 
-### The Mental Model Before the Syntax
+The decorator takes two main arguments:
+1.  A string containing a comma-separated list of argument names.
+2.  A list of values, where each element in the list is a set of arguments for one test run.
 
-Before we write the code, let's establish the concept. We want to tell pytest: "Hey, I have this one test function, `test_is_even`. I want you to run it multiple times. For the first run, give it the number `2` and expect `True`. For the second run, give it `3` and expect `False`," and so on.
+### Refactoring to a Single Parameterized Test
 
-The `@pytest.mark.parametrize` decorator is how we provide this list of instructions.
+Let's refactor our four separate tests into one concise, data-driven test. We will have two parameters: the `password` to test and the `expected` boolean result.
 
-### Implementation
-
-Here is the same set of tests, rewritten using parameterization.
+**Before:**
 
 ```python
-# tests/test_utils_parameterized.py
+# test_validation_v1.py (excerpt)
+
+def test_valid_password():
+    assert is_valid_password("ValidPass1") is True
+
+def test_password_too_short():
+    assert is_valid_password("Short1") is False
+
+def test_password_missing_number():
+    assert is_valid_password("NoNumberPass") is False
+
+def test_password_missing_uppercase():
+    assert is_valid_password("nouppercase1") is False
+```
+
+**After:**
+
+```python
+# test_validation_v2.py
 
 import pytest
-from src.utils import is_even
+from validation import is_valid_password
 
-@pytest.mark.parametrize("number, expected", [
-    (2, True),
-    (3, False),
-    (0, True),
-    (-4, True),
-    (-5, False),
+@pytest.mark.parametrize("password, expected", [
+    ("ValidPass1", True),         # Scenario: Valid password
+    ("Short1", False),            # Scenario: Too short
+    ("NoNumberPass", False),      # Scenario: Missing number
+    ("nouppercase1", False),      # Scenario: Missing uppercase
 ])
-def test_is_even(number, expected):
-    """Test is_even with multiple integer inputs."""
-    assert is_even(number) == expected
+def test_password_validation(password, expected):
+    """Tests is_valid_password with multiple scenarios."""
+    assert is_valid_password(password) is expected
 ```
 
-Let's break this down:
+### Verification: Running the Parameterized Test
 
-1.  `@pytest.mark.parametrize(...)`: This is the decorator that signals to pytest that this is a parameterized test.
-2.  `"number, expected"`: The first argument is a string containing the names of the parameters we are defining, separated by commas. These names **must** match the argument names in our test function signature.
-3.  `[...]`: The second argument is a list. Each item in the list represents one full run of the test function.
-4.  `(2, True)`, `(3, False)`, etc.: Since we defined two parameter names (`number` and `expected`), each item in our list is a tuple with two values. In the first run, `number` will be `2` and `expected` will be `True`. In the second run, `number` will be `3` and `expected` will be `False`, and so on.
-5.  `def test_is_even(number, expected):`: The test function signature now includes the parameter names we defined in the decorator. Pytest will inject the values from our list into these arguments for each run.
-
-Now, let's run this single test function.
+Let's run this new test file with the verbose (`-v`) flag to see how pytest handles it.
 
 ```bash
-$ pytest -v tests/test_utils_parameterized.py
+$ pytest -v test_validation_v2.py
 ========================= test session starts ==========================
 ...
-collected 5 items
+collected 4 items
 
-tests/test_utils_parameterized.py::test_is_even[2-True] PASSED       [ 20%]
-tests/test_utils_parameterized.py::test_is_even[3-False] PASSED      [ 40%]
-tests/test_utils_parameterized.py::test_is_even[0-True] PASSED       [ 60%]
-tests/test_utils_parameterized.py::test_is_even[-4-True] PASSED      [ 80%]
-tests/test_utils_parameterized.py::test_is_even[-5-False] PASSED     [100%]
+test_validation_v2.py::test_password_validation[ValidPass1-True] PASSED [ 25%]
+test_validation_v2.py::test_password_validation[Short1-False] PASSED   [ 50%]
+test_validation_v2.py::test_password_validation[NoNumberPass-False] PASSED [ 75%]
+test_validation_v2.py::test_password_validation[nouppercase1-False] PASSED [100%]
 
-========================== 5 passed in ...s ============================
+========================== 4 passed in ...s ==========================
 ```
 
-Look at the output! Pytest is smart. It discovered our single test function but understood from the decorator that it represents five distinct test cases. It ran the test five times, each with a different set of parameters.
+### Banish Magic with Mechanics: How It Works
 
-Notice the test identifiers in the output: `test_is_even[2-True]`, `test_is_even[3-False]`, etc. Pytest automatically generates these IDs from the parameter values to help you identify exactly which case failed.
+Notice the output. Even though we wrote only one test function (`test_password_validation`), pytest reports that it collected and ran **4 items**. It has dynamically generated a separate test case for each tuple in our parameter list.
 
-This single parameterized test is vastly superior to our five repetitive functions. It's concise, easy to read, and simple to maintain. Adding a new test case is as easy as adding a new tuple to the list.
+The part in the square brackets, like `[ValidPass1-True]`, is the **Test ID**. Pytest automatically generates this from the parameter values to help you distinguish which specific scenario passed or failed.
+
+**Expected vs. Actual Improvement:**
+-   **Code Volume:** We replaced four functions (12 lines of code) with one parameterized function (8 lines).
+-   **Maintainability:** Adding a new test case is now a one-line change—we just add a new tuple to the list. If the `is_valid_password` function signature changes, we only have to update one test function.
+-   **Readability:** The test data is neatly organized as a table of inputs and expected outputs, making the intent of the test crystal clear.
+
+**Limitation Preview:** This is excellent for simple inputs. But what if our function takes multiple, distinct arguments? Or what if we need to combine this with fixtures? We'll explore that next.
 
 ## Multiple Parameters
 
-## Multiple Parameters
+## Iteration 2: Handling Multiple Distinct Parameters
 
-The previous example used two parameters, but you can use as many as you need. This is extremely useful for testing functions that take multiple inputs.
+Our current test uses two parameters, `password` and `expected`, which works perfectly. The syntax `parametrize("arg1, arg2", [...])` is designed for exactly this. Each element in the list of parameters must be a tuple whose size matches the number of argument names.
 
-Let's define a simple `add` function and test it with various combinations of positive, negative, and zero values.
+Let's evolve our anchor example to make this more explicit. A simple boolean return value is often not enough. Good validation functions should tell you *why* something failed. Let's refactor `is_valid_password` to return a tuple: `(bool, str)`, where the string is a reason for failure.
 
-```python
-# src/calculator.py
+### Evolving the Function Under Test
 
-def add(a, b):
-    """Adds two numbers."""
-    return a + b
-```
-
-Now, let's write a parameterized test for it. We need three parameters for our test: `a`, `b`, and the `expected` result.
+Here's the new version of our validation function.
 
 ```python
-# tests/test_calculator.py
+# validation_v2.py
 
-import pytest
-from src.calculator import add
+import re
+from typing import Tuple
 
-@pytest.mark.parametrize("a, b, expected", [
-    # Positive numbers
-    (1, 2, 3),
-    (5, 5, 10),
-    # Negative numbers
-    (-1, -1, -2),
-    (-5, 5, 0),
-    # Zero
-    (0, 0, 0),
-    (10, 0, 10),
-    # Floating point numbers
-    (2.5, 2.5, 5.0)
-])
-def test_add(a, b, expected):
-    """Test the add function with various inputs."""
-    assert add(a, b) == expected
-```
-
-The structure is identical to our previous example, just with more items in the parameter name string and in each tuple.
-
-1.  `"a, b, expected"`: We define three parameter names.
-2.  `(1, 2, 3)`: Each tuple in our list now contains three values, corresponding to `a`, `b`, and `expected` respectively.
-3.  `def test_add(a, b, expected):`: The test function accepts all three arguments.
-
-Running this test shows how cleanly pytest handles multiple parameters.
-
-```bash
-$ pytest -v tests/test_calculator.py
-========================= test session starts ==========================
-...
-collected 7 items
-
-tests/test_calculator.py::test_add[1-2-3] PASSED                   [ 14%]
-tests/test_calculator.py::test_add[5-5-10] PASSED                  [ 28%]
-tests/test_calculator.py::test_add[-1--1--2] PASSED                [ 42%]
-tests/test_calculator.py::test_add[-5-5-0] PASSED                  [ 57%]
-tests/test_calculator.py::test_add[0-0-0] PASSED                   [ 71%]
-tests/test_calculator.py::test_add[10-0-10] PASSED                 [ 85%]
-tests/test_calculator.py::test_add[2.5-2.5-5.0] PASSED              [100%]
-
-========================== 7 passed in ...s ============================
-```
-
-This pattern of `(input1, input2, ..., expected_output)` is one of the most common and powerful uses of parameterization. It allows you to create a comprehensive table of test cases that is both human-readable and machine-executable.
-
-## Combining Parametrization with Fixtures
-
-## Combining Parametrization with Fixtures
-
-Parameterization and fixtures are two of pytest's most powerful features, and they work together beautifully. You can use a fixture to set up a common object or state, and then use parameterization to test various interactions with that object.
-
-Let's imagine we have a `ShoppingCart` class. We want to test that adding various items correctly updates the total price.
-
-```python
-# src/shopping_cart.py
-
-class ShoppingCart:
-    def __init__(self):
-        self.items = {}
-
-    def add_item(self, item_name, price, quantity=1):
-        if item_name in self.items:
-            self.items[item_name]["quantity"] += quantity
-        else:
-            self.items[item_name] = {"price": price, "quantity": quantity}
-
-    @property
-    def total(self):
-        return sum(
-            item["price"] * item["quantity"] for item in self.items.values()
-        )
-```
-
-We can create a fixture that provides a fresh, empty `ShoppingCart` instance for each test run. Then, we can parameterize the test to add different items and check the expected total.
-
-```python
-# tests/test_shopping_cart.py
-
-import pytest
-from src.shopping_cart import ShoppingCart
-
-@pytest.fixture
-def cart():
-    """Provides an empty ShoppingCart instance."""
-    return ShoppingCart()
-
-@pytest.mark.parametrize("item, price, quantity, expected_total", [
-    ("apple", 0.5, 2, 1.0),
-    ("banana", 0.75, 1, 0.75),
-    ("milk", 3.0, 1, 3.0),
-])
-def test_add_item_updates_total(cart, item, price, quantity, expected_total):
-    """Test that adding an item correctly updates the cart total."""
-    cart.add_item(item, price, quantity)
-    assert cart.total == expected_total
-```
-
-Let's analyze how pytest executes this:
-
-1.  Pytest sees `test_add_item_updates_total` and notices it needs the `cart` fixture and the parameterized arguments.
-2.  It also sees the `@pytest.mark.parametrize` decorator with three test cases.
-3.  **For the first case (`"apple"`)**:
-    a. Pytest executes the `cart()` fixture, creating a new, empty `ShoppingCart` instance.
-    b. It calls `test_add_item_updates_total(cart=..., item="apple", price=0.5, quantity=2, expected_total=1.0)`.
-    c. The test runs and passes.
-4.  **For the second case (`"banana"`)**:
-    a. Pytest executes the `cart()` fixture *again*, creating another new, empty `ShoppingCart` instance. This is crucial for test isolation.
-    b. It calls `test_add_item_updates_total(cart=..., item="banana", price=0.75, quantity=1, expected_total=0.75)`.
-    c. The test runs and passes.
-5.  The process repeats for the third case.
-
-The key takeaway is that the fixture's scope (`function` by default) is respected for each parameterized run. Each run is a completely independent test, receiving its own fresh fixture instance. This combination allows you to create complex test scenarios in a very clean and maintainable way.
-
-## Indirect Parametrization
-
-## Indirect Parametrization
-
-Sometimes, the parameters themselves aren't the final data you need for your test. Instead, a parameter might be an identifier or a piece of configuration that you need to use to *generate* the actual test data.
-
-For example, imagine testing a system that deals with different user roles (`'admin'`, `'guest'`, `'editor'`). Your test might not want the string `'admin'`, but rather a fully-formed `User` object with admin privileges.
-
-You could create the object inside the test function, but that mixes setup logic with test logic. A cleaner way is **indirect parametrization**.
-
-### The Problem: Setup Based on a Parameter
-
-Let's define a simple `User` class and a function that greets them.
-
-```python
-# src/auth.py
-
-class User:
-    def __init__(self, name, role):
-        self.name = name
-        self.role = role
-
-    def __repr__(self):
-        return f"User(name='{self.name}', role='{self.role}')"
-
-def get_greeting(user: User):
-    if user.role == "admin":
-        return f"Hello, {user.name}! Welcome, administrator."
-    return f"Hello, {user.name}."
-```
-
-Now, let's write a test. We want to parameterize it with user roles. The "naive" approach would be to create the `User` object inside the test.
-
-```python
-# tests/test_auth_naive.py
-
-import pytest
-from src.auth import User, get_greeting
-
-@pytest.mark.parametrize("role, expected_greeting", [
-    ("admin", "Hello, TestAdmin! Welcome, administrator."),
-    ("guest", "Hello, TestGuest."),
-])
-def test_get_greeting_naive(role, expected_greeting):
-    # Setup logic is mixed with test logic here
-    if role == "admin":
-        user = User("TestAdmin", "admin")
-    else:
-        user = User("TestGuest", "guest")
+def is_valid_password(password: str) -> Tuple[bool, str]:
+    """
+    Checks password validity and returns a tuple of (bool, reason_string).
+    """
+    if len(password) < 8:
+        return (False, "Password must be at least 8 characters long.")
+    if not re.search(r"\d", password):
+        return (False, "Password must contain at least one number.")
+    if not re.search(r"[A-Z]", password):
+        return (False, "Password must contain at least one uppercase letter.")
     
-    assert get_greeting(user) == expected_greeting
+    return (True, "Password is valid.")
 ```
 
-This works, but it's not ideal. The test function is doing setup work. We can do better by telling pytest to pass our parameter through a fixture first.
+### Failure Demonstration: Adapting the Test
 
-### The Solution: `indirect=True`
+Our existing test is now broken because it only asserts against a boolean. If we run it against the new function, it will fail. Let's create a new test file and adapt our test. We now need to check three things: the input `password`, the `expected_validity` (boolean), and the `expected_reason`.
 
-Indirect parametrization lets you apply a fixture to a specific parameter. When you mark a parameter as `indirect`, pytest will:
-1. Take the value for that parameter from your list (e.g., the string `'admin'`).
-2. Find a fixture with the **same name** as the parameter.
-3. Call that fixture, passing the parameter's value into it via `request.param`.
-4. Pass the *result* of the fixture to the test function.
-
-Let's refactor our test using this pattern.
+This requires us to parametrize three arguments.
 
 ```python
-# tests/test_auth_indirect.py
+# test_validation_v3.py
 
 import pytest
-from src.auth import User, get_greeting
+from validation_v2 import is_valid_password
+
+@pytest.mark.parametrize("password, expected_validity, expected_reason", [
+    ("ValidPass1", True, "Password is valid."),
+    ("Short1", False, "Password must be at least 8 characters long."),
+    ("NoNumberPass", False, "Password must contain at least one number."),
+    ("nouppercase1", False, "Password must contain at least one uppercase letter."),
+    # Let's add a new case that fails on the first check to be thorough
+    ("short", False, "Password must be at least 8 characters long."),
+])
+def test_password_validation_with_reasons(password, expected_validity, expected_reason):
+    """
+    Tests is_valid_password with multiple scenarios, checking validity and reason.
+    """
+    is_valid, reason = is_valid_password(password)
+    assert is_valid is expected_validity
+    assert reason == expected_reason
+```
+
+### Verification
+
+Running this new test shows that all scenarios are correctly handled.
+
+```bash
+$ pytest -v test_validation_v3.py
+========================= test session starts ==========================
+...
+collected 5 items
+
+test_validation_v3.py::test_password_validation_with_reasons[ValidPass1-True-Password is valid.] PASSED [ 20%]
+test_validation_v3.py::test_password_validation_with_reasons[Short1-False-Password must be at least 8 characters long.] PASSED [ 40%]
+test_validation_v3.py::test_password_validation_with_reasons[NoNumberPass-False-Password must contain at least one number.] PASSED [ 60%]
+test_validation_v3.py::test_password_validation_with_reasons[nouppercase1-False-Password must contain at least one uppercase letter.] PASSED [ 80%]
+test_validation_v3.py::test_password_validation_with_reasons[short-False-Password must be at least 8 characters long.] PASSED [100%]
+
+========================== 5 passed in ...s ==========================
+```
+
+### Key Takeaway
+
+The `@pytest.mark.parametrize` decorator seamlessly handles multiple arguments.
+
+-   The first argument to the decorator is a string of comma-separated names: `"arg1, arg2, arg3"`.
+-   The second argument is a list of tuples, where each tuple contains the values for `(arg1, arg2, arg3)` for a single test run.
+-   The test function must accept arguments with the same names.
+
+This pattern is incredibly powerful for testing complex logic where multiple inputs influence the outcome.
+
+**Limitation Preview:** Our test data is hardcoded inside the decorator. This is fine for a few cases, but what if the data is complex, comes from a file, or needs to be generated? Also, what if our test needs a shared resource, like a database connection, in addition to the parameters? This is where combining parametrization with fixtures becomes essential.
+
+## Combining Parametrization with Fixtures
+
+## Iteration 3: Using Fixtures and Parameters Together
+
+Tests rarely exist in a vacuum. They often require setup, teardown, or access to shared resources. In pytest, these are handled by fixtures. A common question is: "How can I use my parameters alongside my fixtures?"
+
+The answer is simple: pytest handles it automatically. A test function can accept arguments that come from both `@pytest.mark.parametrize` and fixtures. Pytest is smart enough to resolve each argument to its correct source.
+
+### Evolving the Anchor Example
+
+Let's imagine our password validation rules are no longer hardcoded. Instead, they are defined in a `PasswordPolicy` object. This makes our system more flexible.
+
+```python
+# validation_v3.py
+
+import re
+from typing import Tuple
+from dataclasses import dataclass
+
+@dataclass
+class PasswordPolicy:
+    min_length: int
+    require_number: bool
+    require_uppercase: bool
+
+def is_valid_password(password: str, policy: PasswordPolicy) -> Tuple[bool, str]:
+    """
+    Checks password validity against a given policy object.
+    """
+    if len(password) < policy.min_length:
+        return (False, f"Password must be at least {policy.min_length} characters long.")
+    if policy.require_number and not re.search(r"\d", password):
+        return (False, "Password must contain at least one number.")
+    if policy.require_uppercase and not re.search(r"[A-Z]", password):
+        return (False, "Password must contain at least one uppercase letter.")
+    
+    return (True, "Password is valid.")
+```
+
+Our `is_valid_password` function now requires a `PasswordPolicy` instance. In a real application, this policy might be loaded from a configuration file or a database. For our tests, it's a perfect candidate for a fixture.
+
+### Creating a Fixture and a Parameterized Test
+
+Let's create a fixture that provides a default password policy. Our test function will then accept this fixture *and* our parameterized arguments.
+
+```python
+# test_validation_v4.py
+
+import pytest
+from validation_v3 import is_valid_password, PasswordPolicy
 
 @pytest.fixture
-def user(request):
-    """Fixture to create a User object based on the parameter."""
-    role = request.param
-    if role == "admin":
-        return User("TestAdmin", "admin")
-    elif role == "guest":
-        return User("TestGuest", "guest")
-    # You could add more roles here
-    return User("DefaultUser", "default")
+def default_policy() -> PasswordPolicy:
+    """Provides a default password policy for tests."""
+    return PasswordPolicy(min_length=8, require_number=True, require_uppercase=True)
+
+@pytest.mark.parametrize("password, expected_validity, expected_reason", [
+    ("ValidPass1", True, "Password is valid."),
+    ("Short1", False, "Password must be at least 8 characters long."),
+    ("NoNumberPass", False, "Password must contain at least one number."),
+    ("nouppercase1", False, "Password must contain at least one uppercase letter."),
+])
+def test_password_validation_with_fixture(default_policy, password, expected_validity, expected_reason):
+    """
+    Tests password validation using a fixture for the policy
+    and parameters for the scenarios.
+    """
+    # The 'default_policy' argument is supplied by the fixture.
+    # The other arguments are supplied by @pytest.mark.parametrize.
+    is_valid, reason = is_valid_password(password, default_policy)
+    
+    assert is_valid is expected_validity
+    assert reason == expected_reason
+```
+
+### Verification and Mechanics
+
+When we run this, it works exactly as you'd hope.
+
+```bash
+$ pytest -v test_validation_v4.py
+========================= test session starts ==========================
+...
+collected 4 items
+
+test_validation_v4.py::test_password_validation_with_fixture[ValidPass1-True-Password is valid.] PASSED [ 25%]
+test_validation_v4.py::test_password_validation_with_fixture[Short1-False-Password must be at least 8 characters long.] PASSED [ 50%]
+test_validation_v4.py::test_password_validation_with_fixture[NoNumberPass-False-Password must contain at least one number.] PASSED [ 75%]
+test_validation_v4.py::test_password_validation_with_fixture[nouppercase1-False-Password must contain at least one uppercase letter.] PASSED [100%]
+
+========================== 4 passed in ...s ==========================
+```
+
+**How Pytest Resolves Arguments:**
+
+1.  Pytest first inspects the signature of `test_password_validation_with_fixture`: `(default_policy, password, expected_validity, expected_reason)`.
+2.  It sees the `@pytest.mark.parametrize` decorator and knows it is responsible for providing `password`, `expected_validity`, and `expected_reason`.
+3.  It then looks for a source for the remaining argument, `default_policy`. It finds a fixture with that name and injects its return value.
+
+This composition of fixtures and parametrization is a cornerstone of writing clean, scalable, and maintainable tests with pytest.
+
+**Limitation Preview:** This is powerful, but what if the *parameters themselves* need to be processed by a fixture? For example, what if our parameters are not the final data, but rather instructions for a fixture to *create* the data? This scenario requires a special feature called "indirect parametrization."
+
+## Indirect Parametrization
+
+## Iteration 4: Processing Parameters with Fixtures
+
+Sometimes, the values you want to parametrize are not the direct inputs to your test function. Instead, they are identifiers or configurations that a fixture should use to perform some setup.
+
+Consider this scenario: We want to test our password policy against auto-generated passwords. Our parameters won't be the password strings themselves, but rather *specifications* for how to generate them.
+
+**The Problem:** How do we get a fixture to receive a value from `@pytest.mark.parametrize`?
+
+The solution is **indirect parametrization**. By adding `indirect=True` to the decorator, you tell pytest that the specified parameters should be passed to fixtures of the same name, and the *result* of those fixtures should be passed to the test function.
+
+### Evolving the Anchor Example for Indirect Parametrization
+
+Let's create a test where the parameters are dictionaries describing the password to be generated. We'll create a fixture that takes these dictionaries and builds the password strings.
+
+First, a simple password generator function.
+
+```python
+# utils.py
+
+def generate_password(spec: dict) -> str:
+    """Generates a password based on a specification dictionary."""
+    length = spec.get("length", 8)
+    has_number = spec.get("has_number", True)
+    has_uppercase = spec.get("has_uppercase", True)
+
+    password = ""
+    if has_uppercase:
+        password += "A"
+    else:
+        password += "a"
+    
+    if has_number:
+        password += "1"
+    else:
+        password += "b"
+        
+    # Fill the rest with lowercase letters
+    password += "c" * (length - len(password))
+    return password
+```
+
+Now, let's write the test. We will create a parameter named `password_spec`. We will then tell pytest to pass this parameter to a fixture, also named `password_spec`, for processing.
+
+**Before (Direct Parametrization):** The test receives the parameter value directly.
+```python
+@pytest.mark.parametrize("password", ["ValidPass1", "Short1"])
+def test_direct(password):
+    # 'password' is "ValidPass1" in the first run.
+    ...
+```
+
+**After (Indirect Parametrization):** The test receives the *return value* of the fixture that was called with the parameter value.
+
+```python
+# test_validation_v5.py
+
+import pytest
+from utils import generate_password
+from validation_v3 import is_valid_password, PasswordPolicy
+
+@pytest.fixture
+def default_policy() -> PasswordPolicy:
+    """Provides a default password policy for tests."""
+    return PasswordPolicy(min_length=8, require_number=True, require_uppercase=True)
+
+@pytest.fixture
+def generated_password(request) -> str:
+    """
+    A fixture that receives a password spec via indirect parametrization
+    and returns a generated password string.
+    """
+    spec = request.param  # This is how a fixture accesses the parameter
+    return generate_password(spec)
 
 @pytest.mark.parametrize(
-    "user, expected_greeting",
+    "generated_password, expected_validity",
     [
-        ("admin", "Hello, TestAdmin! Welcome, administrator."),
-        ("guest", "Hello, TestGuest."),
+        ({"length": 8, "has_number": True, "has_uppercase": True}, True),
+        ({"length": 7, "has_number": True, "has_uppercase": True}, False),
+        ({"length": 8, "has_number": False, "has_uppercase": True}, False),
+        ({"length": 8, "has_number": True, "has_uppercase": False}, False),
     ],
-    indirect=["user"]  # Apply the 'user' fixture to the 'user' parameter
+    indirect=["generated_password"]  # Tell pytest this parameter is indirect
 )
-def test_get_greeting_indirect(user, expected_greeting):
-    """Test get_greeting with user objects created via an indirect fixture."""
-    # The 'user' argument is now a User object, not a string!
-    assert get_greeting(user) == expected_greeting
+def test_password_validation_indirect(default_policy, generated_password, expected_validity):
+    """
+    Tests password validation using an indirectly parameterized fixture
+    to generate test data.
+    """
+    # 'generated_password' is now the *result* of the fixture, not the spec dict.
+    is_valid, _ = is_valid_password(generated_password, default_policy)
+    assert is_valid is expected_validity
 ```
 
-Let's trace the execution for the first parameter set: `("admin", "...")`.
+### Verification and Mechanics
 
-1.  Pytest sees `indirect=["user"]`. This tells it to treat the `user` parameter specially.
-2.  It takes the value for the `user` parameter, which is the string `"admin"`.
-3.  It finds the fixture named `user()`.
-4.  It calls `user(request)`, where `request.param` is now `"admin"`.
-5.  The fixture returns a `User("TestAdmin", "admin")` object.
-6.  This `User` object is passed as the `user` argument to `test_get_greeting_indirect()`.
-7.  The `expected_greeting` parameter is passed directly as `"Hello, TestAdmin! ..."`.
-8.  The assertion `assert get_greeting(user_object) == expected_greeting` is executed.
+Let's run this and see the result.
 
-This pattern is incredibly powerful for separating complex test data setup from the test logic itself, leading to much cleaner and more maintainable tests.
+```bash
+$ pytest -v test_validation_v5.py
+========================= test session starts ==========================
+...
+collected 4 items
+
+test_validation_v5.py::test_password_validation_indirect[generated_password0-True] PASSED [ 25%]
+test_validation_v5.py::test_password_validation_indirect[generated_password1-False] PASSED [ 50%]
+test_validation_v5.py::test_password_validation_indirect[generated_password2-False] PASSED [ 75%]
+test_validation_v5.py::test_password_validation_indirect[generated_password3-False] PASSED [100%]
+
+========================== 4 passed in ...s ==========================
+```
+
+**The Flow of Indirect Parametrization:**
+
+1.  Pytest sees `@pytest.mark.parametrize` with `indirect=["generated_password"]`.
+2.  For the first run, it takes the parameter value `{"length": 8, ...}`.
+3.  Because `generated_password` is marked as indirect, it does **not** pass this dictionary to the test function.
+4.  Instead, it finds the fixture named `generated_password`.
+5.  It calls the `generated_password` fixture, making the dictionary available via the special `request.param` object.
+6.  The fixture runs its logic (`generate_password(...)`) and returns a password string (e.g., `"A1cccccc"`).
+7.  Pytest then calls the test function `test_password_validation_indirect`, passing the *return value* of the fixture as the `generated_password` argument.
+
+### When to Apply This Solution
+
+-   **What it optimizes for:** Decoupling test data from test logic. It allows your parameters to be high-level descriptions, while the complex object creation is encapsulated in a reusable fixture.
+-   **When to choose this approach:**
+    -   When parameters are identifiers (e.g., user IDs, file names) that a fixture needs to look up or load.
+    -   When parameters are configurations for creating complex objects (as in our example).
+    -   When the setup for a parameter is expensive and you want to contain it within a fixture's scope.
+-   **When to avoid this approach:** For simple, self-contained data types (strings, numbers, booleans), direct parametrization is simpler and more readable.
+
+**Limitation Preview:** Look at the test output IDs: `[generated_password0-True]`, `[generated_password1-False]`. These are not very helpful. If a test fails, we have no idea which scenario it was. We need a way to provide clear, descriptive names for our test cases.
 
 ## Generating Test IDs for Clarity
 
-## Generating Test IDs for Clarity
+## Iteration 5: Improving Readability with Custom Test IDs
 
-As we saw earlier, pytest automatically generates test IDs for parameterized runs, like `test_add[1-2-3]`. While helpful, these can become unreadable with complex data, such as long strings, nested objects, or non-obvious values.
+When a parameterized test fails, the test ID is your first clue to understanding what went wrong. As we saw in the last section, pytest's default IDs can be unhelpful, especially with complex data structures like dictionaries.
 
-A failing test report should be a clear map to the problem. Cryptic test IDs are like a map with no labels.
+`test_password_validation_indirect[generated_password2-False]`
 
-Let's imagine a test for a function that formats a user's data into a display string.
+Which scenario is `generated_password2`? We have to go back to the source code and count down the list to figure it out. This slows down debugging.
 
-```python
-# src/formatter.py
+Pytest allows you to provide custom, human-readable test IDs using the `ids` parameter in `@pytest.mark.parametrize`.
 
-def format_user_display(user_data):
-    """Formats user data dict into a display string."""
-    if user_data.get("is_admin"):
-        return f"{user_data['name']} (Admin)"
-    return f"{user_data['name']}"
-```
+### Failure Demonstration: The Unhelpful Failure Report
 
-Now, a parameterized test with dictionary inputs.
+Let's intentionally break one of our indirect tests to see the problem clearly. Suppose our generator has a bug and produces a password with no number when it should.
 
 ```python
-# tests/test_formatter.py
+# test_validation_v6_fail.py (with an intentional error in the data)
 
-import pytest
-from src.formatter import format_user_display
+# ... (fixtures and imports from v5) ...
 
-@pytest.mark.parametrize("user_data, expected", [
-    ({"name": "Alice", "is_admin": False}, "Alice"),
-    ({"name": "Bob", "is_admin": True}, "Bob (Admin)"),
-    ({"name": "Charlie"}, "Charlie"), # Missing is_admin key
-])
-def test_format_user_display(user_data, expected):
-    assert format_user_display(user_data) == expected
+@pytest.mark.parametrize(
+    "generated_password, expected_validity",
+    [
+        # ... other cases ...
+        # INTENTIONAL BUG: Expecting valid, but spec will produce invalid password
+        ({"length": 8, "has_number": False, "has_uppercase": True}, True),
+    ],
+    indirect=["generated_password"]
+)
+def test_password_validation_indirect_fail(default_policy, generated_password, expected_validity):
+    is_valid, _ = is_valid_password(generated_password, default_policy)
+    assert is_valid is expected_validity
 ```
 
-The output from running this is not very descriptive.
+### Diagnostic Analysis: Reading the Failure
 
+**The complete output**:
 ```bash
-$ pytest -v tests/test_formatter.py
+$ pytest -v test_validation_v6_fail.py
 ========================= test session starts ==========================
 ...
-collected 3 items
+collected 1 item
 
-tests/test_formatter.py::test_format_user_display[user_data0-Alice] PASSED [ 33%]
-tests/test_formatter.py::test_format_user_display[user_data1-Bob (Admin)] PASSED [ 66%]
-tests/test_formatter.py::test_format_user_display[user_data2-Charlie] PASSED [100%]
+test_validation_v6_fail.py::test_password_validation_indirect_fail[generated_password0-True] FAILED [100%]
 
-========================== 3 passed in ...s ============================
+============================== FAILURES ==============================
+__ test_password_validation_indirect_fail[generated_password0-True] __
+
+default_policy = PasswordPolicy(min_length=8, require_number=True, require_uppercase=True)
+generated_password = 'Abbbbbbb', expected_validity = True
+
+    @pytest.mark.parametrize(
+        "generated_password, expected_validity",
+        [
+            # ... other cases ...
+            # INTENTIONAL BUG: Expecting valid, but spec will produce invalid password
+            ({"length": 8, "has_number": False, "has_uppercase": True}, True),
+        ],
+        indirect=["generated_password"]
+    )
+    def test_password_validation_indirect_fail(default_policy, generated_password, expected_validity):
+        is_valid, _ = is_valid_password(generated_password, default_policy)
+>       assert is_valid is expected_validity
+E       assert False is True
+E        +  where False = is_valid_password('Abbbbbbb', PasswordPolicy(min_length=8, require_number=True, require_uppercase=True))[0]
+
+test_validation_v6_fail.py:36: AssertionError
+======================= 1 failed in ...s =======================
 ```
 
-`user_data0`, `user_data1`, and `user_data2` tell us nothing about the scenario being tested. If one of these failed, we'd have to go back to the code to figure out which case it was.
+**Let's parse this section by section**:
 
-### Custom IDs with the `ids` Argument
+1.  **The summary line**: `FAILED test_validation_v6_fail.py::test_password_validation_indirect_fail[generated_password0-True]`
+    -   What this tells us: The test named `test_password_validation_indirect_fail` failed. The failing scenario is identified only as `generated_password0-True`. This is not descriptive. We don't know *which* case failed without looking at the code.
 
-`@pytest.mark.parametrize` accepts an optional `ids` argument, which is a list of strings to use as test IDs. The list must be the same length as your parameter list.
+2.  **The traceback**: The traceback points to the `assert` line, which is correct.
+
+3.  **The assertion introspection**: `assert False is True`
+    -   What this tells us: The `is_valid_password` function returned `False`, but the test expected `True`. The introspection helpfully shows us the generated password was `'Abbbbbbb'`.
+
+**Root cause identified**: The test failed because a password generated from a spec with `has_number: False` was expected to be valid, which is incorrect according to our policy.
+**Why the current approach is problematic**: The test ID `[generated_password0-True]` gives us no context about the *intent* of the failing test case. We want it to say something like "fail-if-no-number".
+
+### Solution: Providing Custom IDs
+
+We can fix this by passing a list of strings to the `ids` parameter. The list must have the same number of elements as the parameter sets.
+
+**Before:**
 
 ```python
-# tests/test_formatter_with_ids.py
-
-import pytest
-from src.formatter import format_user_display
-
-@pytest.mark.parametrize("user_data, expected", [
-    ({"name": "Alice", "is_admin": False}, "Alice"),
-    ({"name": "Bob", "is_admin": True}, "Bob (Admin)"),
-    ({"name": "Charlie"}, "Charlie"),
-], ids=[
-    "Regular User",
-    "Admin User",
-    "User with missing admin key"
-])
-def test_format_user_display_with_ids(user_data, expected):
-    assert format_user_display(user_data) == expected
+# test_validation_v5.py (excerpt)
+@pytest.mark.parametrize(
+    "generated_password, expected_validity",
+    [
+        ({"length": 8, "has_number": True, "has_uppercase": True}, True),
+        ({"length": 7, "has_number": True, "has_uppercase": True}, False),
+        ({"length": 8, "has_number": False, "has_uppercase": True}, False),
+        ({"length": 8, "has_number": True, "has_uppercase": False}, False),
+    ],
+    indirect=["generated_password"]
+)
+def test_password_validation_indirect(...):
+    ...
 ```
 
-Now, the test output is a story, not a puzzle.
-
-```bash
-$ pytest -v tests/test_formatter_with_ids.py
-========================= test session starts ==========================
-...
-collected 3 items
-
-tests/test_formatter_with_ids.py::test_format_user_display_with_ids[Regular User] PASSED [ 33%]
-tests/test_formatter_with_ids.py::test_format_user_display_with_ids[Admin User] PASSED [ 66%]
-tests/test_formatter_with_ids.py::test_format_user_display_with_ids[User with missing admin key] PASSED [100%]
-
-========================== 3 passed in ...s ============================
-```
-
-If the "Admin User" test failed, you would immediately know the context of the failure without cross-referencing the test code. This is treating errors as data.
-
-### Generating IDs Programmatically
-
-Manually writing IDs can be tedious if you have many test cases. For more complex scenarios, you can provide a function to the `ids` argument. This function will be called for each parameter set and should return the string ID for that set.
+**After (Final Implementation):**
 
 ```python
-# tests/test_formatter_with_id_func.py
+# test_validation_final.py
 
 import pytest
-from src.formatter import format_user_display
+from utils import generate_password
+from validation_v3 import is_valid_password, PasswordPolicy
 
-def user_id_generator(user_data):
-    """Generates a descriptive test ID from user data."""
-    if user_data.get("is_admin"):
-        return f"admin-{user_data['name']}"
-    return f"user-{user_data['name']}"
+@pytest.fixture
+def default_policy() -> PasswordPolicy:
+    return PasswordPolicy(min_length=8, require_number=True, require_uppercase=True)
 
-@pytest.mark.parametrize("user_data, expected", [
-    ({"name": "Alice", "is_admin": False}, "Alice"),
-    ({"name": "Bob", "is_admin": True}, "Bob (Admin)"),
-], ids=user_id_generator)
-def test_format_user_display_with_id_func(user_data, expected):
-    assert format_user_display(user_data) == expected
+@pytest.fixture
+def generated_password(request) -> str:
+    spec = request.param
+    return generate_password(spec)
+
+# A helper function for generating IDs
+def id_generator(spec):
+    parts = []
+    if not spec.get("has_uppercase", True):
+        parts.append("no_upper")
+    if not spec.get("has_number", True):
+        parts.append("no_num")
+    if spec.get("length", 8) < 8:
+        parts.append(f"len_{spec['length']}")
+    
+    if not parts:
+        return "valid_password"
+    return "-".join(parts)
+
+@pytest.mark.parametrize(
+    "generated_password, expected_validity",
+    [
+        ({"length": 8, "has_number": True, "has_uppercase": True}, True),
+        ({"length": 7, "has_number": True, "has_uppercase": True}, False),
+        ({"length": 8, "has_number": False, "has_uppercase": True}, False),
+        ({"length": 8, "has_number": True, "has_uppercase": False}, False),
+    ],
+    indirect=["generated_password"],
+    # We can provide a list of strings...
+    # ids=[
+    #     "valid-password",
+    #     "too-short",
+    #     "missing-number",
+    #     "missing-uppercase",
+    # ]
+    # ...or even better, a function to generate them!
+    ids=lambda spec: id_generator(spec[0]) if isinstance(spec, tuple) else id_generator(spec)
+)
+def test_password_validation_with_ids(default_policy, generated_password, expected_validity):
+    is_valid, _ = is_valid_password(generated_password, default_policy)
+    assert is_valid is expected_validity
 ```
 
-When you provide a function, pytest calls it with each value from the *first* parameter (`user_data` in this case).
+### Verification with New IDs
+
+Now when we run the tests, the output is far more informative.
 
 ```bash
-$ pytest -v tests/test_formatter_with_id_func.py
+$ pytest -v test_validation_final.py
 ========================= test session starts ==========================
 ...
-collected 2 items
+collected 4 items
 
-tests/test_formatter_with_id_func.py::test_format_user_display_with_id_func[user-Alice] PASSED [ 50%]
-tests/test_formatter_with_id_func.py::test_format_user_display_with_id_func[admin-Bob] PASSED [100%]
+test_validation_final.py::test_password_validation_with_ids[valid_password] PASSED [ 25%]
+test_validation_final.py::test_password_validation_with_ids[len_7] PASSED      [ 50%]
+test_validation_final.py::test_password_validation_with_ids[no_num] PASSED      [ 75%]
+test_validation_final.py::test_password_validation_with_ids[no_upper] PASSED    [100%]
 
-========================== 2 passed in ...s ============================
+========================== 4 passed in ...s ==========================
 ```
 
-Using custom IDs is a hallmark of a mature, maintainable test suite. It transforms your test output from a simple pass/fail log into a rich, descriptive report on your code's behavior.
+If the "missing-number" test were to fail now, the report would immediately tell us `FAILED ... [no_num]`, giving us instant context for debugging.
+
+### The Journey: From Problem to Solution
+
+| Iteration | Failure Mode / Problem                               | Technique Applied             | Result                                                              |
+| --------- | ---------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------- |
+| 0         | Repetitive test functions, high maintenance cost.    | None (Copy-Paste)             | Four separate, brittle tests.                                       |
+| 1         | Consolidated tests but only handled one parameter.   | `@pytest.mark.parametrize`    | A single test function for all scenarios.                           |
+| 2         | Needed to test multiple inputs and outputs.          | Multiple arguments in `parametrize` | Test now validates input, validity, and reason message together.    |
+| 3         | Test logic coupled with policy creation.             | Combining with Fixtures       | Policy creation is handled by a fixture, separating concerns.       |
+| 4         | Parameters were complex to create directly.          | Indirect Parametrization      | Parameters became high-level specs; a fixture handled data generation. |
+| 5         | Default test IDs were unreadable and unhelpful.      | `ids` parameter               | Clear, descriptive test IDs that accelerate debugging.              |
+
+### Lessons Learned
+
+-   **Start Simple:** Begin by writing separate tests to understand your scenarios.
+-   **Refactor to Parametrize:** Once you see repetition, consolidate your tests with `@pytest.mark.parametrize` to make them data-driven.
+-   **Compose with Fixtures:** Freely combine fixtures (for state/resources) and parameters (for scenarios) to build powerful and clean tests.
+-   **Use Indirect Parametrization for Setup:** When your parameters describe *what* to set up rather than being the data itself, use `indirect=True` to delegate creation to a fixture.
+-   **Always Use Custom IDs:** For any non-trivial parameter set, provide custom `ids`. It is a small investment that pays huge dividends when a test fails.

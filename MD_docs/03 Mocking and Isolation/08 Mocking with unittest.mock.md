@@ -2,603 +2,687 @@
 
 ## Why Mock?
 
-## Why Mock?
+## The Problem: Testing in Isolation
 
-So far, we've tested functions that are self-contained. They take inputs, perform calculations, and return outputs. But what happens when your code isn't self-contained? What happens when it depends on something outside of its control?
+So far, our tests have been self-contained. We've tested functions that take data, transform it, and return a result. This is the ideal scenario for testing. But real-world applications are rarely so simple. They are complex systems that interact with databases, file systems, third-party APIs, and other services.
 
-Consider a function that gets the current weather for a city by calling an external API.
+Consider a function that processes a customer's order. Its job might involve:
+1.  Charging the customer's credit card via a payment gateway API.
+2.  Saving the order details to a database.
+3.  Sending a confirmation email via an email service.
+
+How would you write a unit test for this function? If your test calls the *real* payment gateway, you have several major problems:
+
+-   **Cost:** You might be charged real money for every test run.
+-   **Slowness:** Network requests to external services are orders of magnitude slower than in-memory function calls. A test suite with hundreds of such tests could take minutes or hours to run.
+-   **Unreliability:** The external service could be down, or your network connection could be flaky. This would cause your tests to fail for reasons completely unrelated to your code's correctness.
+-   **Side Effects:** You would be creating fake orders in the database and sending real emails to non-existent addresses with every test run.
+-   **Testing Edge Cases is Hard:** How do you test what happens when the payment gateway returns a "Card Declined" error? Or a "Gateway Timeout" error? You can't easily force a real-world service to produce these specific error conditions on demand.
+
+The goal of a **unit test** is to test a single *unit* of code in **isolation**. To do this, we need a way to pretend these external dependencies exist, controlling their behavior so we can test our code's logic reliably and quickly. This is where mocking comes in.
+
+### Phase 1: Establish the Reference Implementation
+
+Let's build a concrete example that demonstrates these problems. We'll create a simple e-commerce order processing system. It has two external dependencies: a `PaymentGateway` and a `NotificationService`.
+
+Our anchor example will be the `process_order` function. We will spend this chapter refining the tests for this single function.
+
+First, let's define the external services. We'll simulate their slowness and potential for failure.
 
 ```python
-# src/weather_reporter.py
-import requests
+# src/services.py
 
-def get_weather_data(city: str) -> dict:
-    """Fetches weather data from a (fictional) live API."""
-    try:
-        response = requests.get(f"https://api.weather.com/data?city={city}")
-        response.raise_for_status()  # Raise an exception for bad status codes
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        print(f"API request failed: {e}")
-        return {"error": str(e)}
+import time
+import random
 
-def format_weather_report(city: str) -> str:
-    """Formats a human-readable weather report."""
-    data = get_weather_data(city)
-    if "error" in data:
-        return f"Sorry, could not retrieve weather for {city}."
-    
-    temp = data.get("temperature")
-    condition = data.get("condition")
-    
-    if temp is None or condition is None:
-        return f"Incomplete weather data for {city}."
+class PaymentGateway:
+    """A simulated external payment gateway."""
+    def charge(self, card_details: str, amount: float) -> str:
+        """
+        Charges the card. Returns a transaction ID on success.
+        In a real system, this would make a network request.
+        """
+        print("\nConnecting to payment gateway...")
+        if not card_details or amount <= 0:
+            raise ValueError("Invalid card details or amount.")
         
-    return f"The weather in {city} is {temp}°C and {condition}."
+        # Simulate network latency
+        time.sleep(2)
+        
+        # Simulate a chance of failure
+        if random.random() < 0.2: # 20% chance of failure
+            print("The payment was declined.")
+            return "" # Return empty string for a declined payment
+        
+        transaction_id = f"tx_{random.randint(1000, 9999)}"
+        print(f"Charge successful. Transaction ID: {transaction_id}")
+        return transaction_id
+
+class NotificationService:
+    """A simulated external notification service."""
+    def send_receipt(self, email: str, transaction_id: str):
+        """Sends a receipt to the customer's email."""
+        print(f"\nSending receipt for {transaction_id} to {email}...")
+        # Simulate network latency
+        time.sleep(1)
+        print("Receipt sent.")
+        return True
 ```
 
-Now, let's think about how we would test `format_weather_report()`. If we call it directly in a test, we run into several major problems:
-
-1.  **Unreliability:** The external weather API could be down. If it is, our test will fail, even if our `format_weather_report` function is perfectly correct. A failing test should indicate a bug in *our* code, not someone else's.
-2.  **Slowness:** Network requests are slow. A test suite with hundreds of tests making real network calls would take minutes or even hours to run, discouraging developers from running it frequently.
-3.  **Cost & Rate Limiting:** Many APIs are paid services or have rate limits. Running your test suite hundreds of times a day could incur costs or get your IP address blocked.
-4.  **Unpredictability:** The weather in London changes! One day the API might return "Sunny," the next "Rainy." We can't write a stable assertion like `assert report == "The weather in London is 15°C and Sunny."` because the data is always changing. We also can't easily test edge cases, like what happens if the API returns incomplete data or an error.
-
-This is the core problem that **mocking** solves.
-
-Mocking allows us to **isolate the code under test** from its external dependencies. Instead of calling the real `requests.get`, we'll replace it with a "stunt double"—a fake version that is completely under our control. This lets us test our `format_weather_report` logic in isolation, ensuring it works correctly regardless of what the outside world is doing.
-
-## What Is a Mock?
-
-## What Is a Mock?
-
-A **mock object** is a simulated object that mimics the behavior of a real object in a controlled way. Think of it as a stunt double in a movie. When a scene is too dangerous or requires a specific skill the main actor doesn't have, a stunt double steps in. They look and act enough like the real actor for the scene to work, but they are completely controlled by the film's director.
-
-In testing, our test function is the director. The mock object is our stunt double for a real, problematic dependency (like the `requests` library).
-
-A mock object, at its core, does two things:
-
-1.  **Simulates Behavior:** You can tell a mock object how to behave. You can configure its methods to return specific values, or even to raise exceptions, allowing you to simulate any possible scenario from the real dependency. For our weather example, we can tell our mock `requests.get` to return a specific JSON payload representing "Sunny" or an error code representing "API is down."
-2.  **Records Interaction:** A mock object spies on the code that uses it. It keeps a detailed log of every time its methods or attributes are accessed. After our code under test has run, we can inspect the mock to ask questions like:
-    *   "Were you called?"
-    *   "How many times were you called?"
-    *   "What arguments were you called with?"
-
-This allows us to verify that our code is interacting with its dependencies correctly.
-
-Python's standard library includes a powerful mocking library called `unittest.mock`. While its name comes from the `unittest` framework, it is a standalone library that works perfectly with pytest and is the industry standard for mocking in Python. We'll be using it extensively.
-
-### Test Doubles: A Family of Fakes
-
-"Mock" is often used as a catch-all term, but it's technically part of a larger family of objects called **Test Doubles**. You might hear these terms:
-
-*   **Dummy:** An object that is passed around but never actually used. Usually just to fill a parameter list.
-*   **Stub:** An object that provides canned answers to calls made during the test. It doesn't record interactions.
-*   **Spy:** An object that records information on how it was called. It's a "stub with recording capabilities."
-*   **Fake:** An object with a working implementation, but it's not the real production one. For example, an in-memory database instead of a real PostgreSQL database.
-*   **Mock:** An object that is pre-programmed with expectations which form a specification of the calls they are expected to receive. It can throw an exception if it receives a call it doesn't expect.
-
-`unittest.mock` provides objects that can act as stubs, spies, and mocks. For simplicity, we'll mostly use the term "mock," as it's the most common in the Python community. The key takeaway is that we are replacing a real component with a controllable fake for the purpose of a test.
-
-## Creating Mocks with Mock()
-
-## Creating Mocks with Mock()
-
-Let's start by creating a mock object directly to see how it behaves. The primary class for this is `Mock` from the `unittest.mock` library.
+Now, here is the function we want to test. It coordinates these two services.
 
 ```python
-# test_mock_basics.py
-from unittest.mock import Mock
+# src/orders.py
 
-def test_basic_mock_behavior():
-    # Create a mock object
-    mock_api_client = Mock()
+from .services import PaymentGateway, NotificationService
 
-    # You can access any attribute on it, and it will return another Mock!
-    print(f"Attribute access: {mock_api_client.get_user}")
-    # Output: Attribute access: <Mock name='mock.get_user' id='...'>
+def process_order(order_id: str, customer_email: str, card_details: str, amount: float):
+    """
+    Processes a customer order.
+    1. Charges the customer's card.
+    2. Sends a receipt if the charge is successful.
+    """
+    gateway = PaymentGateway()
+    notifier = NotificationService()
 
-    # You can call any method on it, and it will also return another Mock!
-    print(f"Method call: {mock_api_client.get_user(id=1)}")
-    # Output: Method call: <Mock name='mock.get_user()' id='...'>
+    print(f"\nProcessing order {order_id}...")
+    transaction_id = gateway.charge(card_details, amount)
 
-    # This is useful, but not what we usually want.
-    # We want to control the return value.
-    mock_api_client.get_user.return_value = {"name": "Alice", "id": 1}
-
-    # Now when we call it, we get our specified value
-    user_data = mock_api_client.get_user(id=1)
-    assert user_data == {"name": "Alice", "id": 1}
+    if transaction_id:
+        print(f"Payment successful for order {order_id}.")
+        notifier.send_receipt(customer_email, transaction_id)
+        return "Order processed successfully."
+    else:
+        print(f"Payment failed for order {order_id}.")
+        return "Payment failed."
 ```
 
-The `Mock` object is incredibly flexible. It allows any attribute access or method call by default, creating new `Mock` objects on the fly. This is powerful but can sometimes hide typos.
-
-The real utility comes from configuring its behavior and then asserting how it was used.
-
-### Configuring Return Values and Attributes
-
-You can set the `return_value` of a mock method or set attributes directly.
+Finally, let's write our first, naive test. This is an **integration test**, not a unit test, because it uses the real, live `services`.
 
 ```python
-# test_mock_basics.py
-from unittest.mock import Mock
+# tests/test_orders_naive.py
 
-def test_configuring_a_mock():
-    # Create a mock for a database connection object
-    mock_db_conn = Mock()
+from src.orders import process_order
 
-    # Configure an attribute
-    mock_db_conn.is_connected = True
-
-    # Configure a method's return value
-    mock_db_conn.get_user_by_id.return_value = {
-        "username": "testuser",
-        "email": "test@example.com"
-    }
-
-    # Now we can use it as if it were a real object
-    assert mock_db_conn.is_connected is True
-    
-    user = mock_db_conn.get_user_by_id(123)
-    assert user["username"] == "testuser"
+def test_process_order_success_naive():
+    """
+    A slow and unreliable test for a successful order.
+    This test will take ~3 seconds to run.
+    """
+    result = process_order(
+        order_id="order_123",
+        customer_email="test@example.com",
+        card_details="tok_valid",
+        amount=49.99
+    )
+    assert result == "Order processed successfully."
 ```
 
-This is the foundation of mocking: creating a fake object and telling it how to respond when our code interacts with it. However, creating a mock like this doesn't help us test our `format_weather_report` function. That function doesn't accept a `requests` object as an argument; it imports and uses it directly.
-
-To solve this, we need to temporarily replace the *real* `requests` object in our application's namespace with our *mock* object. This process is called **patching**.
-
-## Patching Functions with @patch
-
-## Patching Functions with @patch
-
-Patching is the act of intercepting calls to functions or objects and replacing them with something else, usually a mock. The `unittest.mock.patch` function is our primary tool for this, and it's most commonly used as a decorator.
-
-Let's finally write a proper, isolated test for our `format_weather_report` function.
-
-```python
-# tests/test_weather_reporter.py
-from unittest.mock import patch
-from src.weather_reporter import format_weather_report
-
-# The target string is 'path.to.module.object_to_patch'
-# We are patching 'requests.get' inside the 'weather_reporter' module.
-@patch("src.weather_reporter.requests.get")
-def test_format_weather_report_sunny(mock_requests_get):
-    """
-    Test the report formatter with a successful, sunny weather API response.
-    """
-    # Configure the mock to behave like a successful API call
-    mock_response = mock_requests_get.return_value
-    mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "temperature": 25,
-        "condition": "Sunny"
-    }
-
-    # Call the function we are testing
-    report = format_weather_report("London")
-
-    # Assert that our function formatted the report correctly
-    assert report == "The weather in London is 25°C and Sunny."
-```
-
-Let's break this down, because it's the most important concept in this chapter.
-
-### The `@patch` Decorator
-
-`@patch("src.weather_reporter.requests.get")`
-
-This decorator does all the magic. During the execution of `test_format_weather_report_sunny`, it finds the `get` object inside the `requests` module *as it is seen by `src.weather_reporter`* and replaces it with a mock object.
-
-After the test function finishes (whether it passes, fails, or raises an error), `patch` automatically restores the original `requests.get`, so other tests are not affected.
-
-### The Mock Argument
-
-`def test_format_weather_report_sunny(mock_requests_get):`
-
-The `patch` decorator creates a mock object and passes it into our test function as an argument. The name of the argument (`mock_requests_get`) can be anything you like, but it's good practice to name it descriptively. This is the object we use to configure behavior and make assertions.
-
-### The Target String: The Most Common Point of Confusion
-
-`"src.weather_reporter.requests.get"`
-
-Why this specific string? This is critical. **You must patch the object where it is looked up, not where it is defined.**
-
-Our code under test is in `src/weather_reporter.py`. Inside that file, the line `response = requests.get(...)` looks up the name `get` within the `requests` module that was imported into that file's namespace. Therefore, we must patch `requests.get` *within the `src.weather_reporter` module*.
-
-A common mistake is to try patching `'requests.get'`. This would patch the `get` function in the original `requests` library, but our `weather_reporter` module has already imported its own reference to it. The patch would have no effect on our code under test.
-
-**Think of it like this:** You need to change the tool in the toolbox that your code is actually using.
-
-### Testing an Error Case
-
-Now, let's see how easy it is to test the "API is down" scenario.
-
-```python
-# tests/test_weather_reporter.py
-from unittest.mock import patch, Mock
-from requests.exceptions import RequestException
-from src.weather_reporter import format_weather_report
-
-# ... (previous test) ...
-
-@patch("src.weather_reporter.requests.get")
-def test_format_weather_report_api_error(mock_requests_get):
-    """
-    Test the report formatter when the API call fails.
-    """
-    # Configure the mock to raise an exception, just like the real library would
-    mock_requests_get.side_effect = RequestException("API is down")
-
-    # Call the function we are testing
-    report = format_weather_report("Paris")
-
-    # Assert that our function handles the error gracefully
-    assert report == "Sorry, could not retrieve weather for Paris."
-```
-
-Without mocking, this test would be nearly impossible to write reliably. With mocking, it's trivial. We simply configure our mock to raise an exception when called, and then verify that our error-handling logic works as expected. We'll cover `side_effect` in more detail shortly.
-
-## Common Mock Assertions (assert_called, assert_called_with)
-
-## Common Mock Assertions (assert_called, assert_called_with)
-
-The first part of mocking is controlling behavior. The second, equally important part is verifying that our code interacted with the dependency as we expected. Mock objects provide a suite of assertion methods for this purpose.
-
-Let's go back to our successful weather test and add some assertions about how the mock was used.
-
-```python
-# tests/test_weather_reporter.py
-from unittest.mock import patch
-from src.weather_reporter import format_weather_report
-
-@patch("src.weather_reporter.requests.get")
-def test_format_weather_report_sunny_with_call_assertions(mock_requests_get):
-    """
-    Test the report formatter and verify the API call.
-    """
-    mock_response = mock_requests_get.return_value
-    mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "temperature": 25,
-        "condition": "Sunny"
-    }
-
-    # Call the function we are testing
-    report = format_weather_report("London")
-
-    # Assert the output is correct
-    assert report == "The weather in London is 25°C and Sunny."
-
-    # --- New Assertions ---
-    # Verify that requests.get was called
-    mock_requests_get.assert_called()
-
-    # Verify it was called exactly once
-    mock_requests_get.assert_called_once()
-
-    # Verify it was called with the correct arguments
-    mock_requests_get.assert_called_once_with("https://api.weather.com/data?city=London")
-```
-
-These assertions allow us to confirm that our function is constructing the API URL correctly.
-
-### Reading Failure Messages
-
-Pytest's integration with `unittest.mock` provides incredibly detailed failure messages. Let's say we made a typo in our code and called the API with `city=london` (lowercase).
-
-```python
-# In src/weather_reporter.py (with a bug)
-def get_weather_data(city: str) -> dict:
-    # ...
-    # BUG: city is not capitalized as expected
-    response = requests.get(f"https://api.weather.com/data?city={city.lower()}") 
-    # ...
-```
-
-Our `assert_called_once_with` would fail with a very helpful message:
+Let's run this test and see the problems firsthand.
 
 ```bash
->       mock_requests_get.assert_called_once_with("https://api.weather.com/data?city=London")
-E       AssertionError: expected call not found.
-E       Expected: get('https://api.weather.com/data?city=London')
-E       Actual: get('https://api.weather.com/data?city=london')
+$ pytest -v -s tests/test_orders_naive.py
+# The -s flag is used to show the print statements
+
+=========================== test session starts ============================
+...
+collected 1 item
+
+tests/test_orders_naive.py::test_process_order_success_naive 
+Processing order order_123...
+
+Connecting to payment gateway...
+Charge successful. Transaction ID: tx_...
+Payment successful for order order_123.
+
+Sending receipt for tx_... to test@example.com...
+Receipt sent.
+PASSED [100%]
+
+======================= 1 passed in 3.05s ========================
 ```
 
-This is an example of **treating errors as data**. The output isn't just "failure"; it's a map showing you exactly what went wrong.
+The test passed, but look at the execution time: **3.05 seconds**. For one test! A suite of 100 such tests would take over 5 minutes. Furthermore, if we run it enough times, it will eventually fail due to the `random.random()` check we added to simulate unreliability.
 
-### Other Useful Assertions
+This is the core problem that mocking solves. We need to test the logic of `process_order` *without* actually calling the slow, unreliable, and costly external services.
 
-Here are some other common assertion methods:
+## What Is a Mock?
 
-*   `mock_object.assert_not_called()`: Verifies the mock was never called. Useful for testing logic branches where a dependency *shouldn't* be touched.
-*   `mock_object.assert_any_call(*args, **kwargs)`: Verifies the mock was called with the given arguments at least once, even if it was called with other arguments as well.
-*   `mock_object.call_count`: An integer property that tells you how many times the mock was called. You can assert against it directly: `assert mock_object.call_count == 2`.
+## Test Doubles, Stubs, and Mocks
 
-Let's write a test for the `assert_not_called` case. Imagine we have a function that caches results and should only call the API if the city is not in the cache.
+To test our code in isolation, we replace real dependency objects (like an instance of `PaymentGateway`) with fake objects that we control. These fake objects are generically called **Test Doubles**. The term comes from the idea of a "stunt double" in movies—a stand-in that looks and acts like the real thing for a specific, controlled scene.
+
+There are several types of test doubles, but the most common one we'll use is a **Mock**.
+
+A **Mock Object** is a smart test double that:
+1.  **Stands in** for a real object.
+2.  **Can be configured** to return specific values from its methods.
+3.  **Records how it was used**, allowing you to make assertions about which methods were called, how many times, and with what arguments.
+
+In Python, the standard library for creating and managing mocks is `unittest.mock`. Even though the name includes "unittest" (the built-in test framework), it is a general-purpose library that works perfectly with pytest.
+
+The core idea is to replace this:
+
+`Our Code -> Real Payment Gateway`
+
+with this:
+
+`Our Code -> Mock Payment Gateway <- Our Test`
+
+Our test code will:
+1.  Create a mock object that looks and feels like a `PaymentGateway`.
+2.  Tell the `process_order` function to use our mock instead of the real one.
+3.  Configure the mock to behave in a specific way (e.g., "when `charge` is called, return `tx_12345`").
+4.  Run `process_order`.
+5.  Ask the mock questions to verify the interaction (e.g., "were you called? Was your `charge` method called with an amount of 49.99?").
+
+This approach solves all our previous problems:
+-   **Cost:** No real services are called. It's free.
+-   **Slowness:** Mocks are just in-memory Python objects. They are incredibly fast.
+-   **Unreliability:** Mocks are 100% deterministic. They do exactly what you tell them to do.
+-   **Side Effects:** No databases are touched, no emails are sent.
+-   **Testing Edge Cases:** We can easily configure a mock to simulate a "Card Declined" error or any other scenario we want to test.
+
+## Creating Mocks with Mock()
+
+## The `Mock` Class
+
+The `unittest.mock` module provides a class called `Mock` (and a more powerful subclass `MagicMock`) that serves as a generic mock object. Let's see it in action.
 
 ```python
-# src/cached_weather.py
-import requests
+# You can run this in a Python interpreter
+from unittest.mock import Mock
 
-CACHE = {}
+# Create a mock object
+mock_gateway = Mock()
 
-def get_weather_with_cache(city: str) -> dict:
-    if city in CACHE:
-        return CACHE[city]
-    
-    # This part should only be reached if the city is not in the cache
-    response = requests.get(f"https://api.weather.com/data?city={city}")
-    response.raise_for_status()
-    data = response.json()
-    CACHE[city] = data
-    return data
+# You can call any method on it, and it will return another Mock
+result = mock_gateway.charge("details", 100)
+print(result)
+# Output: <Mock name='mock.charge()' id='...'>
+
+# You can access any attribute, and it will also return a Mock
+api_key = mock_gateway.api_key
+print(api_key)
+# Output: <Mock name='mock.api_key' id='...'>
 ```
 
+This is the default behavior. A `Mock` object is a blank slate that will accept any operation you perform on it and record that it happened. This is useful, but to make it behave like our `PaymentGateway`, we need to configure it.
+
+We can pre-configure a mock to have specific attributes or methods with return values.
+
 ```python
-# tests/test_cached_weather.py
+from unittest.mock import Mock
+
+# Configure a mock to simulate a successful charge
+mock_gateway = Mock()
+mock_gateway.charge.return_value = "tx_success_123"
+
+# Now when we call charge, it returns our configured value
+transaction_id = mock_gateway.charge(card_details="tok_valid", amount=50.00)
+print(transaction_id)
+# Output: tx_success_123
+
+# We can also check if the method was called
+mock_gateway.charge.assert_called()
+
+# And check *what* it was called with
+mock_gateway.charge.assert_called_with(card_details="tok_valid", amount=50.00)
+```
+
+This is the fundamental mechanism. However, creating a mock is one thing; getting our `process_order` function to *use* it is another. The `process_order` function creates its own `PaymentGateway` instance internally. We need a way to intercept that creation and substitute our mock. This is called **patching**.
+
+## Patching Functions with @patch
+
+## Intercepting Code with `@patch`
+
+The most common tool you'll use from `unittest.mock` is `patch`. It's a powerful decorator (or context manager) that temporarily replaces an object in a specific module with a mock.
+
+The key to using `patch` correctly is to provide the path to the object **where it is looked up**, not where it is defined. In our case, the `process_order` function lives in `src.orders` and it does `from .services import PaymentGateway`. Therefore, inside `src.orders`, `PaymentGateway` refers to `src.orders.PaymentGateway`. This is the target we must patch.
+
+### Iteration 1: Replacing the Slow Services
+
+Let's write a new test that uses `@patch` to replace both `PaymentGateway` and `NotificationService`.
+
+**The Goal:** Run the test for `process_order` without the 3-second delay.
+
+Here is our first attempt.
+
+```python
+# tests/test_orders_mocked.py
+
 from unittest.mock import patch
-from src.cached_weather import get_weather_with_cache, CACHE
+from src.orders import process_order
 
-@patch("src.cached_weather.requests.get")
-def test_get_weather_from_cache(mock_requests_get):
-    # Pre-populate the cache
-    CACHE["Tokyo"] = {"temperature": 18, "condition": "Cloudy"}
+# The target string is 'module.submodule.ClassName'
+# Note the order: decorators are applied from the bottom up.
+# The first argument to the test function corresponds to the *inner-most* decorator.
+# So, mock_notifier comes first, then mock_gateway.
+@patch('src.orders.PaymentGateway')
+@patch('src.orders.NotificationService')
+def test_process_order_success_mocked(mock_notifier_class, mock_gateway_class):
+    # The patch gives us mock *classes*, not instances.
+    # We can configure the behavior of instances that will be created from these classes.
+    mock_gateway_instance = mock_gateway_class.return_value
+    mock_gateway_instance.charge.return_value = "tx_mock_456"
 
-    # Call the function for a cached city
-    get_weather_with_cache("Tokyo")
+    mock_notifier_instance = mock_notifier_class.return_value
 
-    # Verify that the real API was NOT called
-    mock_requests_get.assert_not_called()
+    # Run the function under test
+    result = process_order(
+        order_id="order_456",
+        customer_email="mock@example.com",
+        card_details="tok_mock",
+        amount=19.99
+    )
 
-    # Clean up the cache for other tests
-    CACHE.clear()
+    # Assert the final result
+    assert result == "Order processed successfully."
 ```
 
-## Mock Side Effects and Return Values
+Let's run this new test.
 
-## Mock Side Effects and Return Values
+```bash
+$ pytest -v -s tests/test_orders_mocked.py
 
-We've already seen `return_value` and a brief example of `side_effect`. Let's explore these two powerful configuration options in more detail. They are the primary ways you control how your mock behaves when called.
+=========================== test session starts ============================
+...
+collected 1 item
 
-### `return_value`: The Simple Case
+tests/test_orders_mocked.py::test_process_order_success_mocked 
+Processing order order_456...
+Payment successful for order order_456.
+PASSED [100%]
 
-`return_value` is an attribute on a mock. When the mock is called, it will always return the value assigned to this attribute. This is perfect for simulating successful function calls that return a predictable object.
-
-```python
-# test_return_value.py
-from unittest.mock import Mock
-
-def test_return_value_example():
-    mock_func = Mock()
-    mock_func.return_value = 42
-
-    result = mock_func("some", "arguments")
-    
-    assert result == 42
-    mock_func.assert_called_once_with("some", "arguments")
+======================= 1 passed in 0.02s ========================
 ```
 
-### `side_effect`: For Complex Behavior
+Look at that! The test passed in **0.02 seconds**. We have successfully replaced the slow external services with fast mock objects.
 
-`side_effect` is more versatile and powerful. It can be set to an exception, an iterable, or a callable function.
+However, our test is incomplete. It asserts that `process_order` returns the correct string, but it doesn't verify that the services were used correctly. Did we actually call `gateway.charge` with the right amount? Did we call `notifier.send_receipt` with the correct email and transaction ID? Right now, we have no idea. A test that passes for the wrong reasons is just as dangerous as a test that fails. We need to add assertions about the *interactions* with our mocks.
 
-#### 1. Raising Exceptions
+## Common Mock Assertions (assert_called, assert_called_with)
 
-To test your code's error handling, you can set `side_effect` to an exception class or instance. When the mock is called, it will raise that exception.
+## Verifying Mock Interactions
 
-```python
-# test_side_effect.py
-import pytest
-from unittest.mock import Mock
+Mocks are not just stand-ins; they are spies. They record every interaction you have with them. After running your code, you can query the mock to ensure it was used as you expected.
 
-def function_that_handles_errors(api_call):
-    try:
-        return api_call()
-    except ValueError:
-        return "Handled ValueError"
+The most common assertion methods are:
+-   `mock_object.method.assert_called()`: Asserts that the method was called at least once.
+-   `mock_object.method.assert_called_once()`: Asserts that the method was called exactly once.
+-   `mock_object.method.assert_called_with(*args, **kwargs)`: Asserts that the *last* call to the method was with these specific arguments.
+-   `mock_object.method.assert_called_once_with(*args, **kwargs)`: A combination of the above. Asserts it was called exactly once, and that one call was with these arguments.
+-   `mock_object.method.assert_not_called()`: Asserts the method was never called.
+-   `mock_object.method.call_count`: An integer property that tells you how many times the method was called.
 
-def test_side_effect_with_exception():
-    mock_api = Mock()
-    mock_api.side_effect = ValueError("Invalid API Key")
+### Iteration 2: Verifying the Gateway and Notifier Calls
 
-    result = function_that_handles_errors(mock_api)
+Let's improve our previous test by adding assertions to verify that the gateway and notifier were called correctly.
 
-    assert result == "Handled ValueError"
-    mock_api.assert_called_once()
-```
+**Current Limitation:** Our test only checks the final return value. It doesn't confirm that the dependencies were used correctly.
 
-This is exactly what we did in our `test_format_weather_report_api_error` test to simulate a network failure.
+**New Scenario:** We need to ensure `gateway.charge` is called with the correct `card_details` and `amount`, and that `notifier.send_receipt` is called with the correct `email` and the `transaction_id` returned by the gateway.
 
-#### 2. Returning a Sequence of Values
-
-If you need a mock to return different values on subsequent calls, you can assign an iterable (like a list or tuple) to `side_effect`.
+Let's add these assertions to our test. To demonstrate how the assertions work, we'll start by making a mistake on purpose. Let's assert that the `amount` was `29.99` when it was actually `19.99`.
 
 ```python
-# test_side_effect.py
-from unittest.mock import Mock
+# tests/test_orders_mocked.py (updated test)
 
-def test_side_effect_with_iterable():
-    # Imagine a mock for a database cursor's fetchone() method
-    mock_fetchone = Mock()
-    mock_fetchone.side_effect = [
-        ("user1", "user1@a.com"),
-        ("user2", "user2@b.com"),
-        None  # The last call returns None, indicating no more rows
-    ]
-
-    assert mock_fetchone() == ("user1", "user1@a.com")
-    assert mock_fetchone() == ("user2", "user2@b.com")
-    assert mock_fetchone() is None
-    
-    # If you call it again after exhaustion, it raises StopIteration
-    with pytest.raises(StopIteration):
-        mock_fetchone()
-```
-
-#### 3. Using a Callable for Dynamic Behavior
-
-For the most complex scenarios, you can assign a function (or any callable) to `side_effect`. The mock will delegate the call to your function, passing along any arguments it received. Your function's return value will be used as the mock's return value.
-
-This is useful when the mock's output needs to depend on its input.
-
-```python
-# test_side_effect.py
-from unittest.mock import Mock
-
-def user_db_side_effect(user_id):
-    """A fake function to simulate a user database."""
-    if user_id == 1:
-        return {"name": "Alice"}
-    if user_id == 2:
-        return {"name": "Bob"}
-    return None
-
-def test_side_effect_with_callable():
-    mock_get_user = Mock()
-    mock_get_user.side_effect = user_db_side_effect
-
-    alice = mock_get_user(1)
-    bob = mock_get_user(2)
-    charlie = mock_get_user(3)
-
-    assert alice == {"name": "Alice"}
-    assert bob == {"name": "Bob"}
-    assert charlie is None
-
-    # You can still assert how the mock was called
-    assert mock_get_user.call_count == 3
-    mock_get_user.assert_any_call(1)
-    mock_get_user.assert_any_call(2)
-```
-
-## Combining Mocks and Fixtures
-
-## Combining Mocks and Fixtures
-
-Using `@patch` is great, but it can become unwieldy if you need the same mock setup for multiple tests, or if you need to patch several things at once.
-
-```python
-# The "crowded decorator" problem
-@patch("src.module.api.get_user")
-@patch("src.module.api.get_account")
-@patch("src.module.db.save_record")
-def test_something(mock_save, mock_get_account, mock_get_user):
-    # ... test logic ...
-```
-
-This is where fixtures, the foundation of pytest, come to the rescue. We can encapsulate our patching logic inside a fixture to create clean, reusable, and composable mock setups. This is the "pytest way" of handling mocks.
-
-### The Wrong Way: Repetitive Setup
-
-First, let's see the problem. Imagine we have several tests that all need a mock of our weather API that returns a "Sunny" response. We could copy-paste the setup, but that's not maintainable.
-
-```python
-# Repetitive setup (don't do this)
-@patch("src.weather_reporter.requests.get")
-def test_report_for_sunny_day(mock_requests_get):
-    mock_response = mock_requests_get.return_value
-    mock_response.json.return_value = {"temperature": 25, "condition": "Sunny"}
-    # ... test logic ...
-
-@patch("src.weather_reporter.requests.get")
-def test_another_feature_on_a_sunny_day(mock_requests_get):
-    mock_response = mock_requests_get.return_value
-    mock_response.json.return_value = {"temperature": 25, "condition": "Sunny"}
-    # ... another test's logic ...
-```
-
-### The Right Way: A Mocking Fixture
-
-Let's refactor this into a fixture. We can use `patch` as a context manager inside the fixture.
-
-```python
-# tests/conftest.py
-import pytest
 from unittest.mock import patch
+from src.orders import process_order
 
-@pytest.fixture
-def mock_sunny_weather_api():
-    """
-    A fixture that patches requests.get and mocks a sunny weather response.
-    It yields the mock object for optional further configuration in tests.
-    """
-    # The 'with' statement starts the patch
-    with patch("src.weather_reporter.requests.get") as mock_get:
-        mock_response = mock_get.return_value
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "temperature": 25,
-            "condition": "Sunny"
-        }
-        yield mock_get  # The test runs here
-    # The patch is automatically stopped when the 'with' block exits
-```
+@patch('src.orders.PaymentGateway')
+@patch('src.orders.NotificationService')
+def test_process_order_success_with_assertions(mock_notifier_class, mock_gateway_class):
+    # Arrange: Configure the mocks
+    mock_gateway_instance = mock_gateway_class.return_value
+    mock_gateway_instance.charge.return_value = "tx_mock_456"
 
-```python
-# tests/test_weather_reporter_with_fixture.py
-from src.weather_reporter import format_weather_report
+    mock_notifier_instance = mock_notifier_class.return_value
 
-def test_format_weather_report_with_fixture(mock_sunny_weather_api):
-    """
-    Test the formatter using our fixture. The test is now much cleaner.
-    """
-    report = format_weather_report("London")
-    assert report == "The weather in London is 25°C and Sunny."
+    # Act: Run the function under test
+    result = process_order(
+        order_id="order_456",
+        customer_email="mock@example.com",
+        card_details="tok_mock",
+        amount=19.99
+    )
 
-    # We can still make assertions on the mock yielded by the fixture
-    mock_sunny_weather_api.assert_called_once_with(
-        "https://api.weather.com/data?city=London"
+    # Assert: Check the final result and the interactions
+    assert result == "Order processed successfully."
+
+    # Verify the gateway was used correctly
+    mock_gateway_instance.charge.assert_called_once_with("tok_mock", 29.99) # INTENTIONAL ERROR
+
+    # Verify the notifier was used correctly
+    mock_notifier_instance.send_receipt.assert_called_once_with(
+        "mock@example.com", "tx_mock_456"
     )
 ```
 
-This approach is vastly superior:
+Now, let's run this and see the failure.
 
-*   **DRY (Don't Repeat Yourself):** The mock setup is defined in one place. If the API response format changes, we only need to update the fixture.
-*   **Readability:** The test function is now focused purely on the logic it's testing: call the function and assert the result. The setup mechanism is abstracted away.
-*   **Reusability:** Any test in our suite can now request the `mock_sunny_weather_api` fixture to get a consistent testing environment.
-
-### Using Pytest's `monkeypatch` Fixture
-
-Pytest provides its own built-in fixture for modifying code during tests called `monkeypatch`. It's an alternative to `unittest.mock.patch` for some use cases.
-
-`monkeypatch` is excellent for replacing attributes, dictionary items, or environment variables. Its most common method is `setattr`.
-
-Let's rewrite our fixture using `monkeypatch`. This requires a bit more manual work, as `monkeypatch` doesn't create a `Mock` object for us, but it's very explicit.
-
-```python
-# tests/conftest.py
-import pytest
-from unittest.mock import Mock
-
-@pytest.fixture
-def mock_sunny_weather_api_monkeypatch(monkeypatch):
-    """
-    A fixture that uses monkeypatch to replace requests.get.
-    """
-    # We need to create the mock object ourselves
-    mock_get = Mock()
-    mock_response = mock_get.return_value
-    mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "temperature": 25,
-        "condition": "Sunny"
-    }
-    
-    # Use monkeypatch.setattr to replace the real function with our mock
-    monkeypatch.setattr("src.weather_reporter.requests.get", mock_get)
-    
-    # Unlike the context manager, we don't need to yield.
-    # Monkeypatch handles the teardown automatically.
-    # We can return the mock if tests need to inspect it.
-    return mock_get
+```bash
+$ pytest -v tests/test_orders_mocked.py::test_process_order_success_with_assertions
 ```
 
-### `patch` vs. `monkeypatch`: Which to Choose?
+### Diagnostic Analysis: Reading the Failure
 
-Both `unittest.mock.patch` and pytest's `monkeypatch` are excellent tools. Here's a general guideline:
+**The complete output**:
+```
+=========================== test session starts ============================
+...
+collected 1 item
 
-*   Use **`unittest.mock.patch`** (as a decorator or context manager) when your primary goal is to replace an object with a `Mock` to verify interactions (e.g., `assert_called_with`). It's the standard for classic mocking.
-*   Use **`monkeypatch`** when you want to replace something with a simple value or a fake function that doesn't need complex mock assertions. It's great for setting environment variables (`monkeypatch.setenv`), changing constants, or replacing a function with a simple lambda that returns a fixed value.
+tests/test_orders_mocked.py::test_process_order_success_with_assertions FAILED [100%]
 
-For most of the mocking scenarios you'll encounter, combining `unittest.mock.patch` with pytest fixtures provides the cleanest and most powerful pattern. It leverages the strengths of both libraries: the sophisticated mocking capabilities of `unittest.mock` and the elegant dependency injection and setup/teardown management of pytest fixtures.
+================================= FAILURES =================================
+___ test_process_order_success_with_assertions ___
+
+mock_notifier_class = <MagicMock name='NotificationService' id='...'>
+mock_gateway_class = <MagicMock name='PaymentGateway' id='...'>
+
+    @patch('src.orders.PaymentGateway')
+    @patch('src.orders.NotificationService')
+    def test_process_order_success_with_assertions(mock_notifier_class, mock_gateway_class):
+        # ... (setup code) ...
+    
+        # Verify the gateway was used correctly
+>       mock_gateway_instance.charge.assert_called_once_with("tok_mock", 29.99)
+E       AssertionError: expected call not found.
+E       Expected: charge('tok_mock', 29.99)
+E       Actual: charge('tok_mock', 19.99)
+
+tests/test_orders_mocked.py:28: AssertionError
+========================= short test summary info ==========================
+FAILED tests/test_orders_mocked.py::test_process_order_success_with_assertions - AssertionError: expected call not found.
+============================ 1 failed in 0.05s =============================
+```
+
+**Let's parse this section by section**:
+
+1.  **The summary line**: `FAILED ... - AssertionError: expected call not found.`
+    -   What this tells us: The test failed because a mock assertion failed. Specifically, we asserted a method was called in a certain way, but it wasn't.
+
+2.  **The traceback**:
+    ```python
+    >       mock_gateway_instance.charge.assert_called_once_with("tok_mock", 29.99)
+    E       AssertionError: expected call not found.
+    ```
+    -   What this tells us: The exact line that failed was our call to `assert_called_once_with`.
+
+3.  **The assertion introspection**:
+    ```
+    E       Expected: charge('tok_mock', 29.99)
+    E       Actual: charge('tok_mock', 19.99)
+    ```
+    -   What this tells us: This is the most valuable part. The `unittest.mock` library provides an incredibly clear report. We expected a call with the amount `29.99`, but the actual call was made with `19.99`.
+
+**Root cause identified**: Our assertion for the `amount` argument was incorrect.
+**Why the current approach can't solve this**: The test itself is fine; the *assertion data* is wrong. This failure proves our test is working correctly—it caught a discrepancy.
+**What we need**: To fix the test, we simply need to update the assertion to reflect the correct, expected arguments.
+
+### The Solution
+
+Let's fix the assertion and rerun the test.
+
+```python
+# tests/test_orders_mocked.py (fixed test)
+
+from unittest.mock import patch
+from src.orders import process_order
+
+@patch('src.orders.PaymentGateway')
+@patch('src.orders.NotificationService')
+def test_process_order_success_with_assertions_fixed(mock_notifier_class, mock_gateway_class):
+    # Arrange
+    mock_gateway_instance = mock_gateway_class.return_value
+    mock_gateway_instance.charge.return_value = "tx_mock_456"
+    mock_notifier_instance = mock_notifier_class.return_value
+
+    # Act
+    result = process_order(
+        order_id="order_456",
+        customer_email="mock@example.com",
+        card_details="tok_mock",
+        amount=19.99
+    )
+
+    # Assert
+    assert result == "Order processed successfully."
+    mock_gateway_instance.charge.assert_called_once_with("tok_mock", 19.99) # CORRECTED
+    mock_notifier_instance.send_receipt.assert_called_once_with(
+        "mock@example.com", "tx_mock_456"
+    )
+```
+
+Running this test now passes, and we have much higher confidence in its correctness. We've verified the final output *and* the internal interactions with its dependencies.
+
+## Mock Side Effects and Return Values
+
+## Controlling Mock Behavior
+
+So far, we've used `return_value` to specify what a mock method should return. This is the most common way to configure a mock. But what if we need to simulate more complex behavior, like an error?
+
+### Iteration 3: Testing Failure Paths
+
+**Current Limitation:** We've only tested the "happy path" where the payment succeeds. A robust test suite must also cover failure scenarios.
+
+**New Scenario:** What happens if the payment gateway declines the charge? Our `process_order` function should return "Payment failed." and should *not* call the notification service.
+
+To test this, we need to configure our mock gateway's `charge` method to simulate a failure. In our real `PaymentGateway`, a failed charge returns an empty string. Let's simulate that.
+
+We can also use another powerful attribute: `side_effect`. The `side_effect` argument can be used to raise exceptions or to return different values on subsequent calls.
+
+-   `mock.method.side_effect = Exception("Boom!")`: Calling `mock.method()` will now raise `Exception("Boom!")`.
+-   `mock.method.side_effect = [val1, val2, val3]`: The first call will return `val1`, the second `val2`, etc.
+
+Let's write two new tests: one for a declined payment and one for a gateway exception.
+
+```python
+# tests/test_orders_mocked.py (new tests for failure paths)
+
+from unittest.mock import patch
+import pytest
+from src.orders import process_order
+
+# We'll need a custom exception for one of our tests
+class GatewayError(Exception):
+    pass
+
+@patch('src.orders.PaymentGateway')
+@patch('src.orders.NotificationService')
+def test_process_order_payment_declined(mock_notifier_class, mock_gateway_class):
+    # Arrange: Configure the gateway to simulate a declined payment (returns empty string)
+    mock_gateway_instance = mock_gateway_class.return_value
+    mock_gateway_instance.charge.return_value = "" # Simulate failure
+    mock_notifier_instance = mock_notifier_class.return_value
+
+    # Act
+    result = process_order("order_789", "fail@example.com", "tok_declined", 100.00)
+
+    # Assert
+    assert result == "Payment failed."
+    mock_gateway_instance.charge.assert_called_once_with("tok_declined", 100.00)
+    
+    # Crucially, assert the notifier was *not* called
+    mock_notifier_instance.send_receipt.assert_not_called()
+
+@patch('src.orders.PaymentGateway')
+@patch('src.orders.NotificationService')
+def test_process_order_gateway_error(mock_notifier_class, mock_gateway_class):
+    # Arrange: Configure the gateway to raise an exception
+    mock_gateway_instance = mock_gateway_class.return_value
+    mock_gateway_instance.charge.side_effect = GatewayError("Connection timed out")
+    mock_notifier_instance = mock_notifier_class.return_value
+
+    # Act & Assert: Use pytest.raises to check for the exception
+    with pytest.raises(GatewayError, match="Connection timed out"):
+        process_order("order_999", "error@example.com", "tok_error", 200.00)
+
+    # Assert that the notifier was not called in this case either
+    mock_notifier_instance.send_receipt.assert_not_called()
+```
+
+These tests now pass and give us confidence that our `process_order` function correctly handles two critical failure modes. Mocks made this trivial to test; trying to test this with a real payment gateway would be nearly impossible.
+
+## Combining Mocks and Fixtures
+
+## The Pytest Way: Mocks as Fixtures
+
+Using multiple `@patch` decorators on every test function works, but it has some drawbacks:
+-   **Verbosity:** The decorators stack up, adding boilerplate to each test.
+-   **Repetition:** If many tests need the same mock setup, you're repeating the `@patch` lines everywhere.
+-   **Argument Ordering:** You have to remember the reverse order of arguments (`@patch('A')`, `@patch('B')` means the test signature is `def test(mock_B, mock_A):`). This is a common source of bugs.
+
+Pytest's fixture system provides a much cleaner and more maintainable way to manage mocks. We can move the patching logic inside a fixture. The `patch` object can also be used as a context manager, which is perfect for fixtures.
+
+### Iteration 4: Refactoring to Fixtures
+
+**Current Limitation:** Our tests are becoming repetitive with multiple `@patch` decorators.
+
+**Goal:** Encapsulate the mock setup into reusable fixtures to make tests cleaner and more declarative.
+
+Let's create two fixtures, `mock_gateway` and `mock_notifier`, in our test file.
+
+```python
+# tests/test_orders_fixtures.py
+
+import pytest
+from unittest.mock import patch
+from src.orders import process_order
+
+@pytest.fixture
+def mock_gateway():
+    """Fixture to mock the PaymentGateway."""
+    with patch('src.orders.PaymentGateway') as mock_gateway_class:
+        mock_instance = mock_gateway_class.return_value
+        yield mock_instance
+
+@pytest.fixture
+def mock_notifier():
+    """Fixture to mock the NotificationService."""
+    with patch('src.orders.NotificationService') as mock_notifier_class:
+        mock_instance = mock_notifier_class.return_value
+        yield mock_instance
+
+def test_process_order_success_with_fixtures(mock_gateway, mock_notifier):
+    # Arrange
+    mock_gateway.charge.return_value = "tx_fixture_123"
+
+    # Act
+    result = process_order(
+        order_id="order_fixture",
+        customer_email="fixture@example.com",
+        card_details="tok_fixture",
+        amount=50.00
+    )
+
+    # Assert
+    assert result == "Order processed successfully."
+    mock_gateway.charge.assert_called_once_with("tok_fixture", 50.00)
+    mock_notifier.send_receipt.assert_called_once_with(
+        "fixture@example.com", "tx_fixture_123"
+    )
+
+def test_process_order_payment_declined_with_fixtures(mock_gateway, mock_notifier):
+    # Arrange
+    mock_gateway.charge.return_value = "" # Simulate failure
+
+    # Act
+    result = process_order("order_fail", "fail_fixture@example.com", "tok_declined", 75.00)
+
+    # Assert
+    assert result == "Payment failed."
+    mock_gateway.charge.assert_called_once_with("tok_declined", 75.00)
+    mock_notifier.send_receipt.assert_not_called()
+```
+
+This is a significant improvement.
+-   **Declarative:** The test function now clearly states its dependencies: `mock_gateway` and `mock_notifier`.
+-   **Clean:** The test body contains only the logic relevant to that specific test case (Arrange, Act, Assert). The boilerplate of patching is hidden in the fixtures.
+-   **Reusable:** These fixtures can be used by any test in the file. If you move them to a `conftest.py` file, they can be used by your entire test suite.
+
+This pattern of wrapping `patch` in a fixture is the idiomatic way to use `unittest.mock` with pytest.
+
+### Synthesis: The Complete Journey
+
+Let's review our progress. We started with a slow, unreliable integration test and progressively refined it into a fast, robust, and maintainable suite of unit tests.
+
+| Iteration | Failure Mode / Limitation                               | Technique Applied                               | Result                                                              |
+| :-------- | :------------------------------------------------------ | :---------------------------------------------- | :------------------------------------------------------------------ |
+| 0         | Test is slow (~3s) and unreliable.                      | None (direct call to real services)             | An integration test, not a unit test.                               |
+| 1         | Slowness and unreliability.                             | `@patch` decorator                              | Test is fast (~0.02s) but doesn't verify interactions.                |
+| 2         | Test passes but doesn't prove correctness.              | `assert_called_with`                            | Test now verifies that dependencies are called with correct arguments. |
+| 3         | Only the "happy path" is tested.                        | `return_value` and `side_effect` for failures   | Test suite now covers success, decline, and exception scenarios.     |
+| 4         | Test setup is verbose and repetitive (`@patch` stack).  | `patch` as a context manager inside fixtures    | Tests are clean, declarative, and setup logic is reusable.          |
+
+### Final Implementation
+
+Here is what a final, production-ready test file for our `process_order` function might look like, using all the techniques we've learned.
+
+```python
+# tests/final/test_orders.py
+
+import pytest
+from unittest.mock import patch
+from src.orders import process_order
+
+# A custom exception for testing error paths
+class GatewayError(Exception):
+    pass
+
+@pytest.fixture
+def mock_gateway():
+    """Fixture to mock the PaymentGateway, returning the instance."""
+    # Using autospec=True is a best practice. It ensures the mock has the same
+    # API as the real object. If you try to call a non-existent method,
+    # your test will fail.
+    with patch('src.orders.PaymentGateway', autospec=True) as mock_gateway_class:
+        mock_instance = mock_gateway_class.return_value
+        yield mock_instance
+
+@pytest.fixture
+def mock_notifier():
+    """Fixture to mock the NotificationService, returning the instance."""
+    with patch('src.orders.NotificationService', autospec=True) as mock_notifier_class:
+        mock_instance = mock_notifier_class.return_value
+        yield mock_instance
+
+def test_process_order_success(mock_gateway, mock_notifier):
+    """Tests the successful order processing path."""
+    # Arrange
+    mock_gateway.charge.return_value = "tx_final_123"
+
+    # Act
+    result = process_order("order_final", "final@example.com", "tok_final", 99.99)
+
+    # Assert
+    assert result == "Order processed successfully."
+    mock_gateway.charge.assert_called_once_with("tok_final", 99.99)
+    mock_notifier.send_receipt.assert_called_once_with("final@example.com", "tx_final_123")
+
+def test_process_order_payment_declined(mock_gateway, mock_notifier):
+    """Tests the path where payment is declined."""
+    # Arrange
+    mock_gateway.charge.return_value = ""
+
+    # Act
+    result = process_order("order_declined", "declined@example.com", "tok_declined", 150.00)
+
+    # Assert
+    assert result == "Payment failed."
+    mock_gateway.charge.assert_called_once_with("tok_declined", 150.00)
+    mock_notifier.send_receipt.assert_not_called()
+
+def test_process_order_gateway_exception(mock_gateway, mock_notifier):
+    """Tests that an exception from the gateway is propagated."""
+    # Arrange
+    mock_gateway.charge.side_effect = GatewayError("Gateway is down")
+
+    # Act & Assert
+    with pytest.raises(GatewayError, match="Gateway is down"):
+        process_order("order_error", "error@example.com", "tok_error", 250.00)
+    
+    mock_notifier.send_receipt.assert_not_called()
+```

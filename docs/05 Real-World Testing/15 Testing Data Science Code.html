@@ -360,559 +360,739 @@
             <h1 id="chapter-15-testing-data-science-code">Chapter 15: Testing Data Science Code</h1>
 <h2 id="challenges-in-data-science-testing">Challenges in Data Science Testing</h2>
 <h2 id="challenges-in-data-science-testing_1">Challenges in Data Science Testing</h2>
-<p>Testing standard software is often about deterministic logic: if you provide input A, you must always get output B. A user's password hash must be exact. A sorted list must be perfectly ordered.</p>
-<p>Data science code operates in a world of statistics, probabilities, and approximations. This introduces a unique set of challenges that require a shift in our testing mindset. Before we write any code, let's understand the landscape we're navigating.</p>
-<h3 id="1-floating-point-precision">1. Floating-Point Precision</h3>
-<p>Computers cannot represent all decimal numbers perfectly. This tiny imprecision means that calculations involving floating-point numbers (like <code>3.14159</code>) can lead to unexpected results. The classic example is <code>0.1 + 0.2</code>, which does not exactly equal <code>0.3</code> in most programming languages. For data science, where almost every calculation involves floats, direct equality checks (<code>==</code>) are a recipe for failing tests.</p>
-<h3 id="2-large-and-complex-data">2. Large and Complex Data</h3>
-<p>Machine learning models are trained on datasets that can be gigabytes or even terabytes in size. You cannot and should not load your entire production dataset into a unit test. Our tests must be fast and self-contained, which means we need strategies for working with small, representative samples of data that capture the essential characteristics (and edge cases) of the real thing.</p>
-<h3 id="3-stochasticity-randomness">3. Stochasticity (Randomness)</h3>
-<p>Many algorithms in data science are stochastic, meaning they involve a random element. Examples include:
--   Randomly splitting data into training and testing sets.
--   Initializing model weights randomly.
--   Algorithms like Stochastic Gradient Descent.</p>
-<p>If you train the same model on the same data twice, you might get two slightly different models. A test that asserts a specific prediction value will be "flaky"—sometimes passing, sometimes failing. We need to test the <em>behavior</em> of the model, not a specific random outcome.</p>
-<h3 id="4-long-running-processes">4. Long-Running Processes</h3>
-<p>Training a deep learning model can take hours, days, or even weeks. A core principle of a good test suite is that it runs quickly, providing feedback in seconds or minutes. We cannot include model training in our standard test suite. Instead, we often test with pre-trained models or models trained on trivial datasets that finish in milliseconds.</p>
-<h3 id="5-correctness-is-statistical-not-absolute">5. "Correctness" is Statistical, Not Absolute</h3>
-<p>How do you know if a prediction model is "correct"? Its performance is measured with statistical metrics like accuracy, precision, or Mean Squared Error. A model with 95% accuracy is considered "good," but it's still "wrong" 5% of the time. We cannot write a simple <code>assert model.predict(input) == expected_output</code> for every case. Our tests must focus on properties and contracts, not on getting every single prediction right.</p>
-<h3 id="6-the-environment-and-dependencies">6. The Environment and Dependencies</h3>
-<p>Data science projects often have a fragile web of dependencies: specific versions of NumPy, Pandas, Scikit-learn, PyTorch, or TensorFlow. A minor version change in one library can subtly change numerical results, causing tests to fail. Managing this environment is a critical part of ensuring tests are reliable and reproducible.</p>
-<p>These challenges might seem daunting, but they are all solvable. The key is to adapt our testing strategies from asserting exact outcomes to verifying stable behaviors, contracts, and properties. In the following sections, we'll tackle each of these challenges with practical patterns and tools.</p>
+<p>Testing data science and machine learning code presents a unique set of challenges that differ significantly from traditional software engineering. While the core principles of testing remain the same—verifying correctness and preventing regressions—the nature of the code and its outputs requires specialized tools and techniques.</p>
+<p>Understanding these challenges is the first step toward writing effective tests for your data-driven applications.</p>
+<h3 id="key-challenges">Key Challenges</h3>
+<ol>
+<li>
+<p><strong>Floating-Point Precision:</strong>
+    Machine learning algorithms are built on linear algebra and calculus, which means they operate heavily on floating-point numbers. Comparing two floats for exact equality (<code>a == b</code>) is notoriously unreliable due to the way computers represent these numbers. A tiny, insignificant difference in the 15th decimal place can cause a test to fail, even if the result is functionally correct.</p>
+</li>
+<li>
+<p><strong>Non-Determinism and Stochasticity:</strong>
+    Many algorithms, from random forests to neural network weight initialization, have a random component. Running the same training code twice might produce two slightly different models with slightly different predictions. Tests that expect exact output values will be flaky and unreliable.</p>
+</li>
+<li>
+<p><strong>Large and Complex Data:</strong>
+    Data science code operates on data, often large datasets. Unit tests should be fast and isolated, which means you can't run them on your entire 10 GB dataset. Creating small, representative, and manageable sample datasets for testing is a significant challenge in itself.</p>
+</li>
+<li>
+<p><strong>"Correctness" is Fuzzy:</strong>
+    What does it mean for a machine learning model to be "correct"? Unlike a function that sorts a list, a model's output isn't binary right or wrong. Its performance is statistical. We can't assert that <code>model.predict(input) == 42.5</code>. Instead, we need to test for properties: Are the predictions within a plausible range? Is the model's performance on a known subset of data above a certain threshold?</p>
+</li>
+<li>
+<p><strong>Long-Running Processes:</strong>
+    Training a model can take hours or even days. You cannot include a full training run in your CI/CD pipeline's test suite. Testing strategies must be adapted to verify the training <em>logic</em> without executing the entire expensive process.</p>
+</li>
+<li>
+<p><strong>Coupling of Code and Data:</strong>
+    The behavior of your code is inextricably linked to the data it processes. A data cleaning function might work perfectly until it encounters a new, unexpected category or data format. Your tests need to be robust to variations in data, and you need a way to manage the test data itself.</p>
+</li>
+</ol>
+<p>In this chapter, we will tackle these challenges head-on. We will build a small data processing and modeling pipeline and, step-by-step, introduce pytest techniques to test it robustly and effectively.</p>
 <h2 id="testing-data-processing-functions">Testing Data Processing Functions</h2>
 <h2 id="testing-data-processing-functions_1">Testing Data Processing Functions</h2>
-<p>The foundation of any data science pipeline is data processing: cleaning, transforming, and feature engineering. These functions are often pure and deterministic, making them perfect candidates for traditional unit testing. If you can ensure your data processing code is robust, you can have much higher confidence in the models that consume that data.</p>
-<p>Let's imagine we have a simple function to process a dataset of house listings. It should convert a price column from a string to a number and create a new feature for the age of the house.</p>
-<p>Here's our data processing module.</p>
+<p>The foundation of any data science project is data preparation. Functions that clean, transform, and engineer features are the most testable part of the pipeline because their behavior is often deterministic. If you provide the same input, you should get the same output.</p>
+<p>This makes them the perfect place to start building our testing skills.</p>
+<h3 id="phase-1-establish-the-reference-implementation">Phase 1: Establish the Reference Implementation</h3>
+<p>Let's establish our <strong>anchor example</strong>: a function that preprocesses a dataset of house listings. The function will take a pandas DataFrame, fill missing values in the <code>year_built</code> column with the median year, and one-hot encode the <code>style</code> column (e.g., 'Ranch', 'Colonial').</p>
+<p>Here is the initial implementation.</p>
+<p><strong>The code to be tested:</strong> <code>data_processing.py</code></p>
 <div class="codehilite"><pre><span></span><code><span class="c1"># data_processing.py</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">preprocess_housing_data</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">preprocess_data</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Cleans and prepares housing data for modeling.</span>
+<span class="sd">    Preprocesses the housing data.</span>
 
-<span class="sd">    - Converts &#39;price&#39; from string (e.g., &quot;$500,000&quot;) to float.</span>
-<span class="sd">    - Calculates &#39;house_age&#39; from &#39;year_built&#39;.</span>
-<span class="sd">    - Drops rows with missing values.</span>
+<span class="sd">    - Fills missing &#39;year_built&#39; with the median.</span>
+<span class="sd">    - One-hot encodes the &#39;style&#39; column.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">processed_df</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
 
-    <span class="c1"># 1. Convert price to numeric</span>
-    <span class="k">if</span> <span class="s1">&#39;price&#39;</span> <span class="ow">in</span> <span class="n">processed_df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
-        <span class="n">processed_df</span><span class="p">[</span><span class="s1">&#39;price&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">processed_df</span><span class="p">[</span><span class="s1">&#39;price&#39;</span><span class="p">]</span>
-            <span class="o">.</span><span class="n">replace</span><span class="p">({</span><span class="s1">&#39;\$&#39;</span><span class="p">:</span> <span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="s1">&#39;,&#39;</span><span class="p">:</span> <span class="s1">&#39;&#39;</span><span class="p">},</span> <span class="n">regex</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-            <span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">float</span><span class="p">)</span>
-        <span class="p">)</span>
-
-    <span class="c1"># 2. Calculate house age</span>
+    <span class="c1"># Fill missing year_built with the median</span>
     <span class="k">if</span> <span class="s1">&#39;year_built&#39;</span> <span class="ow">in</span> <span class="n">processed_df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
-        <span class="n">current_year</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span><span class="o">.</span><span class="n">year</span>
-        <span class="n">processed_df</span><span class="p">[</span><span class="s1">&#39;house_age&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">current_year</span> <span class="o">-</span> <span class="n">processed_df</span><span class="p">[</span><span class="s1">&#39;year_built&#39;</span><span class="p">]</span>
+        <span class="n">median_year</span> <span class="o">=</span> <span class="n">processed_df</span><span class="p">[</span><span class="s1">&#39;year_built&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">median</span><span class="p">()</span>
+        <span class="n">processed_df</span><span class="p">[</span><span class="s1">&#39;year_built&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="n">median_year</span><span class="p">,</span> <span class="n">inplace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
-    <span class="c1"># 3. Drop rows with any missing values</span>
-    <span class="n">processed_df</span><span class="o">.</span><span class="n">dropna</span><span class="p">(</span><span class="n">inplace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="c1"># One-hot encode style</span>
+    <span class="k">if</span> <span class="s1">&#39;style&#39;</span> <span class="ow">in</span> <span class="n">processed_df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">style_dummies</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">get_dummies</span><span class="p">(</span><span class="n">processed_df</span><span class="p">[</span><span class="s1">&#39;style&#39;</span><span class="p">],</span> <span class="n">prefix</span><span class="o">=</span><span class="s1">&#39;style&#39;</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+        <span class="n">processed_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">processed_df</span><span class="p">,</span> <span class="n">style_dummies</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">processed_df</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="s1">&#39;style&#39;</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">inplace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
 
     <span class="k">return</span> <span class="n">processed_df</span>
 </code></pre></div>
 
-<p>A common but flawed approach is to simply "test" this in a Jupyter notebook by running it on some data and visually inspecting the output. This is not a real test—it's not automated, not repeatable, and easily forgotten.</p>
-<p>Let's write a proper pytest test. The best way to compare pandas DataFrames is with the <code>pandas.testing.assert_frame_equal</code> function. It gives detailed output on exactly how two DataFrames differ.</p>
-<p>Our test file will look like this:</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_data_processing.py</span>
+<h3 id="iteration-0-the-first-test">Iteration 0: The First Test</h3>
+<p>Our first test will verify the basic functionality. We'll create a small, representative DataFrame in the test itself, define the exact expected output, and use pandas' built-in <code>testing.assert_frame_equal</code> to compare them.</p>
+<p><strong>The test file:</strong> <code>test_data_processing.py</code></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_data_processing.py</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pandas.testing</span><span class="w"> </span><span class="kn">import</span> <span class="n">assert_frame_equal</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">data_processing</span><span class="w"> </span><span class="kn">import</span> <span class="n">preprocess_data</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">data_processing</span><span class="w"> </span><span class="kn">import</span> <span class="n">preprocess_housing_data</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_preprocess_housing_data</span><span class="p">():</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_preprocess_data_basic</span><span class="p">():</span>
     <span class="c1"># 1. Setup: Create the input data</span>
     <span class="n">raw_data</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="s1">&#39;price&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s1">&#39;$750,000&#39;</span><span class="p">,</span> <span class="s1">&#39;$1,200,000&#39;</span><span class="p">,</span> <span class="s1">&#39;$450,000&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">],</span>
-        <span class="s1">&#39;year_built&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">2005</span><span class="p">,</span> <span class="mi">2018</span><span class="p">,</span> <span class="mi">1990</span><span class="p">,</span> <span class="mi">2010</span><span class="p">],</span>
-        <span class="s1">&#39;sq_ft&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">2200</span><span class="p">,</span> <span class="mi">3100</span><span class="p">,</span> <span class="mi">1500</span><span class="p">,</span> <span class="mi">1800</span><span class="p">]</span>
+        <span class="s1">&#39;price&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">200000</span><span class="p">,</span> <span class="mi">350000</span><span class="p">,</span> <span class="mi">275000</span><span class="p">,</span> <span class="mi">500000</span><span class="p">],</span>
+        <span class="s1">&#39;bedrooms&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">],</span>
+        <span class="s1">&#39;year_built&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">1985.0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span> <span class="mf">1999.0</span><span class="p">,</span> <span class="mf">2010.0</span><span class="p">],</span>
+        <span class="s1">&#39;style&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s1">&#39;Ranch&#39;</span><span class="p">,</span> <span class="s1">&#39;Colonial&#39;</span><span class="p">,</span> <span class="s1">&#39;Ranch&#39;</span><span class="p">,</span> <span class="s1">&#39;Modern&#39;</span><span class="p">]</span>
     <span class="p">}</span>
     <span class="n">input_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">raw_data</span><span class="p">)</span>
 
-    <span class="c1"># 2. Setup: Define the expected output data</span>
-    <span class="n">current_year</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">()</span><span class="o">.</span><span class="n">year</span>
+    <span class="c1"># 2. Action: Call the function under test</span>
+    <span class="n">actual_df</span> <span class="o">=</span> <span class="n">preprocess_data</span><span class="p">(</span><span class="n">input_df</span><span class="p">)</span>
+
+    <span class="c1"># 3. Assertion: Define the expected outcome and compare</span>
+    <span class="c1"># The median of [1985, 1999, 2010] is 1999.0</span>
     <span class="n">expected_data</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="s1">&#39;price&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">750000.0</span><span class="p">,</span> <span class="mf">1200000.0</span><span class="p">,</span> <span class="mf">450000.0</span><span class="p">],</span>
-        <span class="s1">&#39;year_built&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">2005</span><span class="p">,</span> <span class="mi">2018</span><span class="p">,</span> <span class="mi">1990</span><span class="p">],</span>
-        <span class="s1">&#39;sq_ft&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">2200</span><span class="p">,</span> <span class="mi">3100</span><span class="p">,</span> <span class="mi">1500</span><span class="p">],</span>
-        <span class="s1">&#39;house_age&#39;</span><span class="p">:</span> <span class="p">[</span><span class="n">current_year</span> <span class="o">-</span> <span class="mi">2005</span><span class="p">,</span> <span class="n">current_year</span> <span class="o">-</span> <span class="mi">2018</span><span class="p">,</span> <span class="n">current_year</span> <span class="o">-</span> <span class="mi">1990</span><span class="p">]</span>
+        <span class="s1">&#39;price&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">200000</span><span class="p">,</span> <span class="mi">350000</span><span class="p">,</span> <span class="mi">275000</span><span class="p">,</span> <span class="mi">500000</span><span class="p">],</span>
+        <span class="s1">&#39;bedrooms&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">],</span>
+        <span class="s1">&#39;year_built&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">1985.0</span><span class="p">,</span> <span class="mf">1999.0</span><span class="p">,</span> <span class="mf">1999.0</span><span class="p">,</span> <span class="mf">2010.0</span><span class="p">],</span>
+        <span class="s1">&#39;style_Colonial&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">],</span>
+        <span class="s1">&#39;style_Modern&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">],</span>
+        <span class="s1">&#39;style_Ranch&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">],</span>
     <span class="p">}</span>
-    <span class="c1"># Note: The row with the missing price is expected to be dropped.</span>
-    <span class="c1"># We also need to match the index after dropping.</span>
-    <span class="n">expected_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">expected_data</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">])</span>
+    <span class="n">expected_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">expected_data</span><span class="p">)</span>
 
-    <span class="c1"># 3. Execution: Run the function we are testing</span>
-    <span class="n">actual_df</span> <span class="o">=</span> <span class="n">preprocess_housing_data</span><span class="p">(</span><span class="n">input_df</span><span class="p">)</span>
-
-    <span class="c1"># 4. Assertion: Check if the actual output matches the expected output</span>
-    <span class="n">pd</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_frame_equal</span><span class="p">(</span><span class="n">actual_df</span><span class="p">,</span> <span class="n">expected_df</span><span class="p">)</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_preprocess_empty_dataframe</span><span class="p">():</span>
-    <span class="c1"># Edge case: what happens with an empty DataFrame?</span>
-    <span class="n">input_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s1">&#39;price&#39;</span><span class="p">:</span> <span class="p">[],</span> <span class="s1">&#39;year_built&#39;</span><span class="p">:</span> <span class="p">[]})</span>
-    <span class="n">expected_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s1">&#39;price&#39;</span><span class="p">:</span> <span class="p">[],</span> <span class="s1">&#39;year_built&#39;</span><span class="p">:</span> <span class="p">[],</span> <span class="s1">&#39;house_age&#39;</span><span class="p">:</span> <span class="p">[]})</span>
-
-    <span class="n">actual_df</span> <span class="o">=</span> <span class="n">preprocess_housing_data</span><span class="p">(</span><span class="n">input_df</span><span class="p">)</span>
-
-    <span class="c1"># The dtypes might differ (object vs float), so check them explicitly</span>
-    <span class="n">pd</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_frame_equal</span><span class="p">(</span><span class="n">actual_df</span><span class="p">,</span> <span class="n">expected_df</span><span class="p">,</span> <span class="n">check_dtype</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-</code></pre></div>
-
-<p>This approach is powerful because:
-1.  <strong>It's explicit:</strong> The <code>expected_df</code> clearly documents the function's contract.
-2.  <strong>It's automated:</strong> We can run this test anytime we change the <code>preprocess_housing_data</code> function to ensure we haven't broken anything.
-3.  <strong>It's precise:</strong> <code>assert_frame_equal</code> will tell us if a single value, a column name, a data type, or an index is incorrect, which is far more reliable than visual inspection.</p>
-<p>Testing your data processing functions is the single most effective way to build a reliable data science pipeline. Get this right, and you've eliminated a massive source of potential bugs.</p>
-<h2 id="approximate-assertions-with-pytest-approx">Approximate Assertions with pytest-approx</h2>
-<h2 id="approximate-assertions-with-pytest-approx_1">Approximate Assertions with pytest-approx</h2>
-<p>As we discussed, floating-point arithmetic is a major challenge in testing numerical code. Let's see this problem in action.</p>
-<p>Imagine a simple function that calculates the average rating from a list of scores.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># calculations.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">calculate_average_rating</span><span class="p">(</span><span class="n">ratings</span><span class="p">):</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">ratings</span><span class="p">:</span>
-        <span class="k">return</span> <span class="mf">0.0</span>
-    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">ratings</span><span class="p">)</span>
-</code></pre></div>
-
-<p>Now, let's write a test for it. A common scenario might be calculating the average of <code>[1, 2, 3]</code>, which is <code>2.0</code>. That works fine. But what about a more complex case?</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_calculations.py</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">calculations</span><span class="w"> </span><span class="kn">import</span> <span class="n">calculate_average_rating</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_average_rating_simple</span><span class="p">():</span>
-    <span class="k">assert</span> <span class="n">calculate_average_rating</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">])</span> <span class="o">==</span> <span class="mf">2.0</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_average_rating_float_problem</span><span class="p">():</span>
-    <span class="c1"># This test will FAIL!</span>
-    <span class="n">ratings</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">]</span>
-    <span class="c1"># The expected result of np.mean([0.1, 0.2, 0.3]) is 0.2</span>
-    <span class="c1"># But what if we naively expect the average of 0.1 and 0.2 to be 0.15?</span>
-    <span class="c1"># Let&#39;s try a different example where the sum is the issue.</span>
-    <span class="c1"># The sum of 0.1 + 0.2 is not exactly 0.3</span>
-    <span class="k">assert</span> <span class="mf">0.1</span> <span class="o">+</span> <span class="mf">0.2</span> <span class="o">==</span> <span class="mf">0.3</span>
+    <span class="c1"># Pandas provides a testing utility to compare DataFrames</span>
+    <span class="n">assert_frame_equal</span><span class="p">(</span><span class="n">actual_df</span><span class="p">,</span> <span class="n">expected_df</span><span class="p">)</span>
 </code></pre></div>
 
 <p>Let's run this test.</p>
-<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>tests/test_calculations.py
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span><span class="nv">pytest</span>
+<span class="o">=============================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==============================</span>
+...
+collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
 
-<span class="o">===========================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">===========================</span>
-_________<span class="w"> </span>test_average_rating_float_problem<span class="w"> </span>__________
+test_data_processing.py<span class="w"> </span>.<span class="w">                                                </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
 
-<span class="w">    </span>def<span class="w"> </span>test_average_rating_float_problem<span class="o">()</span>:
-<span class="w">        </span><span class="c1"># This test will FAIL!</span>
-<span class="w">        </span><span class="c1"># The sum of 0.1 + 0.2 is not exactly 0.3</span>
-&gt;<span class="w">       </span>assert<span class="w"> </span><span class="m">0</span>.1<span class="w"> </span>+<span class="w"> </span><span class="m">0</span>.2<span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">0</span>.3
-E<span class="w">       </span>assert<span class="w"> </span><span class="o">(</span><span class="m">0</span>.1<span class="w"> </span>+<span class="w"> </span><span class="m">0</span>.2<span class="o">)</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">0</span>.3
-E<span class="w">        </span>+<span class="w">  </span>where<span class="w"> </span><span class="o">(</span><span class="m">0</span>.1<span class="w"> </span>+<span class="w"> </span><span class="m">0</span>.2<span class="o">)</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="m">0</span>.30000000000000004
-<span class="o">=====================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>failed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.12s<span class="w"> </span><span class="o">=====================</span>
+<span class="o">==============================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">===============================</span>
 </code></pre></div>
 
-<p>Pytest's excellent assertion introspection shows us the problem clearly. The result of <code>0.1 + 0.2</code> is <code>0.30000000000000004</code>. This tiny difference causes the test to fail. This is the pitfall we need to avoid.</p>
-<h3 id="the-solution-pytestapprox">The Solution: <code>pytest.approx</code></h3>
-<p>Pytest provides a brilliant and simple solution for this: the <code>pytest.approx</code> helper. It allows you to assert that a number is "close enough" to an expected value, within a certain tolerance.</p>
-<p>Let's fix our test and write a more realistic one for our function.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_calculations.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<p>It passes. This test correctly verifies our initial requirements. It's clear, self-contained, and deterministic.</p>
+<p>However, data processing pipelines rarely stop here. They evolve. What happens when we add a step that introduces floating-point numbers, like feature scaling? This is where our simple, exact-match approach will break down.</p>
+<h2 id="approximate-assertions-with-pytest-approx">Approximate Assertions with pytest-approx</h2>
+<h2 id="approximate-assertions-with-pytest-approx_1">Approximate Assertions with pytest-approx</h2>
+<p>Our current test works because all our outputs are integers or clean floats. The real world of data science is messy and filled with imprecise floating-point numbers. Let's see what happens when our preprocessing function evolves to handle this reality.</p>
+<h3 id="iteration-1-introducing-floating-point-scaling">Iteration 1: Introducing Floating-Point Scaling</h3>
+<p><strong>Current state recap:</strong> Our test verifies filling missing values and one-hot encoding.</p>
+<p><strong>Current limitation:</strong> The test relies on exact equality, which is fragile for numerical computations.</p>
+<p><strong>New scenario introduction:</strong> Let's add a feature scaling step to our <code>preprocess_data</code> function. We'll scale the <code>price</code> column to be between 0 and 1 (a common technique called Min-Max Scaling).</p>
+<p>Here's the updated <code>data_processing.py</code>.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># data_processing.py (UPDATED)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">preprocess_data</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Preprocesses the housing data.</span>
+
+<span class="sd">    - Fills missing &#39;year_built&#39; with the median.</span>
+<span class="sd">    - One-hot encodes the &#39;style&#39; column.</span>
+<span class="sd">    - Min-Max scales the &#39;price&#39; column.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">processed_df</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">copy</span><span class="p">()</span>
+
+    <span class="c1"># Fill missing year_built with the median</span>
+    <span class="k">if</span> <span class="s1">&#39;year_built&#39;</span> <span class="ow">in</span> <span class="n">processed_df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">median_year</span> <span class="o">=</span> <span class="n">processed_df</span><span class="p">[</span><span class="s1">&#39;year_built&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">median</span><span class="p">()</span>
+        <span class="n">processed_df</span><span class="p">[</span><span class="s1">&#39;year_built&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">fillna</span><span class="p">(</span><span class="n">median_year</span><span class="p">,</span> <span class="n">inplace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="c1"># One-hot encode style</span>
+    <span class="k">if</span> <span class="s1">&#39;style&#39;</span> <span class="ow">in</span> <span class="n">processed_df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">style_dummies</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">get_dummies</span><span class="p">(</span><span class="n">processed_df</span><span class="p">[</span><span class="s1">&#39;style&#39;</span><span class="p">],</span> <span class="n">prefix</span><span class="o">=</span><span class="s1">&#39;style&#39;</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
+        <span class="n">processed_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">concat</span><span class="p">([</span><span class="n">processed_df</span><span class="p">,</span> <span class="n">style_dummies</span><span class="p">],</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">processed_df</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="s1">&#39;style&#39;</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">inplace</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="c1"># --- NEW ---</span>
+    <span class="c1"># Min-Max scale the price</span>
+    <span class="k">if</span> <span class="s1">&#39;price&#39;</span> <span class="ow">in</span> <span class="n">processed_df</span><span class="o">.</span><span class="n">columns</span><span class="p">:</span>
+        <span class="n">min_price</span> <span class="o">=</span> <span class="n">processed_df</span><span class="p">[</span><span class="s1">&#39;price&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">min</span><span class="p">()</span>
+        <span class="n">max_price</span> <span class="o">=</span> <span class="n">processed_df</span><span class="p">[</span><span class="s1">&#39;price&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
+        <span class="n">processed_df</span><span class="p">[</span><span class="s1">&#39;price&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">processed_df</span><span class="p">[</span><span class="s1">&#39;price&#39;</span><span class="p">]</span> <span class="o">-</span> <span class="n">min_price</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">max_price</span> <span class="o">-</span> <span class="n">min_price</span><span class="p">)</span>
+    <span class="c1"># --- END NEW ---</span>
+
+    <span class="k">return</span> <span class="n">processed_df</span>
+</code></pre></div>
+
+<p>Now, we must update our test to reflect this new expected output. The prices are no longer <code>200000</code>, <code>350000</code>, etc., but scaled values between 0 and 1.</p>
+<p><strong>Updated test file:</strong> <code>test_data_processing.py</code></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_data_processing.py (UPDATED)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">calculations</span><span class="w"> </span><span class="kn">import</span> <span class="n">calculate_average_rating</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pandas.testing</span><span class="w"> </span><span class="kn">import</span> <span class="n">assert_frame_equal</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">data_processing</span><span class="w"> </span><span class="kn">import</span> <span class="n">preprocess_data</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_average_rating_simple</span><span class="p">():</span>
-    <span class="k">assert</span> <span class="n">calculate_average_rating</span><span class="p">([</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">])</span> <span class="o">==</span> <span class="n">pytest</span><span class="o">.</span><span class="n">approx</span><span class="p">(</span><span class="mf">2.0</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_preprocess_data_with_scaling</span><span class="p">():</span>
+    <span class="c1"># 1. Setup</span>
+    <span class="n">raw_data</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s1">&#39;price&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">200000</span><span class="p">,</span> <span class="mi">350000</span><span class="p">,</span> <span class="mi">275000</span><span class="p">,</span> <span class="mi">500000</span><span class="p">],</span>
+        <span class="s1">&#39;bedrooms&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">],</span>
+        <span class="s1">&#39;year_built&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">1985.0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span> <span class="mf">1999.0</span><span class="p">,</span> <span class="mf">2010.0</span><span class="p">],</span>
+        <span class="s1">&#39;style&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s1">&#39;Ranch&#39;</span><span class="p">,</span> <span class="s1">&#39;Colonial&#39;</span><span class="p">,</span> <span class="s1">&#39;Ranch&#39;</span><span class="p">,</span> <span class="s1">&#39;Modern&#39;</span><span class="p">]</span>
+    <span class="p">}</span>
+    <span class="n">input_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">raw_data</span><span class="p">)</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_average_rating_with_floats</span><span class="p">():</span>
-    <span class="c1"># This test now PASSES</span>
-    <span class="n">ratings</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">]</span> <span class="c1"># np.mean is 0.2</span>
-    <span class="k">assert</span> <span class="n">calculate_average_rating</span><span class="p">(</span><span class="n">ratings</span><span class="p">)</span> <span class="o">==</span> <span class="n">pytest</span><span class="o">.</span><span class="n">approx</span><span class="p">(</span><span class="mf">0.2</span><span class="p">)</span>
+    <span class="c1"># 2. Action</span>
+    <span class="n">actual_df</span> <span class="o">=</span> <span class="n">preprocess_data</span><span class="p">(</span><span class="n">input_df</span><span class="p">)</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_another_float_example</span><span class="p">():</span>
-    <span class="c1"># The average of 1/3 and 2/3 is 0.5</span>
-    <span class="n">ratings</span> <span class="o">=</span> <span class="p">[</span><span class="mi">1</span><span class="o">/</span><span class="mi">3</span><span class="p">,</span> <span class="mi">2</span><span class="o">/</span><span class="mi">3</span><span class="p">]</span>
-    <span class="k">assert</span> <span class="n">calculate_average_rating</span><span class="p">(</span><span class="n">ratings</span><span class="p">)</span> <span class="o">==</span> <span class="n">pytest</span><span class="o">.</span><span class="n">approx</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>
+    <span class="c1"># 3. Assertion</span>
+    <span class="c1"># min=200k, max=500k.</span>
+    <span class="c1"># 200k -&gt; (200-200)/(500-200) = 0.0</span>
+    <span class="c1"># 350k -&gt; (350-200)/(500-200) = 150/300 = 0.5</span>
+    <span class="c1"># 275k -&gt; (275-200)/(500-200) = 75/300 = 0.25</span>
+    <span class="c1"># 500k -&gt; (500-200)/(500-200) = 1.0</span>
+    <span class="n">expected_data</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s1">&#39;price&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">],</span> <span class="c1"># &lt;-- Updated values</span>
+        <span class="s1">&#39;bedrooms&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">],</span>
+        <span class="s1">&#39;year_built&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">1985.0</span><span class="p">,</span> <span class="mf">1999.0</span><span class="p">,</span> <span class="mf">1999.0</span><span class="p">,</span> <span class="mf">2010.0</span><span class="p">],</span>
+        <span class="s1">&#39;style_Colonial&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">],</span>
+        <span class="s1">&#39;style_Modern&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">],</span>
+        <span class="s1">&#39;style_Ranch&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">],</span>
+    <span class="p">}</span>
+    <span class="n">expected_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">expected_data</span><span class="p">)</span>
+
+    <span class="c1"># This will fail due to floating point issues!</span>
+    <span class="n">assert_frame_equal</span><span class="p">(</span><span class="n">actual_df</span><span class="p">,</span> <span class="n">expected_df</span><span class="p">)</span>
 </code></pre></div>
 
-<p>By wrapping the expected value in <code>pytest.approx()</code>, you're changing the assertion from "is exactly equal to" to "is approximately equal to". Pytest handles the tolerance logic for you.</p>
-<h3 id="using-pytestapprox-with-numpy-and-pandas">Using <code>pytest.approx</code> with NumPy and Pandas</h3>
-<p>The real power of <code>pytest.approx</code> is that it works seamlessly with collections like lists, NumPy arrays, and even Pandas Series/DataFrames. This makes it indispensable for data science testing.</p>
-<p>Let's imagine a function that normalizes data (scales it between 0 and 1).</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># calculations.py</span>
+<h3 id="failure-demonstration">Failure Demonstration</h3>
+<p>Let's run this updated test. Even though our manual calculation seems correct, we get a failure.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span><span class="nv">pytest</span>
+<span class="o">=============================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==============================</span>
+...
+collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
+
+test_data_processing.py<span class="w"> </span>F<span class="w">                                                </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">===================================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">===================================</span>
+______________________<span class="w"> </span>test_preprocess_data_with_scaling<span class="w"> </span>_______________________
+
+<span class="w">    </span>def<span class="w"> </span>test_preprocess_data_with_scaling<span class="o">()</span>:
+...
+<span class="w">        </span><span class="c1"># This will fail due to floating point issues!</span>
+&gt;<span class="w">       </span>assert_frame_equal<span class="o">(</span>actual_df,<span class="w"> </span>expected_df<span class="o">)</span>
+E<span class="w">       </span>AssertionError:<span class="w"> </span>DataFrame.iloc<span class="o">[</span>:,<span class="w"> </span><span class="m">0</span><span class="o">]</span><span class="w"> </span><span class="o">(</span>column<span class="w"> </span><span class="nv">name</span><span class="o">=</span><span class="s2">&quot;price&quot;</span><span class="o">)</span><span class="w"> </span>are<span class="w"> </span>different
+E
+E<span class="w">       </span>DataFrame.iloc<span class="o">[</span>:,<span class="w"> </span><span class="m">0</span><span class="o">]</span><span class="w"> </span><span class="o">(</span>column<span class="w"> </span><span class="nv">name</span><span class="o">=</span><span class="s2">&quot;price&quot;</span><span class="o">)</span><span class="w"> </span>values<span class="w"> </span>are<span class="w"> </span>different<span class="w"> </span><span class="o">(</span><span class="m">25</span>.0<span class="w"> </span>%<span class="o">)</span>
+E<span class="w">       </span><span class="o">[</span>index<span class="o">]</span>:<span class="w"> </span><span class="o">[</span><span class="m">0</span>,<span class="w"> </span><span class="m">1</span>,<span class="w"> </span><span class="m">2</span>,<span class="w"> </span><span class="m">3</span><span class="o">]</span>
+E<span class="w">       </span><span class="o">[</span>left<span class="o">]</span>:<span class="w">  </span><span class="o">[</span><span class="m">0</span>.0,<span class="w"> </span><span class="m">0</span>.5,<span class="w"> </span><span class="m">0</span>.25,<span class="w"> </span><span class="m">1</span>.0<span class="o">]</span>
+E<span class="w">       </span><span class="o">[</span>right<span class="o">]</span>:<span class="w"> </span><span class="o">[</span><span class="m">0</span>.0,<span class="w"> </span><span class="m">0</span>.5,<span class="w"> </span><span class="m">0</span>.25,<span class="w"> </span><span class="m">1</span>.0<span class="o">]</span>
+
+test_data_processing.py:35:<span class="w"> </span><span class="nv">AssertionError</span>
+<span class="o">===========================</span><span class="w"> </span>short<span class="w"> </span><span class="nb">test</span><span class="w"> </span>summary<span class="w"> </span><span class="nv">info</span><span class="w"> </span><span class="o">============================</span>
+FAILED<span class="w"> </span>test_data_processing.py::test_preprocess_data_with_scaling<span class="w"> </span>-<span class="w"> </span>AssertionError...
+<span class="o">==============================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>failed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">================================</span>
+</code></pre></div>
+
+<h3 id="diagnostic-analysis-reading-the-failure">Diagnostic Analysis: Reading the Failure</h3>
+<p>This failure is subtle and classic in data science testing.</p>
+<p><strong>The complete output</strong>:</p>
+<div class="codehilite"><pre><span></span><code><span class="n">FAILED</span><span class="w"> </span><span class="n">test_data_processing</span><span class="p">.</span><span class="nl">py</span><span class="p">:</span><span class="err">:</span><span class="n">test_preprocess_data_with_scaling</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="nl">AssertionError</span><span class="p">:</span><span class="w"> </span><span class="n">DataFrame</span><span class="p">.</span><span class="n">iloc</span><span class="o">[</span><span class="n">:, 0</span><span class="o">]</span><span class="w"> </span><span class="p">(</span><span class="k">column</span><span class="w"> </span><span class="n">name</span><span class="o">=</span><span class="ss">&quot;price&quot;</span><span class="p">)</span><span class="w"> </span><span class="k">are</span><span class="w"> </span><span class="n">different</span>
+
+<span class="n">DataFrame</span><span class="p">.</span><span class="n">iloc</span><span class="o">[</span><span class="n">:, 0</span><span class="o">]</span><span class="w"> </span><span class="p">(</span><span class="k">column</span><span class="w"> </span><span class="n">name</span><span class="o">=</span><span class="ss">&quot;price&quot;</span><span class="p">)</span><span class="w"> </span><span class="k">values</span><span class="w"> </span><span class="k">are</span><span class="w"> </span><span class="n">different</span><span class="w"> </span><span class="p">(</span><span class="mf">25.0</span><span class="w"> </span><span class="o">%</span><span class="p">)</span>
+<span class="o">[</span><span class="n">index</span><span class="o">]</span><span class="err">:</span><span class="w"> </span><span class="o">[</span><span class="n">0, 1, 2, 3</span><span class="o">]</span>
+<span class="o">[</span><span class="n">left</span><span class="o">]</span><span class="err">:</span><span class="w">  </span><span class="o">[</span><span class="n">0.0, 0.5, 0.25, 1.0</span><span class="o">]</span>
+<span class="o">[</span><span class="n">right</span><span class="o">]</span><span class="err">:</span><span class="w"> </span><span class="o">[</span><span class="n">0.0, 0.5, 0.25, 1.0</span><span class="o">]</span>
+</code></pre></div>
+
+<p><strong>Let's parse this section by section</strong>:</p>
+<ol>
+<li>
+<p><strong>The summary line</strong>: <code>AssertionError: DataFrame.iloc[:, 0] (column name="price") are different</code></p>
+<ul>
+<li>What this tells us: The pandas <code>assert_frame_equal</code> function found a discrepancy. It's helpfully telling us the problem is in the first column, named "price".</li>
+</ul>
+</li>
+<li>
+<p><strong>The assertion introspection</strong>:
+    <code>[left]:  [0.0, 0.5, 0.25, 1.0]
+    [right]: [0.0, 0.5, 0.25, 1.0]</code></p>
+<ul>
+<li>What this tells us: This is the confusing part. The values <em>look identical</em>! This is the classic signature of a floating-point precision issue. The actual difference is likely at a very small decimal place that isn't being printed in the summary. The underlying values might be <code>0.5</code> and <code>0.5000000000000001</code>.</li>
+</ul>
+</li>
+</ol>
+<p><strong>Root cause identified</strong>: We are using an exact equality check (<code>assert_frame_equal</code>) on columns containing floating-point numbers, which is unreliable.
+<strong>Why the current approach can't solve this</strong>: <code>assert_frame_equal</code> by default demands bit-for-bit equality. It's too strict for numerical work.
+<strong>What we need</strong>: A way to assert that two numbers are "close enough" or approximately equal.</p>
+<h3 id="technique-introduced-pytestapprox">Technique Introduced: <code>pytest.approx</code></h3>
+<p>Pytest provides a powerful and intuitive tool for this exact problem: <code>pytest.approx</code>. It allows you to check if a number is equal to another number within a certain tolerance.</p>
+<p>You can use it like this:
+<code>assert actual_float == pytest.approx(expected_float)</code></p>
+<p>It works with simple numbers, lists, NumPy arrays, and dictionaries of numbers.</p>
+<h3 id="solution-implementation">Solution Implementation</h3>
+<p>Instead of comparing the entire DataFrame at once, we can separate our checks. We'll check the non-numeric columns for exact equality and the numeric <code>price</code> column for approximate equality.</p>
+<p><strong>Before (in <code>test_data_processing.py</code>):</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># ...</span>
+    <span class="c1"># This will fail due to floating point issues!</span>
+    <span class="n">assert_frame_equal</span><span class="p">(</span><span class="n">actual_df</span><span class="p">,</span> <span class="n">expected_df</span><span class="p">)</span>
+</code></pre></div>
+
+<p><strong>After (in <code>test_data_processing.py</code>):</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_data_processing.py (FIXED)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pandas.testing</span><span class="w"> </span><span class="kn">import</span> <span class="n">assert_frame_equal</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pytest</span><span class="w"> </span><span class="kn">import</span> <span class="n">approx</span>  <span class="c1"># &lt;-- Import approx</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">data_processing</span><span class="w"> </span><span class="kn">import</span> <span class="n">preprocess_data</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">calculate_average_rating</span><span class="p">(</span><span class="n">ratings</span><span class="p">):</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="n">ratings</span><span class="p">:</span>
-        <span class="k">return</span> <span class="mf">0.0</span>
-    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">mean</span><span class="p">(</span><span class="n">ratings</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_preprocess_data_with_scaling_and_approx</span><span class="p">():</span>
+    <span class="c1"># 1. Setup</span>
+    <span class="n">raw_data</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s1">&#39;price&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">200000</span><span class="p">,</span> <span class="mi">350000</span><span class="p">,</span> <span class="mi">275000</span><span class="p">,</span> <span class="mi">500000</span><span class="p">],</span>
+        <span class="s1">&#39;bedrooms&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">],</span>
+        <span class="s1">&#39;year_built&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">1985.0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span> <span class="mf">1999.0</span><span class="p">,</span> <span class="mf">2010.0</span><span class="p">],</span>
+        <span class="s1">&#39;style&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s1">&#39;Ranch&#39;</span><span class="p">,</span> <span class="s1">&#39;Colonial&#39;</span><span class="p">,</span> <span class="s1">&#39;Ranch&#39;</span><span class="p">,</span> <span class="s1">&#39;Modern&#39;</span><span class="p">]</span>
+    <span class="p">}</span>
+    <span class="n">input_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">raw_data</span><span class="p">)</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">normalize_data</span><span class="p">(</span><span class="n">data</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Scales data to a [0, 1] range.&quot;&quot;&quot;</span>
-    <span class="n">min_val</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">min</span><span class="p">()</span>
-    <span class="n">max_val</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">max</span><span class="p">()</span>
-    <span class="k">if</span> <span class="n">max_val</span> <span class="o">==</span> <span class="n">min_val</span><span class="p">:</span>
-        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros_like</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="nb">float</span><span class="p">)</span>
-    <span class="k">return</span> <span class="p">(</span><span class="n">data</span> <span class="o">-</span> <span class="n">min_val</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">max_val</span> <span class="o">-</span> <span class="n">min_val</span><span class="p">)</span>
+    <span class="c1"># 2. Action</span>
+    <span class="n">actual_df</span> <span class="o">=</span> <span class="n">preprocess_data</span><span class="p">(</span><span class="n">input_df</span><span class="p">)</span>
+
+    <span class="c1"># 3. Assertion</span>
+    <span class="n">expected_prices</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">]</span>
+    <span class="n">expected_non_numeric_data</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s1">&#39;bedrooms&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">],</span>
+        <span class="s1">&#39;year_built&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">1985.0</span><span class="p">,</span> <span class="mf">1999.0</span><span class="p">,</span> <span class="mf">1999.0</span><span class="p">,</span> <span class="mf">2010.0</span><span class="p">],</span>
+        <span class="s1">&#39;style_Colonial&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">],</span>
+        <span class="s1">&#39;style_Modern&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">],</span>
+        <span class="s1">&#39;style_Ranch&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.0</span><span class="p">],</span>
+    <span class="p">}</span>
+    <span class="n">expected_non_numeric_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">expected_non_numeric_data</span><span class="p">)</span>
+
+    <span class="c1"># Assert the numeric column is &quot;close enough&quot;</span>
+    <span class="k">assert</span> <span class="nb">list</span><span class="p">(</span><span class="n">actual_df</span><span class="p">[</span><span class="s1">&#39;price&#39;</span><span class="p">])</span> <span class="o">==</span> <span class="n">approx</span><span class="p">(</span><span class="n">expected_prices</span><span class="p">)</span>
+
+    <span class="c1"># Assert the rest of the columns are exactly equal</span>
+    <span class="c1"># We need to re-order columns to match for a reliable comparison</span>
+    <span class="n">actual_other_cols</span> <span class="o">=</span> <span class="n">actual_df</span><span class="p">[</span><span class="n">expected_non_numeric_df</span><span class="o">.</span><span class="n">columns</span><span class="p">]</span>
+    <span class="n">assert_frame_equal</span><span class="p">(</span><span class="n">actual_other_cols</span><span class="p">,</span> <span class="n">expected_non_numeric_df</span><span class="p">)</span>
 </code></pre></div>
 
-<p>Now, we can test it directly on a NumPy array.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_calculations.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">calculations</span><span class="w"> </span><span class="kn">import</span> <span class="n">calculate_average_rating</span><span class="p">,</span> <span class="n">normalize_data</span>
+<h3 id="verification">Verification</h3>
+<p>Let's run our new test.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span><span class="nv">pytest</span>
+<span class="o">=============================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==============================</span>
+...
+collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
 
-<span class="c1"># ... (previous tests) ...</span>
+test_data_processing.py<span class="w"> </span>.<span class="w">                                                </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_normalize_data</span><span class="p">():</span>
-    <span class="n">input_data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">10</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="mi">30</span><span class="p">,</span> <span class="mi">40</span><span class="p">,</span> <span class="mi">50</span><span class="p">])</span>
-    <span class="n">expected_data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.75</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">])</span>
-
-    <span class="n">actual_data</span> <span class="o">=</span> <span class="n">normalize_data</span><span class="p">(</span><span class="n">input_data</span><span class="p">)</span>
-
-    <span class="c1"># Use pytest.approx with a NumPy array</span>
-    <span class="k">assert</span> <span class="n">actual_data</span> <span class="o">==</span> <span class="n">pytest</span><span class="o">.</span><span class="n">approx</span><span class="p">(</span><span class="n">expected_data</span><span class="p">)</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_normalize_data_with_floats</span><span class="p">():</span>
-    <span class="n">input_data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.1</span><span class="p">,</span> <span class="mf">0.2</span><span class="p">,</span> <span class="mf">0.3</span><span class="p">,</span> <span class="mf">0.4</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">])</span>
-    <span class="c1"># The normalization involves division, which will introduce float inaccuracies</span>
-    <span class="n">expected_data</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.75</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">])</span>
-
-    <span class="n">actual_data</span> <span class="o">=</span> <span class="n">normalize_data</span><span class="p">(</span><span class="n">input_data</span><span class="p">)</span>
-
-    <span class="k">assert</span> <span class="n">actual_data</span> <span class="o">==</span> <span class="n">pytest</span><span class="o">.</span><span class="n">approx</span><span class="p">(</span><span class="n">expected_data</span><span class="p">)</span>
+<span class="o">==============================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">===============================</span>
 </code></pre></div>
 
-<p>Whenever your tests involve floating-point numbers, your default should be to use <code>pytest.approx</code>. It makes your tests robust against tiny, irrelevant numerical differences and focuses them on what matters: whether the calculation is fundamentally correct.</p>
+<p>Success! By separating the exact checks from the approximate checks, we've created a robust test that correctly verifies our logic without being sensitive to tiny floating-point inaccuracies.</p>
+<p><strong>Limitation preview:</strong> This test is getting more complex. We're manually defining a lot of data inside the test function. As our pipeline grows, this will become unmanageable. We need a better way to handle test data and setup.</p>
 <h2 id="testing-machine-learning-models">Testing Machine Learning Models</h2>
 <h2 id="testing-machine-learning-models_1">Testing Machine Learning Models</h2>
-<p>This is where we truly depart from traditional software testing. We cannot assert that a model's prediction is "correct" in an absolute sense. Instead, we test the model's contract, its behavior, and its properties. Think of it like testing a car: you don't test that it can win a specific race, but you do test that the brakes work, the steering turns the wheels, and the engine doesn't explode.</p>
-<p>Let's assume we have a simple classification model trained to identify spam emails. For testing, we don't want to re-train it every time. We'll assume we have a pre-trained model object that we can load.</p>
-<p>Our tests should answer questions like:
--   Does the <code>predict</code> method run without errors? (A smoke test)
--   Does it return predictions in the format I expect?
--   Are the predictions reasonable? (e.g., probabilities are between 0 and 1)
--   Is the model deterministic if randomness is controlled?</p>
-<p>Here's a simple example using a dummy model for demonstration.</p>
+<p>We've successfully tested our data processing function. Now we move to the next stage: training and testing a machine learning model. This is where the idea of "correctness" becomes fuzzy. We can't test for exact prediction values, but we can test the model's behavior and properties.</p>
+<h3 id="iteration-2-introducing-a-model">Iteration 2: Introducing a Model</h3>
+<p><strong>Current state recap:</strong> Our test for <code>preprocess_data</code> is robust against floating-point issues using <code>pytest.approx</code>.</p>
+<p><strong>Current limitation:</strong> We are only testing the data transformation, not the model that will use the data.</p>
+<p><strong>New scenario introduction:</strong> Let's create a simple <code>train_and_predict</code> function. It will take raw data, use our <code>preprocess_data</code> function, train a basic <code>scikit-learn</code> Linear Regression model, and make predictions.</p>
+<p><strong>New file:</strong> <code>model.py</code></p>
 <div class="codehilite"><pre><span></span><code><span class="c1"># model.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-
-<span class="k">class</span><span class="w"> </span><span class="nc">SpamClassifier</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;A dummy model for demonstration purposes.&quot;&quot;&quot;</span>
-    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">threshold</span><span class="o">=</span><span class="mf">0.7</span><span class="p">):</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">threshold</span> <span class="o">=</span> <span class="n">threshold</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">predict_proba</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inputs</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Predicts the probability of each input being spam.</span>
-<span class="sd">        A real model would use embeddings and a neural network.</span>
-<span class="sd">        We&#39;ll just use a simple heuristic.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="c1"># A simple heuristic: if &#39;buy now&#39; is in the text, high spam probability</span>
-        <span class="n">probabilities</span> <span class="o">=</span> <span class="p">[]</span>
-        <span class="k">for</span> <span class="n">text</span> <span class="ow">in</span> <span class="n">inputs</span><span class="p">:</span>
-            <span class="k">if</span> <span class="s2">&quot;buy now&quot;</span> <span class="ow">in</span> <span class="n">text</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span>
-                <span class="n">probabilities</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="mf">0.95</span><span class="p">)</span>
-            <span class="k">elif</span> <span class="s2">&quot;hello&quot;</span> <span class="ow">in</span> <span class="n">text</span><span class="o">.</span><span class="n">lower</span><span class="p">():</span>
-                <span class="n">probabilities</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span>
-            <span class="k">else</span><span class="p">:</span>
-                <span class="n">probabilities</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">probabilities</span><span class="p">)</span>
-
-    <span class="k">def</span><span class="w"> </span><span class="nf">predict</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inputs</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Predicts a class label (0 for not-spam, 1 for spam).&quot;&quot;&quot;</span>
-        <span class="n">probabilities</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">predict_proba</span><span class="p">(</span><span class="n">inputs</span><span class="p">)</span>
-        <span class="k">return</span> <span class="p">(</span><span class="n">probabilities</span> <span class="o">&gt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">threshold</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span>
-
-<span class="c1"># In a real scenario, you would load a saved model, e.g., with joblib or pickle</span>
-<span class="c1"># For this example, we&#39;ll just instantiate it.</span>
-<span class="n">model</span> <span class="o">=</span> <span class="n">SpamClassifier</span><span class="p">()</span>
-</code></pre></div>
-
-<p>Now, let's write tests for this model's behavior, not its accuracy on a large dataset.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_model.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">model</span><span class="w"> </span><span class="kn">import</span> <span class="n">SpamClassifier</span>
-
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">spam_model</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Provides a trained SpamClassifier model instance.&quot;&quot;&quot;</span>
-    <span class="k">return</span> <span class="n">SpamClassifier</span><span class="p">(</span><span class="n">threshold</span><span class="o">=</span><span class="mf">0.7</span><span class="p">)</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_model_smoke_test</span><span class="p">(</span><span class="n">spam_model</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    A simple smoke test to ensure predict() runs without crashing.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">test_input</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;Hello, this is a friendly email.&quot;</span><span class="p">]</span>
-    <span class="k">try</span><span class="p">:</span>
-        <span class="n">spam_model</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">test_input</span><span class="p">)</span>
-    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
-        <span class="n">pytest</span><span class="o">.</span><span class="n">fail</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Model prediction failed with an exception: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_prediction_output_shape</span><span class="p">(</span><span class="n">spam_model</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    The number of predictions should match the number of inputs.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">test_input</span> <span class="o">=</span> <span class="p">[</span>
-        <span class="s2">&quot;Hello friend&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;URGENT: buy now for a big discount!&quot;</span><span class="p">,</span>
-        <span class="s2">&quot;Meeting at 3 PM&quot;</span>
-    <span class="p">]</span>
-    <span class="n">predictions</span> <span class="o">=</span> <span class="n">spam_model</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">test_input</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">predictions</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">test_input</span><span class="p">)</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_prediction_output_type_and_values</span><span class="p">(</span><span class="n">spam_model</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Predictions should be integers (0 or 1) for classification.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">test_input</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;Sample email 1&quot;</span><span class="p">,</span> <span class="s2">&quot;Another one with buy now&quot;</span><span class="p">]</span>
-    <span class="n">predictions</span> <span class="o">=</span> <span class="n">spam_model</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">test_input</span><span class="p">)</span>
-
-    <span class="c1"># Check data type</span>
-    <span class="k">assert</span> <span class="n">predictions</span><span class="o">.</span><span class="n">dtype</span> <span class="o">==</span> <span class="nb">int</span>
-
-    <span class="c1"># Check that all values are either 0 or 1</span>
-    <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">isin</span><span class="p">(</span><span class="n">predictions</span><span class="p">,</span> <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">]))</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_predict_proba_output_range</span><span class="p">(</span><span class="n">spam_model</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Predicted probabilities must be between 0 and 1.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">test_input</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;A&quot;</span><span class="p">,</span> <span class="s2">&quot;B&quot;</span><span class="p">,</span> <span class="s2">&quot;C&quot;</span><span class="p">]</span>
-    <span class="n">probabilities</span> <span class="o">=</span> <span class="n">spam_model</span><span class="o">.</span><span class="n">predict_proba</span><span class="p">(</span><span class="n">test_input</span><span class="p">)</span>
-
-    <span class="k">assert</span> <span class="n">np</span><span class="o">.</span><span class="n">all</span><span class="p">((</span><span class="n">probabilities</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">)</span> <span class="o">&amp;</span> <span class="p">(</span><span class="n">probabilities</span> <span class="o">&lt;=</span> <span class="mi">1</span><span class="p">))</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_model_known_cases</span><span class="p">(</span><span class="n">spam_model</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Test the model on a few examples where the outcome is obvious.</span>
-<span class="sd">    This checks the basic logic.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">spam_email</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;URGENT call now to claim your prize, buy now!&quot;</span><span class="p">]</span>
-    <span class="n">not_spam_email</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;Hi Bob, just confirming our meeting. Hello!&quot;</span><span class="p">]</span>
-
-    <span class="k">assert</span> <span class="n">spam_model</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">spam_email</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="mi">1</span>
-    <span class="k">assert</span> <span class="n">spam_model</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">not_spam_email</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="mi">0</span>
-</code></pre></div>
-
-<p>These tests establish a contract for our model. They don't care if the model is 99% accurate or 60% accurate. They care that it behaves as expected: it doesn't crash, it returns data in the correct shape and format, and its outputs are within a valid range. These are the kinds of tests that prevent bugs in your production machine learning systems.</p>
-<h2 id="fixtures-for-data-pipelines">Fixtures for Data Pipelines</h2>
-<h2 id="fixtures-for-data-pipelines_1">Fixtures for Data Pipelines</h2>
-<p>As we've seen, data science tests require... well, data. You might be tempted to create this data inside every single test function.</p>
-<p>Let's look at the "wrong way" first.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_pipeline_bad.py</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">data_processing</span><span class="w"> </span><span class="kn">import</span> <span class="n">preprocess_housing_data</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">model</span><span class="w"> </span><span class="kn">import</span> <span class="n">SpamClassifier</span> <span class="c1"># Pretend this is a housing model</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.linear_model</span><span class="w"> </span><span class="kn">import</span> <span class="n">LinearRegression</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">data_processing</span><span class="w"> </span><span class="kn">import</span> <span class="n">preprocess_data</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_preprocessing_again</span><span class="p">():</span>
-    <span class="c1"># Repetitive setup</span>
-    <span class="n">raw_data</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;price&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s1">&#39;$750,000&#39;</span><span class="p">],</span> <span class="s1">&#39;year_built&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">2005</span><span class="p">]}</span>
-    <span class="n">input_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">raw_data</span><span class="p">)</span>
-    <span class="c1"># ... assertions ...</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">train_and_predict</span><span class="p">(</span><span class="n">train_df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">,</span> <span class="n">predict_df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Trains a model on train_df and makes predictions on predict_df.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Preprocess both training and prediction data</span>
+    <span class="n">processed_train_df</span> <span class="o">=</span> <span class="n">preprocess_data</span><span class="p">(</span><span class="n">train_df</span><span class="p">)</span>
+    <span class="n">processed_predict_df</span> <span class="o">=</span> <span class="n">preprocess_data</span><span class="p">(</span><span class="n">predict_df</span><span class="p">)</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_model_prediction_on_processed_data</span><span class="p">():</span>
-    <span class="c1"># Repetitive setup again!</span>
-    <span class="n">raw_data</span> <span class="o">=</span> <span class="p">{</span><span class="s1">&#39;price&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s1">&#39;$750,000&#39;</span><span class="p">],</span> <span class="s1">&#39;year_built&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">2005</span><span class="p">]}</span>
-    <span class="n">input_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">raw_data</span><span class="p">)</span>
-    <span class="n">processed_df</span> <span class="o">=</span> <span class="n">preprocess_housing_data</span><span class="p">(</span><span class="n">input_df</span><span class="p">)</span>
-    <span class="c1"># model = HousingPriceModel()</span>
-    <span class="c1"># ... assertions ...</span>
+    <span class="c1"># Ensure prediction data has all columns from training, fill missing with 0</span>
+    <span class="c1"># This handles cases where a &#39;style&#39; in predict_df was not in train_df</span>
+    <span class="n">train_cols</span> <span class="o">=</span> <span class="n">processed_train_df</span><span class="o">.</span><span class="n">columns</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="s1">&#39;price&#39;</span><span class="p">)</span>
+    <span class="n">processed_predict_df</span> <span class="o">=</span> <span class="n">processed_predict_df</span><span class="o">.</span><span class="n">reindex</span><span class="p">(</span>
+        <span class="n">columns</span><span class="o">=</span><span class="n">train_cols</span><span class="p">,</span> <span class="n">fill_value</span><span class="o">=</span><span class="mi">0</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Define features (X) and target (y)</span>
+    <span class="n">X_train</span> <span class="o">=</span> <span class="n">processed_train_df</span><span class="p">[</span><span class="n">train_cols</span><span class="p">]</span>
+    <span class="n">y_train</span> <span class="o">=</span> <span class="n">processed_train_df</span><span class="p">[</span><span class="s1">&#39;price&#39;</span><span class="p">]</span>
+
+    <span class="c1"># Train the model</span>
+    <span class="n">model</span> <span class="o">=</span> <span class="n">LinearRegression</span><span class="p">()</span>
+    <span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X_train</span><span class="p">,</span> <span class="n">y_train</span><span class="p">)</span>
+
+    <span class="c1"># Make predictions</span>
+    <span class="n">X_predict</span> <span class="o">=</span> <span class="n">processed_predict_df</span><span class="p">[</span><span class="n">train_cols</span><span class="p">]</span>
+    <span class="n">predictions</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">X_predict</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">predictions</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
 </code></pre></div>
 
-<p>This is repetitive and hard to maintain. If you need to add a new column to your test data, you have to change it in multiple places. This is exactly the problem fixtures were designed to solve (as we learned in Chapter 4).</p>
-<p>By using fixtures, we can define our data and processing steps once and reuse them across many tests. This is especially useful for creating a mini-pipeline within our test suite.</p>
-<p>Let's create a <code>conftest.py</code> file in our <code>tests/</code> directory to hold our shared fixtures.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/conftest.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<h3 id="how-to-test-a-model">How to Test a Model?</h3>
+<p>We can't assert <code>prediction == 12345.67</code>. So what <em>can</em> we test?</p>
+<ol>
+<li><strong>Output Shape:</strong> If we ask for predictions on 3 houses, we should get back 3 predictions.</li>
+<li><strong>Output Type:</strong> The predictions should be a list of floats.</li>
+<li><strong>Prediction Range:</strong> For house prices, predictions should probably be positive. A negative price is a sign something is very wrong.</li>
+<li><strong>Determinism (Sanity Check):</strong> If we train the same model on the same data twice, we should get the same predictions. (Note: This only works for deterministic models like Linear Regression. For stochastic models, you'd need to set a <code>random_state</code>).</li>
+<li><strong>Performance Threshold (Advanced):</strong> On a small, fixed dataset, the model's error (e.g., Mean Squared Error) should be below a certain value. This acts as a regression test for model performance.</li>
+</ol>
+<p>Let's write a test that covers the first three points.</p>
+<p><strong>New test file:</strong> <code>test_model.py</code></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_model.py</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">model</span><span class="w"> </span><span class="kn">import</span> <span class="n">train_and_predict</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">data_processing</span><span class="w"> </span><span class="kn">import</span> <span class="n">preprocess_housing_data</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">model</span><span class="w"> </span><span class="kn">import</span> <span class="n">SpamClassifier</span> <span class="c1"># Using this as a placeholder for a housing model</span>
-
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">&quot;module&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">raw_housing_data</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fixture for raw housing data, loaded once per module.&quot;&quot;&quot;</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">(Creating raw_housing_data fixture)&quot;</span><span class="p">)</span>
-    <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="s1">&#39;price&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s1">&#39;$750,000&#39;</span><span class="p">,</span> <span class="s1">&#39;$1,200,000&#39;</span><span class="p">,</span> <span class="s1">&#39;$450,000&#39;</span><span class="p">,</span> <span class="kc">None</span><span class="p">],</span>
-        <span class="s1">&#39;year_built&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">2005</span><span class="p">,</span> <span class="mi">2018</span><span class="p">,</span> <span class="mi">1990</span><span class="p">,</span> <span class="mi">2010</span><span class="p">],</span>
-        <span class="s1">&#39;sq_ft&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">2200</span><span class="p">,</span> <span class="mi">3100</span><span class="p">,</span> <span class="mi">1500</span><span class="p">,</span> <span class="mi">1800</span><span class="p">]</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_train_and_predict_properties</span><span class="p">():</span>
+    <span class="c1"># 1. Setup: Create training data and data for prediction</span>
+    <span class="n">train_data</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s1">&#39;price&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">200000</span><span class="p">,</span> <span class="mi">350000</span><span class="p">,</span> <span class="mi">275000</span><span class="p">,</span> <span class="mi">500000</span><span class="p">,</span> <span class="mi">450000</span><span class="p">],</span>
+        <span class="s1">&#39;bedrooms&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">4</span><span class="p">],</span>
+        <span class="s1">&#39;year_built&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">1985.0</span><span class="p">,</span> <span class="mf">1992.0</span><span class="p">,</span> <span class="mf">1999.0</span><span class="p">,</span> <span class="mf">2010.0</span><span class="p">,</span> <span class="mf">2005.0</span><span class="p">],</span>
+        <span class="s1">&#39;style&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s1">&#39;Ranch&#39;</span><span class="p">,</span> <span class="s1">&#39;Colonial&#39;</span><span class="p">,</span> <span class="s1">&#39;Ranch&#39;</span><span class="p">,</span> <span class="s1">&#39;Modern&#39;</span><span class="p">,</span> <span class="s1">&#39;Colonial&#39;</span><span class="p">]</span>
     <span class="p">}</span>
-    <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+    <span class="n">train_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">train_data</span><span class="p">)</span>
 
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">&quot;module&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">processed_housing_data</span><span class="p">(</span><span class="n">raw_housing_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Fixture that depends on raw_housing_data and provides cleaned data.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">(Creating processed_housing_data fixture)&quot;</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">preprocess_housing_data</span><span class="p">(</span><span class="n">raw_housing_data</span><span class="p">)</span>
+    <span class="n">predict_data</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s1">&#39;bedrooms&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">],</span>
+        <span class="s1">&#39;year_built&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">1990.0</span><span class="p">,</span> <span class="mf">2015.0</span><span class="p">],</span>
+        <span class="s1">&#39;style&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s1">&#39;Ranch&#39;</span><span class="p">,</span> <span class="s1">&#39;Modern&#39;</span><span class="p">]</span>
+    <span class="p">}</span>
+    <span class="n">predict_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">predict_data</span><span class="p">)</span>
 
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">&quot;module&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">trained_model</span><span class="p">():</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Fixture to provide a &#39;trained&#39; model. In a real scenario, this might</span>
-<span class="sd">    load a model from a file. Here, we just instantiate it.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">(Creating trained_model fixture)&quot;</span><span class="p">)</span>
-    <span class="c1"># In a real test suite, this would be your actual model,</span>
-    <span class="c1"># e.g., a trained RandomForestRegressor.</span>
-    <span class="k">return</span> <span class="n">SpamClassifier</span><span class="p">()</span> <span class="c1"># Placeholder</span>
+    <span class="c1"># 2. Action</span>
+    <span class="n">predictions</span> <span class="o">=</span> <span class="n">train_and_predict</span><span class="p">(</span><span class="n">train_df</span><span class="p">,</span> <span class="n">predict_df</span><span class="p">)</span>
+
+    <span class="c1"># 3. Assertions</span>
+    <span class="c1"># Test output shape</span>
+    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">predictions</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span>
+
+    <span class="c1"># Test output type</span>
+    <span class="k">assert</span> <span class="nb">all</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="nb">float</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">predictions</span><span class="p">)</span>
+
+    <span class="c1"># Test prediction range (a simple heuristic)</span>
+    <span class="c1"># Given our training prices, predictions shouldn&#39;t be negative or astronomical.</span>
+    <span class="k">assert</span> <span class="nb">all</span><span class="p">(</span><span class="n">p</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">predictions</span><span class="p">)</span>
 </code></pre></div>
 
-<p>We've created a chain of dependencies: <code>processed_housing_data</code> depends on <code>raw_housing_data</code>. By setting <code>scope="module"</code>, we ensure this potentially expensive data loading and processing happens only <em>once</em> when we run the tests in a file, not before every single test. The <code>print</code> statements will help us see this in action.</p>
-<p>Now, our test file becomes incredibly clean and readable. Each test just asks for the specific data it needs.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_pipeline_good.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_data_processing_output</span><span class="p">(</span><span class="n">processed_housing_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Test the output of the processing step using a fixture.&quot;&quot;&quot;</span>
-    <span class="c1"># The setup is now completely handled by the fixture.</span>
-    <span class="c1"># We can focus purely on the assertions.</span>
-    <span class="k">assert</span> <span class="ow">not</span> <span class="n">processed_housing_data</span><span class="o">.</span><span class="n">isnull</span><span class="p">()</span><span class="o">.</span><span class="n">values</span><span class="o">.</span><span class="n">any</span><span class="p">()</span>
-    <span class="k">assert</span> <span class="s1">&#39;house_age&#39;</span> <span class="ow">in</span> <span class="n">processed_housing_data</span><span class="o">.</span><span class="n">columns</span>
-    <span class="k">assert</span> <span class="n">processed_housing_data</span><span class="p">[</span><span class="s1">&#39;price&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">dtype</span> <span class="o">==</span> <span class="s1">&#39;float64&#39;</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_model_on_processed_data</span><span class="p">(</span><span class="n">trained_model</span><span class="p">,</span> <span class="n">processed_housing_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Test the model&#39;s behavior on clean data.&quot;&quot;&quot;</span>
-    <span class="c1"># This test needs both the model and the data.</span>
-    <span class="c1"># Pytest provides both fixtures automatically.</span>
-
-    <span class="c1"># For this placeholder, we need to convert the DataFrame to a list of strings</span>
-    <span class="c1"># A real housing model would take the DataFrame directly.</span>
-    <span class="n">test_input</span> <span class="o">=</span> <span class="n">processed_housing_data</span><span class="p">[</span><span class="s1">&#39;price&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="nb">str</span><span class="p">)</span><span class="o">.</span><span class="n">tolist</span><span class="p">()</span>
-
-    <span class="n">predictions</span> <span class="o">=</span> <span class="n">trained_model</span><span class="o">.</span><span class="n">predict</span><span class="p">(</span><span class="n">test_input</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">predictions</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">processed_housing_data</span><span class="p">)</span>
-</code></pre></div>
-
-<p>Let's run these tests with the <code>-s</code> (to show print statements) and <code>-v</code> (verbose) flags to see how the fixtures are executed.</p>
-<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-sv<span class="w"> </span>tests/test_pipeline_good.py
-
-<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">===========================</span>
+<p>Let's run our new test suite.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span><span class="nv">pytest</span>
+<span class="o">=============================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==============================</span>
 ...
 collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
 
-tests/test_pipeline_good.py::test_data_processing_output
-<span class="o">(</span>Creating<span class="w"> </span>raw_housing_data<span class="w"> </span>fixture<span class="o">)</span>
-<span class="o">(</span>Creating<span class="w"> </span>processed_housing_data<span class="w"> </span>fixture<span class="o">)</span>
-PASSED
-tests/test_pipeline_good.py::test_model_on_processed_data
-<span class="o">(</span>Creating<span class="w"> </span>trained_model<span class="w"> </span>fixture<span class="o">)</span>
-<span class="nv">PASSED</span>
+test_data_processing.py<span class="w"> </span>.<span class="w">                                                </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+test_model.py<span class="w"> </span>.<span class="w">                                                          </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
 
-<span class="o">============================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.15s<span class="w"> </span><span class="o">============================</span>
+<span class="o">==============================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">===============================</span>
 </code></pre></div>
 
-<p>Notice the output. The data fixtures are created only once at the beginning, and the model fixture is created when it's first needed. Both are then reused for subsequent tests in the module. This pattern is the key to writing efficient, scalable, and maintainable tests for complex data pipelines.</p>
-<h2 id="testing-visualization-code">Testing Visualization Code</h2>
-<h2 id="testing-visualization-code_1">Testing Visualization Code</h2>
-<p>Testing visual output is notoriously difficult. Do you save a "golden" image of the plot and compare it pixel-by-pixel to the new output? This is brittle; a tiny change in a dependency like Matplotlib could alter rendering slightly and break all your tests.</p>
-<p>A much more robust strategy is to <strong>test the data, not the pixels</strong>. We should verify that our visualization function is called with the correct data and settings. We can trust that if we give Matplotlib the right numbers, it will draw the right chart.</p>
-<p>This is a perfect use case for mocking, which we covered in Chapter 8. We can use <code>unittest.mock.patch</code> to intercept the call to the plotting function (e.g., <code>matplotlib.pyplot.bar</code>) and inspect the arguments it received.</p>
-<p>Let's create a simple visualization function.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># visualization.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">plot_average_price_by_year</span><span class="p">(</span><span class="n">df</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Generates a bar plot of the average house price for each year built.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="n">df</span><span class="o">.</span><span class="n">empty</span><span class="p">:</span>
-        <span class="k">return</span> <span class="kc">None</span> <span class="c1"># Do nothing if no data</span>
-
-    <span class="n">avg_price_by_year</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s1">&#39;year_built&#39;</span><span class="p">)[</span><span class="s1">&#39;price&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span>
-
-    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">10</span><span class="p">,</span> <span class="mi">6</span><span class="p">))</span>
-    <span class="n">plt</span><span class="o">.</span><span class="n">bar</span><span class="p">(</span>
-        <span class="n">x</span><span class="o">=</span><span class="n">avg_price_by_year</span><span class="o">.</span><span class="n">index</span><span class="p">,</span>
-        <span class="n">height</span><span class="o">=</span><span class="n">avg_price_by_year</span><span class="o">.</span><span class="n">values</span>
-    <span class="p">)</span>
-    <span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s2">&quot;Year Built&quot;</span><span class="p">)</span>
-    <span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s2">&quot;Average Price ($)&quot;</span><span class="p">)</span>
-    <span class="n">plt</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s2">&quot;Average Housing Price by Year Built&quot;</span><span class="p">)</span>
-    <span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
-    <span class="c1"># In a real app, you might call plt.savefig() or plt.show()</span>
-    <span class="c1"># For testing, we&#39;ll just let the function end here.</span>
-    <span class="k">return</span> <span class="n">plt</span><span class="o">.</span><span class="n">gca</span><span class="p">()</span> <span class="c1"># Return the current axes object for inspection</span>
-</code></pre></div>
-
-<p>Now, let's write a test. We will "patch" <code>matplotlib.pyplot.bar</code>. This replaces the real <code>bar</code> function with a "MagicMock" object that records how it was called.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_visualization.py</span>
+<p>It passes. Our test successfully verifies the <em>behavior</em> and <em>contract</em> of our prediction function without being coupled to specific prediction values. This is a much more robust way to test machine learning models.</p>
+<p><strong>Limitation preview:</strong> Look at all that setup code! We're creating DataFrames inside <code>test_data_processing.py</code> and <code>test_model.py</code>. This is repetitive and violates the DRY (Don't Repeat Yourself) principle. If we need to add a new column, we have to update it in multiple places. There must be a better way to manage this shared test data setup.</p>
+<h2 id="fixtures-for-data-pipelines">Fixtures for Data Pipelines</h2>
+<h2 id="fixtures-for-data-pipelines_1">Fixtures for Data Pipelines</h2>
+<p>As we've seen, testing data science code involves a lot of setup. We need to create DataFrames, load data, and sometimes even train a model <em>before</em> our test can even begin. Pytest fixtures are the perfect solution for managing this setup code, making our tests cleaner, more modular, and more efficient.</p>
+<h3 id="iteration-3-refactoring-setup-with-fixtures">Iteration 3: Refactoring Setup with Fixtures</h3>
+<p><strong>Current state recap:</strong> We have two test files, both with significant, manually-created pandas DataFrames inside the test functions.</p>
+<p><strong>Current limitation:</strong> The setup code is duplicated and tightly coupled to the tests. This makes maintenance difficult and tests harder to read.</p>
+<p><strong>Technique introduced:</strong> We will use pytest fixtures to externalize the creation of our test data. We'll create a <code>conftest.py</code> file to hold fixtures that can be shared across our entire test suite.</p>
+<p>We will create two fixtures:
+1.  <code>raw_housing_data()</code>: Provides a raw, unprocessed DataFrame for testing.
+2.  <code>processed_housing_data()</code>: Depends on the first fixture, runs the data through <code>preprocess_data</code>, and provides the processed DataFrame.</p>
+<p><strong>New file:</strong> <code>conftest.py</code></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># conftest.py</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">unittest.mock</span><span class="w"> </span><span class="kn">import</span> <span class="n">patch</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">data_processing</span><span class="w"> </span><span class="kn">import</span> <span class="n">preprocess_data</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">visualization</span><span class="w"> </span><span class="kn">import</span> <span class="n">plot_average_price_by_year</span>
-
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">viz_data</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Sample data for visualization tests.&quot;&quot;&quot;</span>
-    <span class="n">data</span> <span class="o">=</span> <span class="p">{</span>
-        <span class="s1">&#39;price&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">500000</span><span class="p">,</span> <span class="mi">600000</span><span class="p">,</span> <span class="mi">700000</span><span class="p">,</span> <span class="mi">800000</span><span class="p">],</span>
-        <span class="s1">&#39;year_built&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">2010</span><span class="p">,</span> <span class="mi">2010</span><span class="p">,</span> <span class="mi">2012</span><span class="p">,</span> <span class="mi">2012</span><span class="p">],</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">&quot;module&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">raw_housing_data</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fixture for a raw housing data DataFrame.&quot;&quot;&quot;</span>
+    <span class="n">raw_data</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s1">&#39;price&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">200000</span><span class="p">,</span> <span class="mi">350000</span><span class="p">,</span> <span class="mi">275000</span><span class="p">,</span> <span class="mi">500000</span><span class="p">,</span> <span class="mi">450000</span><span class="p">],</span>
+        <span class="s1">&#39;bedrooms&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">,</span> <span class="mi">4</span><span class="p">],</span>
+        <span class="s1">&#39;year_built&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">1985.0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span> <span class="mf">1999.0</span><span class="p">,</span> <span class="mf">2010.0</span><span class="p">,</span> <span class="mf">2005.0</span><span class="p">],</span>
+        <span class="s1">&#39;style&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s1">&#39;Ranch&#39;</span><span class="p">,</span> <span class="s1">&#39;Colonial&#39;</span><span class="p">,</span> <span class="s1">&#39;Ranch&#39;</span><span class="p">,</span> <span class="s1">&#39;Modern&#39;</span><span class="p">,</span> <span class="s1">&#39;Colonial&#39;</span><span class="p">]</span>
     <span class="p">}</span>
-    <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">data</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">raw_data</span><span class="p">)</span>
 
-<span class="c1"># The patch decorator intercepts the call to &#39;visualization.plt.bar&#39;</span>
-<span class="nd">@patch</span><span class="p">(</span><span class="s1">&#39;visualization.plt.bar&#39;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_plot_average_price_by_year_data</span><span class="p">(</span><span class="n">mock_bar</span><span class="p">,</span> <span class="n">viz_data</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Test that plt.bar is called with the correctly aggregated data.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># Call the function that we are testing</span>
-    <span class="n">plot_average_price_by_year</span><span class="p">(</span><span class="n">viz_data</span><span class="p">)</span>
-
-    <span class="c1"># Assert that our mock was called exactly once</span>
-    <span class="n">mock_bar</span><span class="o">.</span><span class="n">assert_called_once</span><span class="p">()</span>
-
-    <span class="c1"># The arguments are available in mock_bar.call_args</span>
-    <span class="c1"># It&#39;s a tuple of (args, kwargs)</span>
-    <span class="n">args</span><span class="p">,</span> <span class="n">kwargs</span> <span class="o">=</span> <span class="n">mock_bar</span><span class="o">.</span><span class="n">call_args</span>
-
-    <span class="c1"># The data is passed as keyword arguments &#39;x&#39; and &#39;height&#39;</span>
-    <span class="n">x_values</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;x&#39;</span><span class="p">)</span>
-    <span class="n">height_values</span> <span class="o">=</span> <span class="n">kwargs</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;height&#39;</span><span class="p">)</span>
-
-    <span class="c1"># Expected data after groupby and mean aggregation</span>
-    <span class="c1"># Year 2010: mean(500000, 600000) = 550000</span>
-    <span class="c1"># Year 2012: mean(700000, 800000) = 750000</span>
-    <span class="n">expected_x</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mi">2010</span><span class="p">,</span> <span class="mi">2012</span><span class="p">])</span>
-    <span class="n">expected_height</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">550000.0</span><span class="p">,</span> <span class="mf">750000.0</span><span class="p">])</span>
-
-    <span class="c1"># Use numpy&#39;s testing utilities for array comparison</span>
-    <span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_array_equal</span><span class="p">(</span><span class="n">x_values</span><span class="p">,</span> <span class="n">expected_x</span><span class="p">)</span>
-    <span class="n">np</span><span class="o">.</span><span class="n">testing</span><span class="o">.</span><span class="n">assert_array_equal</span><span class="p">(</span><span class="n">height_values</span><span class="p">,</span> <span class="n">expected_height</span><span class="p">)</span>
-
-<span class="nd">@patch</span><span class="p">(</span><span class="s1">&#39;visualization.plt.title&#39;</span><span class="p">)</span>
-<span class="nd">@patch</span><span class="p">(</span><span class="s1">&#39;visualization.plt.xlabel&#39;</span><span class="p">)</span>
-<span class="nd">@patch</span><span class="p">(</span><span class="s1">&#39;visualization.plt.ylabel&#39;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_plot_labels_and_title</span><span class="p">(</span><span class="n">mock_ylabel</span><span class="p">,</span> <span class="n">mock_xlabel</span><span class="p">,</span> <span class="n">mock_title</span><span class="p">,</span> <span class="n">viz_data</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Test that the plot labels and title are set correctly.&quot;&quot;&quot;</span>
-    <span class="n">plot_average_price_by_year</span><span class="p">(</span><span class="n">viz_data</span><span class="p">)</span>
-
-    <span class="n">mock_title</span><span class="o">.</span><span class="n">assert_called_once_with</span><span class="p">(</span><span class="s2">&quot;Average Housing Price by Year Built&quot;</span><span class="p">)</span>
-    <span class="n">mock_xlabel</span><span class="o">.</span><span class="n">assert_called_once_with</span><span class="p">(</span><span class="s2">&quot;Year Built&quot;</span><span class="p">)</span>
-    <span class="n">mock_ylabel</span><span class="o">.</span><span class="n">assert_called_once_with</span><span class="p">(</span><span class="s2">&quot;Average Price ($)&quot;</span><span class="p">)</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">&quot;module&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">processed_housing_data</span><span class="p">(</span><span class="n">raw_housing_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fixture for processed housing data.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">preprocess_data</span><span class="p">(</span><span class="n">raw_housing_data</span><span class="p">)</span>
 </code></pre></div>
 
-<p>This approach is far superior to image comparison:
--   <strong>It's fast:</strong> It doesn't require any actual image rendering.
--   <strong>It's robust:</strong> It's immune to changes in library versions that affect rendering.
--   <strong>It's precise:</strong> It tests the core logic of the function—the data aggregation—which is what you, the developer, are responsible for.</p>
-<p>By testing the inputs to the plotting library, you verify that your code is doing its job correctly without getting bogged down in the fragile and complex world of visual testing.</p>
+<p>By placing these in <code>conftest.py</code>, they are automatically available to all tests. The <code>scope="module"</code> means the fixture will be set up only once per test module, which is more efficient than setting it up for every single test function.</p>
+<h3 id="solution-implementation_1">Solution Implementation</h3>
+<p>Now we can refactor our test files to use these fixtures. The tests become dramatically simpler and more focused on their specific assertion logic.</p>
+<p><strong>Before (in <code>test_data_processing.py</code>):</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_data_processing.py (OLD version)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_preprocess_data_with_scaling_and_approx</span><span class="p">():</span>
+    <span class="c1"># 1. Setup</span>
+    <span class="n">raw_data</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s1">&#39;price&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">200000</span><span class="p">,</span> <span class="mi">350000</span><span class="p">,</span> <span class="mi">275000</span><span class="p">,</span> <span class="mi">500000</span><span class="p">],</span>
+        <span class="s1">&#39;bedrooms&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">],</span>
+        <span class="s1">&#39;year_built&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">1985.0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">nan</span><span class="p">,</span> <span class="mf">1999.0</span><span class="p">,</span> <span class="mf">2010.0</span><span class="p">],</span>
+        <span class="s1">&#39;style&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s1">&#39;Ranch&#39;</span><span class="p">,</span> <span class="s1">&#39;Colonial&#39;</span><span class="p">,</span> <span class="s1">&#39;Ranch&#39;</span><span class="p">,</span> <span class="s1">&#39;Modern&#39;</span><span class="p">]</span>
+    <span class="p">}</span>
+    <span class="n">input_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">raw_data</span><span class="p">)</span>
+
+    <span class="c1"># 2. Action</span>
+    <span class="n">actual_df</span> <span class="o">=</span> <span class="n">preprocess_data</span><span class="p">(</span><span class="n">input_df</span><span class="p">)</span>
+    <span class="c1"># ... assertions ...</span>
+</code></pre></div>
+
+<p><strong>After (in <code>test_data_processing.py</code>):</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_data_processing.py (REFACTORED)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pytest</span><span class="w"> </span><span class="kn">import</span> <span class="n">approx</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pandas.testing</span><span class="w"> </span><span class="kn">import</span> <span class="n">assert_frame_equal</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_preprocess_data_output</span><span class="p">(</span><span class="n">processed_housing_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+    <span class="c1"># The &#39;processed_housing_data&#39; fixture handles all setup and action!</span>
+    <span class="c1"># We just need to assert on the result.</span>
+    <span class="n">actual_df</span> <span class="o">=</span> <span class="n">processed_housing_data</span>
+
+    <span class="c1"># Assertions</span>
+    <span class="c1"># The median of [1985, 1999, 2010, 2005] is 2002.0</span>
+    <span class="c1"># min_price=200k, max_price=500k</span>
+    <span class="n">expected_prices</span> <span class="o">=</span> <span class="p">[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="mf">0.83333333</span><span class="p">]</span>
+    <span class="k">assert</span> <span class="nb">list</span><span class="p">(</span><span class="n">actual_df</span><span class="p">[</span><span class="s1">&#39;price&#39;</span><span class="p">])</span> <span class="o">==</span> <span class="n">approx</span><span class="p">(</span><span class="n">expected_prices</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">actual_df</span><span class="p">[</span><span class="s1">&#39;year_built&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">isnull</span><span class="p">()</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">==</span> <span class="mi">0</span>
+    <span class="k">assert</span> <span class="n">actual_df</span><span class="p">[</span><span class="s1">&#39;year_built&#39;</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span> <span class="o">==</span> <span class="mf">2002.0</span> <span class="c1"># Check median fill</span>
+    <span class="k">assert</span> <span class="s1">&#39;style&#39;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">actual_df</span><span class="o">.</span><span class="n">columns</span>
+    <span class="k">assert</span> <span class="s1">&#39;style_Ranch&#39;</span> <span class="ow">in</span> <span class="n">actual_df</span><span class="o">.</span><span class="n">columns</span>
+</code></pre></div>
+
+<p>And now for <code>test_model.py</code>.</p>
+<p><strong>Before (in <code>test_model.py</code>):</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_model.py (OLD version)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_train_and_predict_properties</span><span class="p">():</span>
+    <span class="c1"># 1. Setup: Create training data and data for prediction</span>
+    <span class="n">train_data</span> <span class="o">=</span> <span class="p">{</span> <span class="o">...</span> <span class="p">}</span>
+    <span class="n">train_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">train_data</span><span class="p">)</span>
+    <span class="n">predict_data</span> <span class="o">=</span> <span class="p">{</span> <span class="o">...</span> <span class="p">}</span>
+    <span class="n">predict_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">predict_data</span><span class="p">)</span>
+
+    <span class="c1"># 2. Action</span>
+    <span class="n">predictions</span> <span class="o">=</span> <span class="n">train_and_predict</span><span class="p">(</span><span class="n">train_df</span><span class="p">,</span> <span class="n">predict_df</span><span class="p">)</span>
+    <span class="c1"># ... assertions ...</span>
+</code></pre></div>
+
+<p><strong>After (in <code>test_model.py</code>):</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_model.py (REFACTORED)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">model</span><span class="w"> </span><span class="kn">import</span> <span class="n">train_and_predict</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_train_and_predict_properties_fixture</span><span class="p">(</span><span class="n">raw_housing_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+    <span class="c1"># 1. Setup: Use the fixture for training data</span>
+    <span class="n">train_df</span> <span class="o">=</span> <span class="n">raw_housing_data</span>
+
+    <span class="c1"># Create a smaller, specific dataset for prediction</span>
+    <span class="n">predict_data</span> <span class="o">=</span> <span class="p">{</span>
+        <span class="s1">&#39;bedrooms&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mi">3</span><span class="p">,</span> <span class="mi">5</span><span class="p">],</span>
+        <span class="s1">&#39;year_built&#39;</span><span class="p">:</span> <span class="p">[</span><span class="mf">1990.0</span><span class="p">,</span> <span class="mf">2015.0</span><span class="p">],</span>
+        <span class="s1">&#39;style&#39;</span><span class="p">:</span> <span class="p">[</span><span class="s1">&#39;Ranch&#39;</span><span class="p">,</span> <span class="s1">&#39;Modern&#39;</span><span class="p">]</span>
+    <span class="p">}</span>
+    <span class="n">predict_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">predict_data</span><span class="p">)</span>
+
+    <span class="c1"># 2. Action</span>
+    <span class="n">predictions</span> <span class="o">=</span> <span class="n">train_and_predict</span><span class="p">(</span><span class="n">train_df</span><span class="p">,</span> <span class="n">predict_df</span><span class="p">)</span>
+
+    <span class="c1"># 3. Assertions</span>
+    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">predictions</span><span class="p">)</span> <span class="o">==</span> <span class="mi">2</span>
+    <span class="k">assert</span> <span class="nb">all</span><span class="p">(</span><span class="nb">isinstance</span><span class="p">(</span><span class="n">p</span><span class="p">,</span> <span class="nb">float</span><span class="p">)</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">predictions</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="nb">all</span><span class="p">(</span><span class="n">p</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">predictions</span><span class="p">)</span>
+</code></pre></div>
+
+<h3 id="verification_1">Verification</h3>
+<p>Let's run the full suite again.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v
+<span class="o">=============================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==============================</span>
+...
+collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
+
+test_data_processing.py::test_preprocess_data_output<span class="w"> </span>PASSED<span class="w">              </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+test_model.py::test_train_and_predict_properties_fixture<span class="w"> </span>PASSED<span class="w">          </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">==============================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">===============================</span>
+</code></pre></div>
+
+<p>The tests still pass, but now our test code is dramatically cleaner. The logic for creating data is centralized in <code>conftest.py</code>. If we need to update the test dataset, we only have to do it in one place. The tests themselves are now focused purely on the behavior they are meant to verify. This is a huge win for maintainability.</p>
+<p><strong>Limitation preview:</strong> Our pipeline produces not just numbers, but also visualizations. How can we test a function that creates a plot? We can't easily compare images in an automated test.</p>
+<h2 id="testing-visualization-code">Testing Visualization Code</h2>
+<h2 id="testing-visualization-code_1">Testing Visualization Code</h2>
+<p>Testing code that generates plots (e.g., with Matplotlib or Seaborn) is notoriously difficult. You can't easily perform an assertion on a PNG file. A single-pixel difference would cause a test to fail, making such tests extremely brittle.</p>
+<p>However, this doesn't mean we can't test visualization code at all. We just need to change our approach. Instead of testing the visual <em>output</em>, we test the plot-generating <em>process</em> and the <em>properties</em> of the resulting plot object.</p>
+<h3 id="iteration-4-introducing-a-plotting-function">Iteration 4: Introducing a Plotting Function</h3>
+<p><strong>Current state recap:</strong> Our data processing and model prediction logic is well-tested and uses fixtures for clean setup.</p>
+<p><strong>Current limitation:</strong> We have no tests for any visualization outputs of our project.</p>
+<p><strong>New scenario introduction:</strong> Let's add a function that takes a trained model and feature names, and generates a bar chart of feature importances (or coefficients, in the case of linear regression).</p>
+<p><strong>New file:</strong> <code>visualization.py</code></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># visualization.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.linear_model</span><span class="w"> </span><span class="kn">import</span> <span class="n">LinearRegression</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">plot_feature_coefficients</span><span class="p">(</span><span class="n">model</span><span class="p">:</span> <span class="n">LinearRegression</span><span class="p">,</span> <span class="n">feature_names</span><span class="p">:</span> <span class="nb">list</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Generates and shows a bar plot of model feature coefficients.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">hasattr</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="s1">&#39;coef_&#39;</span><span class="p">):</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Model does not have coefficients. Was it trained?&quot;</span><span class="p">)</span>
+
+    <span class="n">coefficients</span> <span class="o">=</span> <span class="n">model</span><span class="o">.</span><span class="n">coef_</span>
+    <span class="n">coef_df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">({</span><span class="s1">&#39;feature&#39;</span><span class="p">:</span> <span class="n">feature_names</span><span class="p">,</span> <span class="s1">&#39;coefficient&#39;</span><span class="p">:</span> <span class="n">coefficients</span><span class="p">})</span>
+    <span class="n">coef_df</span> <span class="o">=</span> <span class="n">coef_df</span><span class="o">.</span><span class="n">sort_values</span><span class="p">(</span><span class="s1">&#39;coefficient&#39;</span><span class="p">,</span> <span class="n">ascending</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+    <span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">()</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">bar</span><span class="p">(</span><span class="n">coef_df</span><span class="p">[</span><span class="s1">&#39;feature&#39;</span><span class="p">],</span> <span class="n">coef_df</span><span class="p">[</span><span class="s1">&#39;coefficient&#39;</span><span class="p">])</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_title</span><span class="p">(</span><span class="s2">&quot;Model Feature Coefficients&quot;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s2">&quot;Feature&quot;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s2">&quot;Coefficient Value&quot;</span><span class="p">)</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">xticks</span><span class="p">(</span><span class="n">rotation</span><span class="o">=</span><span class="mi">45</span><span class="p">,</span> <span class="n">ha</span><span class="o">=</span><span class="s1">&#39;right&#39;</span><span class="p">)</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">tight_layout</span><span class="p">()</span>
+    <span class="c1"># In a real script, you might use plt.show() or fig.savefig()</span>
+    <span class="c1"># For testing, we will want to get the Axes object back.</span>
+    <span class="k">return</span> <span class="n">ax</span>
+</code></pre></div>
+
+<p>Notice the function now returns the <code>ax</code> (Matplotlib Axes) object. This is a crucial change that makes the function testable. Functions that only call <code>plt.show()</code> are very difficult to test.</p>
+<h3 id="testing-strategies-for-plots">Testing Strategies for Plots</h3>
+<h4 id="strategy-1-the-smoke-test">Strategy 1: The Smoke Test</h4>
+<p>The simplest possible test for a plotting function is a "smoke test." It doesn't check for correctness; it only checks if the function runs to completion without raising an error. This is surprisingly useful for catching bugs introduced during refactoring.</p>
+<h4 id="strategy-2-inspecting-plot-properties">Strategy 2: Inspecting Plot Properties</h4>
+<p>A more powerful approach is to inspect the properties of the returned Axes object. We can't see the plot, but we can ask questions about its structure:
+-   Does it have the correct title?
+-   Are the axis labels set correctly?
+-   Does it have the right number of bars?</p>
+<p>Let's create a test file that does both. First, we need a fixture to provide a trained model.</p>
+<p><strong>Add to <code>conftest.py</code>:</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># conftest.py (add new fixture)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">sklearn.linear_model</span><span class="w"> </span><span class="kn">import</span> <span class="n">LinearRegression</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">model</span><span class="w"> </span><span class="kn">import</span> <span class="n">preprocess_data</span> <span class="c1"># Assuming preprocess_data is accessible</span>
+
+<span class="c1"># ... existing fixtures ...</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">&quot;module&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">trained_linear_model</span><span class="p">(</span><span class="n">processed_housing_data</span><span class="p">:</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Fixture for a trained LinearRegression model.&quot;&quot;&quot;</span>
+    <span class="n">df</span> <span class="o">=</span> <span class="n">processed_housing_data</span>
+
+    <span class="n">X_train</span> <span class="o">=</span> <span class="n">df</span><span class="o">.</span><span class="n">drop</span><span class="p">(</span><span class="s1">&#39;price&#39;</span><span class="p">,</span> <span class="n">axis</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">y_train</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="s1">&#39;price&#39;</span><span class="p">]</span>
+
+    <span class="n">model</span> <span class="o">=</span> <span class="n">LinearRegression</span><span class="p">()</span>
+    <span class="n">model</span><span class="o">.</span><span class="n">fit</span><span class="p">(</span><span class="n">X_train</span><span class="p">,</span> <span class="n">y_train</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">model</span><span class="p">,</span> <span class="nb">list</span><span class="p">(</span><span class="n">X_train</span><span class="o">.</span><span class="n">columns</span><span class="p">)</span>
+</code></pre></div>
+
+<p>Now we can write the tests.</p>
+<p><strong>New test file:</strong> <code>test_visualization.py</code></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_visualization.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib</span>
+<span class="c1"># Use a non-interactive backend for tests to prevent plots from popping up</span>
+<span class="n">matplotlib</span><span class="o">.</span><span class="n">use</span><span class="p">(</span><span class="s1">&#39;Agg&#39;</span><span class="p">)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">visualization</span><span class="w"> </span><span class="kn">import</span> <span class="n">plot_feature_coefficients</span>
+
+<span class="c1"># Smoke test: Does it run without error?</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_plot_feature_coefficients_smoke</span><span class="p">(</span><span class="n">trained_linear_model</span><span class="p">):</span>
+    <span class="n">model</span><span class="p">,</span> <span class="n">feature_names</span> <span class="o">=</span> <span class="n">trained_linear_model</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">plot_feature_coefficients</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">feature_names</span><span class="p">)</span>
+        <span class="c1"># Close the plot to free up memory</span>
+        <span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="k">assert</span> <span class="kc">False</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;Plotting function raised an exception: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span>
+
+<span class="c1"># Property test: Does the plot have the right components?</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_plot_feature_coefficients_properties</span><span class="p">(</span><span class="n">trained_linear_model</span><span class="p">):</span>
+    <span class="n">model</span><span class="p">,</span> <span class="n">feature_names</span> <span class="o">=</span> <span class="n">trained_linear_model</span>
+    <span class="n">ax</span> <span class="o">=</span> <span class="n">plot_feature_coefficients</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">feature_names</span><span class="p">)</span>
+
+    <span class="c1"># Test title</span>
+    <span class="k">assert</span> <span class="n">ax</span><span class="o">.</span><span class="n">get_title</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;Model Feature Coefficients&quot;</span>
+
+    <span class="c1"># Test axis labels</span>
+    <span class="k">assert</span> <span class="n">ax</span><span class="o">.</span><span class="n">get_xlabel</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;Feature&quot;</span>
+    <span class="k">assert</span> <span class="n">ax</span><span class="o">.</span><span class="n">get_ylabel</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;Coefficient Value&quot;</span>
+
+    <span class="c1"># Test number of bars</span>
+    <span class="c1"># There should be one bar for each feature</span>
+    <span class="n">num_features</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">feature_names</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">ax</span><span class="o">.</span><span class="n">patches</span><span class="p">)</span> <span class="o">==</span> <span class="n">num_features</span>
+
+    <span class="c1"># Close the plot to free up memory</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</code></pre></div>
+
+<h3 id="verification_2">Verification</h3>
+<p>Let's run the final test suite.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span><span class="nv">pytest</span>
+<span class="o">=============================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==============================</span>
+...
+collected<span class="w"> </span><span class="m">4</span><span class="w"> </span>items
+
+test_data_processing.py<span class="w"> </span>.<span class="w">                                                </span><span class="o">[</span><span class="w"> </span><span class="m">25</span>%<span class="o">]</span>
+test_model.py<span class="w"> </span>.<span class="w">                                                          </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+test_visualization.py<span class="w"> </span>..<span class="w">                                                 </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">==============================</span><span class="w"> </span><span class="m">4</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">===============================</span>
+</code></pre></div>
+
+<p>All tests pass. We have successfully tested our visualization code without resorting to fragile image comparison. We've verified that it runs and that the key components of the plot are generated as expected.</p>
+<h3 id="the-journey-from-problem-to-solution">The Journey: From Problem to Solution</h3>
+<table>
+<thead>
+<tr>
+<th>Iteration</th>
+<th>Failure Mode / Challenge</th>
+<th>Technique Applied</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>Need to verify data transformation logic.</td>
+<td><code>pandas.testing</code></td>
+<td>Basic test for integers and one-hot encoding works.</td>
+</tr>
+<tr>
+<td>1</td>
+<td>Exact comparisons fail with floating-point numbers.</td>
+<td><code>pytest.approx</code></td>
+<td>Test is now robust to small floating-point inaccuracies.</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Model predictions are not deterministic or exact.</td>
+<td>Property-based testing</td>
+<td>Tests verify shape, type, and range of predictions, not exact values.</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Test setup code is duplicated and hard to maintain.</td>
+<td><code>pytest</code> fixtures</td>
+<td>Setup logic is centralized, making tests clean and maintainable.</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Visual outputs (plots) cannot be easily asserted on.</td>
+<td>Smoke &amp; property testing</td>
+<td>Tests verify the plotting function runs and generates correct components.</td>
+</tr>
+</tbody>
+</table>
+<p>This chapter has demonstrated a robust, layered approach to testing a data science pipeline. By understanding the unique challenges and applying the right tools—<code>pytest.approx</code> for floats, property-based assertions for models, and fixtures for setup—you can build a reliable test suite that supports, rather than hinders, your data science workflow.</p>
         </div>
         <div class="footer">
-            Generated on 2025-11-22 17:25:04 | Made with ❤️ by GitHub Pages Generator
+            Generated on 2025-11-24 14:31:16 | Made with ❤️ by GitHub Pages Generator
         </div>
     </div>
     <script>

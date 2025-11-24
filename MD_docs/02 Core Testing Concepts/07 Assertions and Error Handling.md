@@ -2,549 +2,1074 @@
 
 ## Beyond Simple Assertions
 
-## Beyond Simple Assertions
+## The Heart of the Test: The `assert` Statement
 
-At the heart of every test is an assertion. It's the line in the sand, the statement that declares, "This must be true." In Chapter 2, you learned the basics of `assert`, but its power in pytest goes far beyond simple equality checks. Pytest's magic lies in its ability to take a standard Python `assert` statement and provide incredibly detailed feedback when it fails. This is called "assertion introspection."
+At its core, every test performs three steps: Arrange, Act, and Assert. The assertion is the moment of truth—it's where we verify that the outcome of our action matches our expectation. Pytest is built around Python's native `assert` statement, supercharging it with a feature called "assertion introspection." This means you don't need special assertion methods like `self.assertEqual()` or `self.assertTrue()` that are common in other frameworks. A plain `assert` is all you need.
 
-Let's explore the versatility of the humble `assert` statement.
+This chapter is dedicated to mastering assertions. We'll start with the basics, learn how to read pytest's incredibly detailed failure reports, and then move on to advanced techniques for handling expected errors and warnings.
 
-### Asserting Equality and Inequality
+### Phase 1: Establish the Reference Implementation
 
-The most common assertion is checking for equality with `==`.
+To explore these concepts, we need a realistic piece of code to test. We'll build a simple `UserValidator` that checks if a user data dictionary is valid for registration. This will be our **anchor example** for the entire chapter.
 
-```python
-# test_assertions.py
+Our validator will check three things:
+1.  The user must be at least 18 years old.
+2.  The username must not be "admin".
+3.  The email must contain an "@" symbol.
 
-def test_equality():
-    assert 1 + 1 == 2
-
-def test_inequality():
-    assert 1 + 1 != 3
-```
-
-### Asserting Comparisons
-
-You can use any standard comparison operator, and pytest will give you helpful output if it fails.
+Here is the initial implementation of our validator and its first test.
 
 ```python
-# test_assertions.py
+# user_validator.py
 
-def test_greater_than():
-    assert 5 > 2
+from datetime import date
 
-def test_less_than_or_equal():
-    assert 3 <= 3
-    assert 3 <= 4
-```
+class UserValidator:
+    def __init__(self, user_data: dict):
+        self.data = user_data
+        self.errors = {}
 
-### Asserting Membership
+    def _validate_age(self):
+        """User must be 18 or older."""
+        today = date.today()
+        try:
+            birthdate = date.fromisoformat(self.data.get("birthdate", ""))
+            age = today.year - birthdate.year - ((today.month, today.day) < (birthdate.month, birthdate.day))
+            if age < 18:
+                self.errors["age"] = "User must be 18 or older"
+        except (ValueError, TypeError):
+            self.errors["birthdate"] = "Invalid date format"
 
-You can check if an item is present in a collection (like a list, tuple, dictionary, or string) using the `in` keyword.
+    def _validate_username(self):
+        """Username cannot be 'admin'."""
+        username = self.data.get("username")
+        if username == "admin":
+            self.errors["username"] = "Username cannot be 'admin'"
 
-```python
-# test_assertions.py
+    def _validate_email(self):
+        """Email must be valid."""
+        email = self.data.get("email", "")
+        if "@" not in email:
+            self.errors["email"] = "Invalid email address"
 
-def test_list_membership():
-    items = [1, "apple", 3.14]
-    assert "apple" in items
+    def is_valid(self) -> bool:
+        """Runs all validations and returns True if no errors."""
+        self.errors = {} # Reset errors on each run
+        self._validate_age()
+        self._validate_username()
+        self._validate_email()
+        return not self.errors
 
-def test_dict_key_membership():
-    user_data = {"id": 1, "name": "Alice", "email": "alice@example.com"}
-    assert "name" in user_data
+    def get_validation_report(self) -> dict:
+        """Runs validation and returns a detailed report."""
+        self.is_valid() # Ensure validation has run
+        return {
+            "is_valid": not self.errors,
+            "errors": self.errors
+        }
 
-def test_substring():
-    message = "Hello, Pytest!"
-    assert "Pytest" in message
-```
+# test_validator.py
 
-### Asserting Identity
+from user_validator import UserValidator
 
-Sometimes you need to check if two variables refer to the exact same object in memory, not just that they have the same value. For this, you use `is`. This is common when dealing with singletons or specific object instances.
-
-```python
-# test_assertions.py
-
-def test_identity():
-    a = [1, 2, 3]
-    b = a  # b is a reference to the same object as a
-    c = [1, 2, 3]  # c has the same value, but is a different object
-
-    assert b is a
-    assert c is not a  # They are not the same object
-    assert c == a      # But they are equal in value
-```
-
-### Asserting Truthiness
-
-You can assert that a value is "truthy" (evaluates to `True` in a boolean context) or "falsy" (evaluates to `False`).
-
-```python
-# test_assertions.py
-
-def test_truthiness():
-    assert True
-    assert 1
-    assert "hello"
-    assert [1, 2]
-
-def test_falsiness():
-    assert not False
-    assert not 0
-    assert not ""
-    assert not []
-```
-
-The key takeaway is that you don't need special functions like `assertEqual()` or `assertTrue()` from other frameworks. You can use plain, idiomatic Python expressions, and pytest will do the hard work of figuring out what went wrong when an assertion fails. We'll see exactly how it does that next.
-
-## Assertion Introspection: Reading Failure Messages
-
-## Assertion Introspection: Reading Failure Messages
-
-This is where pytest truly shines and one of the main reasons developers love it. When an `assert` statement fails, pytest doesn't just tell you `AssertionError`. It "introspects" the expression, meaning it looks inside the objects being compared and gives you a detailed, human-readable report of the difference.
-
-A test failure is not an error; it's data. Learning to read this data is one of the most critical skills in testing.
-
-### The Problem: A Failing Test with Complex Data
-
-Imagine we have a function that processes user data and we want to test it. Let's create a test that intentionally fails so we can analyze the output.
-
-```python
-# test_user_profile.py
-
-def get_processed_user_data():
-    """A function that returns a user profile, but with a bug."""
-    return {
-        "id": 101,
-        "username": "testuser",
-        "email": "test.user@example.com",
-        "profile": {
-            "theme": "dark",
-            "notifications": {
-                "email": True,
-                "sms": False,  # This is the bug, it should be True
-            },
-        },
-        "roles": ["editor", "contributor"],
+def test_valid_user():
+    """Tests a user with completely valid data."""
+    valid_data = {
+        "username": "john_doe",
+        "birthdate": "2001-05-15",
+        "email": "john.doe@example.com"
     }
-
-def test_user_profile_processing():
-    expected_data = {
-        "id": 101,
-        "username": "testuser",
-        "email": "test.user@example.com",
-        "profile": {
-            "theme": "dark",
-            "notifications": {
-                "email": True,
-                "sms": True,  # We expect this to be True
-            },
-        },
-        "roles": ["editor", "contributor"],
+    validator = UserValidator(valid_data)
+    
+    # We expect the validation report to show success
+    expected_report = {
+        "is_valid": True,
+        "errors": {}
     }
-    actual_data = get_processed_user_data()
-    assert actual_data == expected_data
+    
+    actual_report = validator.get_validation_report()
+    
+    assert actual_report == expected_report
 ```
 
-### Reading the Failure Report
-
-Now, let's run this test with `pytest -v` and carefully dissect the output.
+Let's run this to confirm our baseline is working.
 
 ```bash
-$ pytest -v test_user_profile.py
-=========================== test session starts ============================
+$ pytest -v
+========================= test session starts ==========================
 ...
 collected 1 item
 
-test_user_profile.py::test_user_profile_processing FAILED          [100%]
+test_validator.py::test_valid_user PASSED                         [100%]
 
-================================= FAILURES =================================
-______________________ test_user_profile_processing ______________________
-
-    def test_user_profile_processing():
-        expected_data = {
-            "id": 101,
-            "username": "testuser",
-            "email": "test.user@example.com",
-            "profile": {
-                "theme": "dark",
-                "notifications": {
-                    "email": True,
-                    "sms": True,  # We expect this to be True
-                },
-            },
-            "roles": ["editor", "contributor"],
-        }
-        actual_data = get_processed_user_data()
->       assert actual_data == expected_data
-E       assert {'email': 'te... 'testuser'} == {'email': 'te... 'testuser'}
-E         Differing items:
-E         {'profile': {'notifications': {'sms': False}}} != {'profile': {'notifications': {'sms': True}}}
-E         Full diff:
-E         - {'email': 'test.user@example.com',
-E         -  'id': 101,
-E         -  'profile': {'notifications': {'email': True, 'sms': True}, 'theme': 'dark'},
-E         ?                                                      ^^^^
-E         + {'email': 'test.user@example.com',
-E         +  'id': 101,
-E         +  'profile': {'notifications': {'email': True, 'sms': False}, 'theme': 'dark'},
-E         ?                                                      ^^^^^
-E         -  'roles': ['editor', 'contributor'],
-E         -  'username': 'testuser'}
-E         +  'roles': ['editor', 'contributor'],
-E         +  'username': 'testuser'}
-
-test_user_profile.py:28: AssertionError
-========================= 1 failed in ...s ===========================
+========================== 1 passed in ...s ==========================
 ```
 
-Let's break this down piece by piece:
-
-1.  **`> assert actual_data == expected_data`**: The `>` points to the exact line where the assertion failed.
-2.  **`E assert {'email': ...} == {'email': ...}`**: The `E` stands for "Error". Pytest shows you the assertion expression again, often abbreviating large data structures for readability.
-3.  **`E   Differing items:`**: This is the magic. Pytest intelligently finds the *smallest possible difference* between the two structures. It tells you exactly where the mismatch is, saving you from manually comparing two giant dictionaries.
-    ```
-    {'profile': {'notifications': {'sms': False}}} != {'profile': {'notifications': {'sms': True}}}
-    ```
-    It has drilled down through the nested dictionaries to pinpoint the exact key-value pair that differs.
-4.  **`E   Full diff:`**: For more context, pytest provides a full `diff` view, similar to what you'd see in version control systems like Git.
-    -   Lines starting with `-` are from the left side of the comparison (`actual_data`).
-    -   Lines starting with `+` are from the right side (`expected_data`).
-    -   Lines starting with `?` highlight the exact characters that differ within a line. Here, `^^^^` points to `True` and `^^^^^` points to `False`.
-
-Without assertion introspection, you would just get `AssertionError`, and you'd have to manually print both dictionaries and stare at them until you found the difference. Pytest's detailed output turns minutes of frustrating debugging into seconds of clear insight.
-
-## Custom Assertion Messages
-
-## Custom Assertion Messages
-
-Python's `assert` statement allows for an optional message that will be displayed if the assertion fails.
-
-The syntax is: `assert <expression>, <message>`
+Great. Now, let's write a test for an invalid user who is underage. This will expose our first assertion failure and set the stage for learning how to read pytest's output.
 
 ```python
-# test_custom_message.py
+# test_validator.py (added test)
 
-def test_account_balance():
-    account = {"id": "acc_123", "balance": -50}
-    # This assertion will fail
-    assert account["balance"] >= 0, f"Account {account['id']} has a negative balance!"
+from user_validator import UserValidator
+from datetime import date, timedelta
+
+def test_valid_user():
+    # ... (same as before) ...
+    pass
+
+def test_underage_user():
+    """Tests a user who is younger than 18."""
+    # A birthdate exactly 17 years ago
+    underage_birthdate = (date.today() - timedelta(days=17*365)).isoformat()
+    
+    invalid_data = {
+        "username": "jane_doe",
+        "birthdate": underage_birthdate,
+        "email": "jane.doe@example.com"
+    }
+    validator = UserValidator(invalid_data)
+    
+    expected_report = {
+        "is_valid": False,
+        "errors": {
+            "age": "User must be 18 or older"
+        }
+    }
+    
+    actual_report = validator.get_validation_report()
+    
+    assert actual_report == expected_report
 ```
 
-When we run this test, the custom message is included in the output.
+This test seems correct. We create a user who is clearly underage and assert that the validation report reflects this specific error. Let's run it.
 
 ```bash
-$ pytest test_custom_message.py
-================================= FAILURES =================================
-_________________________ test_account_balance _________________________
-
-    def test_account_balance():
-        account = {"id": "acc_123", "balance": -50}
-        # This assertion will fail
->       assert account["balance"] >= 0, f"Account {account['id']} has a negative balance!"
-E       AssertionError: Account acc_123 has a negative balance!
-E       assert -50 >= 0
-
-test_custom_message.py:6: AssertionError
-========================= 1 failed in ...s ===========================
-```
-
-### To Use or Not to Use?
-
-While custom messages can be useful, a common pytest philosophy is to **rely on assertion introspection first**. Pytest's automatic diffing is often more informative than a manually written message.
-
-**When to use custom messages:**
-
-1.  **When the expression isn't self-explanatory:** If the assertion involves complex logic, a message can clarify the *intent* of the test.
-2.  **When testing business rules:** A message can describe the business rule that was violated, which is helpful for non-technical stakeholders.
-3.  **When looping:** If an assertion is inside a loop, the message can include the loop variable to identify which iteration failed.
-
-**When to avoid them:**
-
-1.  **When comparing simple values:** `assert x == y` provides a great failure message on its own. A custom message like `assert x == y, "x should be equal to y"` is redundant and adds noise.
-2.  **When comparing data structures:** Pytest's diffing is almost always superior to any message you could write.
-
-**Guideline:** Write your assertion first. If the failure message from pytest isn't clear enough, then consider adding a custom message to provide more context.
-
-## Testing Exceptions with pytest.raises()
-
-## Testing Exceptions with pytest.raises()
-
-A crucial part of robust software is handling errors gracefully. This means your code should raise exceptions when it receives invalid input or encounters an error state. Your tests must verify that the correct exceptions are raised under the right circumstances.
-
-### The Wrong Way: `try...except`
-
-A beginner might be tempted to write a test like this:
-
-```python
-# test_exceptions_wrong.py
-
-def divide(a, b):
-    if b == 0:
-        raise ValueError("Cannot divide by zero")
-    return a / b
-
-# This is NOT the recommended way to test exceptions in pytest
-def test_divide_by_zero_wrong():
-    try:
-        divide(10, 0)
-    except ValueError:
-        # The exception was raised, so the test passes.
-        pass
-    else:
-        # If no exception was raised, the test should fail.
-        assert False, "ValueError was not raised"
-```
-
-This approach has several problems:
--   It's verbose and boilerplate-heavy.
--   It can accidentally catch the wrong exception if the `try` block is too large.
--   The test will pass if a `ValueError` is raised for the *wrong reason* inside the `try` block.
--   It doesn't provide a clean way to inspect the exception message or attributes.
-
-### The Pytest Way: `pytest.raises`
-
-Pytest provides a clean, expressive, and safe way to assert that a block of code raises an exception: the `pytest.raises` context manager.
-
-```python
-# test_exceptions_right.py
-import pytest
-
-def divide(a, b):
-    if b == 0:
-        raise ValueError("Cannot divide by zero")
-    return a / b
-
-def test_divide_by_zero():
-    with pytest.raises(ValueError):
-        divide(10, 0)
-
-def test_divide_by_zero_fails_if_no_exception():
-    # This test will fail because no exception is raised
-    with pytest.raises(ValueError):
-        divide(10, 2)
-```
-
-This is much cleaner. The `with pytest.raises(ValueError):` block tells pytest: "I expect the code inside this block to raise a `ValueError`. If it does, the test passes. If it raises a different exception or no exception at all, the test fails."
-
-Running the file above produces a clear failure for the second test:
-
-```
-_________________ test_divide_by_zero_fails_if_no_exception __________________
+$ pytest -v
+========================= test session starts ==========================
 ...
-Failed: DID NOT RAISE <class 'ValueError'>
+collected 2 items
+
+test_validator.py::test_valid_user PASSED                         [ 50%]
+test_validator.py::test_underage_user FAILED                      [100%]
+
+=============================== FAILURES ===============================
+__________________________ test_underage_user __________________________
+
+    def test_underage_user():
+        """Tests a user who is younger than 18."""
+        # A birthdate exactly 17 years ago
+        underage_birthdate = (date.today() - timedelta(days=17*365)).isoformat()
+    
+        invalid_data = {
+            "username": "jane_doe",
+            "birthdate": underage_birthdate,
+            "email": "jane.doe@example.com"
+        }
+        validator = UserValidator(invalid_data)
+    
+        expected_report = {
+            "is_valid": False,
+            "errors": {
+                "age": "User must be 18 or older"
+            }
+        }
+    
+        actual_report = validator.get_validation_report()
+    
+>       assert actual_report == expected_report
+E       AssertionError: assert {'errors': {'...id': False} == {'errors': {'...id': False}
+E         Differing items:
+E         {'errors': {'age': 'User must be 18 or older'}} != {'errors': {'age': 'User must be at least 18'}}
+E         Full diff:
+E         - {'errors': {'age': 'User must be at least 18'}, 'is_valid': False}
+E         ?                                  ---------
+E         + {'errors': {'age': 'User must be 18 or older'}, 'is_valid': False}
+E         ?                                  ^^^^^^^^
+
+test_validator.py:36: AssertionError
+======================= short test summary info ========================
+FAILED test_validator.py::test_underage_user - AssertionError: assert...
+===================== 1 failed, 1 passed in ...s =====================
 ```
 
-### Inspecting the Exception
+It failed! This is perfect. The failure isn't due to a complex logical bug, but a simple typo in our test's expectation. This provides an ideal opportunity to learn how to dissect pytest's rich failure reports.
 
-Often, you need to check not only that an exception was raised, but also that it has the correct error message. You can capture the exception info using `as excinfo`.
+## Assertion Introspection: Reading Failure Messages
+
+## Diagnostic Analysis: Reading the Failure
+
+A failing test is not a dead end; it's a map that tells you exactly where your code deviates from your expectations. Learning to read this map is one of the most critical skills in testing. Pytest's output is dense with information, so let's break down the failure from the previous section piece by piece.
+
+**The complete output**:
+```bash
+=============================== FAILURES ===============================
+__________________________ test_underage_user __________________________
+
+    def test_underage_user():
+        """Tests a user who is younger than 18."""
+        # ... (code omitted for brevity) ...
+    
+        actual_report = validator.get_validation_report()
+    
+>       assert actual_report == expected_report
+E       AssertionError: assert {'errors': {'...id': False} == {'errors': {'...id': False}
+E         Differing items:
+E         {'errors': {'age': 'User must be 18 or older'}} != {'errors': {'age': 'User must be at least 18'}}
+E         Full diff:
+E         - {'errors': {'age': 'User must be at least 18'}, 'is_valid': False}
+E         ?                                  ---------
+E         + {'errors': {'age': 'User must be 18 or older'}, 'is_valid': False}
+E         ?                                  ^^^^^^^^
+
+test_validator.py:36: AssertionError
+```
+
+**Let's parse this section by section**:
+
+1.  **The summary line**: `FAILED test_validator.py::test_underage_user - AssertionError: assert...`
+    -   **What this tells us**: The test named `test_underage_user` in the file `test_validator.py` failed. The reason for the failure was an `AssertionError`, which means the condition in an `assert` statement evaluated to `False`.
+
+2.  **The traceback**:
+    ```python
+    >       assert actual_report == expected_report
+    test_validator.py:36: AssertionError
+    ```
+    -   **What this tells us**: This points to the exact line of code that failed. The `>` character highlights line 36 in `test_validator.py`. This is the most important piece of information for locating the problem.
+
+3.  **The assertion introspection**:
+    ```
+    E       AssertionError: assert {'errors': {'...id': False} == {'errors': {'...id': False}
+    E         Differing items:
+    E         {'errors': {'age': 'User must be 18 or older'}} != {'errors': {'age': 'User must be at least 18'}}
+    E         Full diff:
+    E         - {'errors': {'age': 'User must be at least 18'}, 'is_valid': False}
+    E         ?                                  ---------
+    E         + {'errors': {'age': 'User must be 18 or older'}, 'is_valid': False}
+    E         ?                                  ^^^^^^^^
+    ```
+    -   **What this tells us**: This is pytest's magic. It "introspects" the objects involved in the failed assertion and provides a detailed, human-readable diff.
+        -   The first line shows the assertion that failed, with large data structures abbreviated (`...`).
+        -   `Differing items:` gets to the heart of the matter. It isolates the exact key-value pair in the dictionary that didn't match. We can clearly see the string for the `'age'` error is different.
+        -   `Full diff:` provides a standard `diff` format. Lines starting with `-` are from the left side of the `==` (the expected value in our case), and lines with `+` are from the right side (the actual value). The `?` lines highlight the precise characters that differ.
+
+**Root cause identified**: We have a typo in our test. The `UserValidator` produces the error message `"User must be 18 or older"`, but our test *expected* `"User must be at least 18"`.
+
+**Why the current approach can't solve this**: The approach is fine, but our data is wrong. The introspection gave us all the information we needed to spot the mistake instantly.
+
+**What we need**: We need to fix the expected string in our test to match the actual implementation.
+
+Let's apply the fix.
 
 ```python
-# test_exceptions_right.py
+# test_validator.py (fixed)
+
+# ... (imports and test_valid_user are the same) ...
+
+def test_underage_user():
+    """Tests a user who is younger than 18."""
+    underage_birthdate = (date.today() - timedelta(days=17*365)).isoformat()
+    
+    invalid_data = {
+        "username": "jane_doe",
+        "birthdate": underage_birthdate,
+        "email": "jane.doe@example.com"
+    }
+    validator = UserValidator(invalid_data)
+    
+    # BEFORE: The expected message was wrong
+    # expected_report = {
+    #     "is_valid": False,
+    #     "errors": {
+    #         "age": "User must be at least 18"
+    #     }
+    # }
+
+    # AFTER: The expected message now matches the implementation
+    expected_report = {
+        "is_valid": False,
+        "errors": {
+            "age": "User must be 18 or older"
+        }
+    }
+    
+    actual_report = validator.get_validation_report()
+    
+    assert actual_report == expected_report
+```
+
+Now, running pytest shows both tests passing.
+
+```bash
+$ pytest -v
+========================= test session starts ==========================
+...
+collected 2 items
+
+test_validator.py::test_valid_user PASSED                         [ 50%]
+test_validator.py::test_underage_user PASSED                      [100%]
+
+========================== 2 passed in ...s ==========================
+```
+
+This simple exercise demonstrates the power of assertion introspection. Without it, we would have just seen `AssertionError` and would have had to manually print both dictionaries to find the difference. Pytest saves you that step, accelerating the debug cycle.
+
+## Custom Assertion Messages
+
+## Iteration 1: Adding Context with Custom Messages
+
+Pytest's introspection is fantastic for comparing two objects, but sometimes the failure isn't about a difference between `a` and `b`. Sometimes, the failure is that a single value isn't what you expect it to be, and the reason *why* you expect it isn't obvious from the code.
+
+### Current Limitation
+
+Our tests are good at checking the final `report` dictionary. But what if we wanted to test a property of the validator itself? Let's add a feature to count the number of validation rules.
+
+```python
+# user_validator.py (updated)
+
+class UserValidator:
+    def __init__(self, user_data: dict):
+        self.data = user_data
+        self.errors = {}
+        # A list of all validation methods
+        self._validations = [
+            self._validate_age,
+            self._validate_username,
+            self._validate_email
+        ]
+
+    @property
+    def validation_rule_count(self):
+        return len(self._validations)
+
+    # ... (_validate methods are the same) ...
+
+    def is_valid(self) -> bool:
+        """Runs all validations and returns True if no errors."""
+        self.errors = {}
+        for validation_func in self._validations:
+            validation_func()
+        return not self.errors
+    
+    # ... (get_validation_report is the same) ...
+```
+
+Now, let's write a test to ensure we always have exactly three validation rules. This acts as a safeguard against someone accidentally removing a rule.
+
+```python
+# test_validator.py (added test)
+
+# ... (other tests) ...
+
+def test_validation_rule_count():
+    """Ensures the number of validation rules is correct."""
+    validator = UserValidator({}) # Data doesn't matter for this test
+    assert validator.validation_rule_count == 3
+```
+
+This test passes. But now, let's simulate a future change where a developer *removes* a validation rule, causing our safeguard test to fail.
+
+```python
+# user_validator.py (temporarily broken)
+
+class UserValidator:
+    def __init__(self, user_data: dict):
+        self.data = user_data
+        self.errors = {}
+        # A developer accidentally removed a validation!
+        self._validations = [
+            self._validate_age,
+            self._validate_username,
+            # self._validate_email is missing!
+        ]
+    # ... (rest of the class) ...
+```
+
+### Failure Demonstration
+
+Let's run pytest now.
+
+```bash
+$ pytest -v
+========================= test session starts ==========================
+...
+collected 3 items
+
+test_validator.py::test_valid_user PASSED                         [ 33%]
+test_validator.py::test_underage_user PASSED                      [ 66%]
+test_validator.py::test_validation_rule_count FAILED              [100%]
+
+=============================== FAILURES ===============================
+______________________ test_validation_rule_count ______________________
+
+    def test_validation_rule_count():
+        """Ensures the number of validation rules is correct."""
+        validator = UserValidator({}) # Data doesn't matter for this test
+>       assert validator.validation_rule_count == 3
+E       assert 2 == 3
+E        +  where 2 = <user_validator.UserValidator object at 0x...>.validation_rule_count
+
+test_validator.py:42: AssertionError
+======================= short test summary info ========================
+FAILED test_validator.py::test_validation_rule_count - assert 2 == 3
+===================== 1 failed, 2 passed in ...s =====================
+```
+
+### Diagnostic Analysis: Reading the Failure
+
+**The complete output**: (Shown above)
+
+**Let's parse this section by section**:
+
+1.  **The summary line**: `FAILED test_validator.py::test_validation_rule_count - assert 2 == 3`
+    -   **What this tells us**: The test failed because an assertion expected `3` but got `2`.
+
+2.  **The traceback**:
+    ```python
+    >       assert validator.validation_rule_count == 3
+    test_validator.py:42: AssertionError
+    ```
+    -   **What this tells us**: The failure is on line 42.
+
+3.  **The assertion introspection**:
+    ```
+    E       assert 2 == 3
+    E        +  where 2 = <user_validator.UserValidator object at 0x...>.validation_rule_count
+    ```
+    -   **What this tells us**: Pytest does its best. It shows that the value `2` came from the property `validation_rule_count`. This is helpful, but it doesn't explain the *business logic* behind the number `3`. Why was `3` the magic number?
+
+**Root cause identified**: The number of validation rules has changed from 3 to 2.
+**Why the current approach is limited**: The failure message is technically correct but lacks context. A developer seeing `assert 2 == 3` might not immediately understand the significance.
+**What we need**: A way to add a human-readable message to the failure output to explain the *intent* of the assertion.
+
+### Technique: Custom Assertion Messages
+
+Python's `assert` statement has a second, optional argument: a message to display if the assertion fails.
+
+```python
+assert <condition>, "This is the message that will be shown on failure."
+```
+
+Let's add a descriptive message to our test.
+
+```python
+# test_validator.py (improved test)
+
+def test_validation_rule_count():
+    """Ensures the number of validation rules is correct."""
+    validator = UserValidator({})
+    
+    # BEFORE
+    # assert validator.validation_rule_count == 3
+
+    # AFTER
+    message = (
+        "The number of validation rules has changed. "
+        "If this was intentional, update the test. "
+        "Rules should cover: age, username, email."
+    )
+    assert validator.validation_rule_count == 3, message
+```
+
+### Verification
+
+Now, let's run the test again with our broken `UserValidator` (that still has only 2 rules).
+
+```bash
+$ pytest -v
+========================= test session starts ==========================
+...
+collected 3 items
+
+test_validator.py::test_valid_user PASSED                         [ 33%]
+test_validator.py::test_underage_user PASSED                      [ 66%]
+test_validator.py::test_validation_rule_count FAILED              [100%]
+
+=============================== FAILURES ===============================
+______________________ test_validation_rule_count ______________________
+
+    def test_validation_rule_count():
+        """Ensures the number of validation rules is correct."""
+        validator = UserValidator({})
+    
+        message = (
+            "The number of validation rules has changed. "
+            "If this was intentional, update the test. "
+            "Rules should cover: age, username, email."
+        )
+>       assert validator.validation_rule_count == 3, message
+E       AssertionError: The number of validation rules has changed. If this was intentional, update the test. Rules should cover: age, username, email.
+E       assert 2 == 3
+E        +  where 2 = <user_validator.UserValidator object at 0x...>.validation_rule_count
+
+test_validator.py:50: AssertionError
+======================= short test summary info ========================
+FAILED test_validator.py::test_validation_rule_count - AssertionError: The...
+===================== 1 failed, 2 passed in ...s =====================
+```
+
+Look at that! The custom message is now the first thing you see in the failure report. It immediately tells the developer what the number `3` means and what they should check. This transforms a simple `assert 2 == 3` into a rich, actionable piece of feedback.
+
+(Remember to fix the `UserValidator` class by re-adding `_validate_email` to the list before proceeding.)
+
+## Testing Exceptions with pytest.raises()
+
+## Iteration 2: Handling Expected Errors
+
+Our current `UserValidator` is polite. When it finds invalid data, it adds an error to a dictionary. This is a valid design pattern, but often, invalid input should be treated more severely by raising an exception. This signals a programming error—the caller should have sanitized the data *before* passing it to the object.
+
+Let's refactor our validator. Instead of collecting errors, the `_validate_age` method will now raise a `ValueError` if the birthdate format is wrong.
+
+### Current Limitation
+
+Our tests are designed to check the state of the `errors` dictionary. They have no mechanism to handle or expect exceptions.
+
+### New Scenario: Invalid Date Format
+
+Let's change `_validate_age` to be stricter.
+
+```python
+# user_validator.py (refactored)
+
+from datetime import date
+
+class UserValidator:
+    # ... (__init__ and other _validate methods are the same for now) ...
+    
+    def _validate_age(self):
+        """User must be 18 or older. Raises ValueError on bad date format."""
+        today = date.today()
+        birthdate_str = self.data.get("birthdate")
+        if not birthdate_str:
+            self.errors["birthdate"] = "Birthdate is required"
+            return
+            
+        try:
+            birthdate = date.fromisoformat(birthdate_str)
+            age = today.year - birthdate.year - ((today.month, today.day) < (birthdate.month, birthdate.day))
+            if age < 18:
+                self.errors["age"] = "User must be 18 or older"
+        except ValueError:
+            # This is the new behavior!
+            raise ValueError(f"Invalid date format for birthdate: '{birthdate_str}'")
+
+    # ... (rest of the class) ...
+```
+
+How do we test this? A naive approach might be to write a test that calls the validator with a bad date and see what happens.
+
+```python
+# test_validator.py (added test)
+
+# ... (other tests) ...
+
+def test_invalid_date_format_raises_exception():
+    """
+    Tests that a malformed birthdate string raises a ValueError.
+    """
+    invalid_data = {
+        "username": "test_user",
+        "birthdate": "2000-13-01", # Invalid month
+        "email": "test@example.com"
+    }
+    validator = UserValidator(invalid_data)
+    
+    # How do we assert that an exception is raised?
+    # This line will crash the test.
+    validator.is_valid()
+```
+
+### Failure Demonstration
+
+Running this new test results in an `ERROR`, not a `FAIL`. This is a crucial distinction. A `FAIL` means an assertion was proven false. An `ERROR` means the test itself crashed due to an unhandled exception.
+
+```bash
+$ pytest -v
+========================= test session starts ==========================
+...
+collected 4 items
+
+test_validator.py::test_valid_user PASSED                         [ 25%]
+test_validator.py::test_underage_user PASSED                      [ 50%]
+test_validator.py::test_validation_rule_count PASSED              [ 75%]
+test_validator.py::test_invalid_date_format_raises_exception ERROR [100%]
+
+================================ ERRORS ================================
+ERROR at setup of test_invalid_date_format_raises_exception
+...
+    def test_invalid_date_format_raises_exception():
+        # ...
+        validator = UserValidator(invalid_data)
+    
+        # This line will crash the test.
+>       validator.is_valid()
+
+test_validator.py:59: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+user_validator.py:22: in is_valid
+    validation_func()
+user_validator.py:36: in _validate_age
+    raise ValueError(f"Invalid date format for birthdate: '{birthdate_str}'")
+E   ValueError: Invalid date format for birthdate: '2000-13-01'
+======================= short test summary info ========================
+ERROR test_validator.py::test_invalid_date_format_raises_exception
+===================== 1 error, 3 passed in ...s ======================
+```
+
+### Diagnostic Analysis: Reading the Failure
+
+**The complete output**: (Shown above)
+
+1.  **The summary line**: `ERROR test_validator.py::test_invalid_date_format_raises_exception`
+    -   **What this tells us**: The test didn't fail an assertion; it crashed. This is an uncontrolled error.
+
+2.  **The traceback**:
+    ```
+    user_validator.py:36: in _validate_age
+        raise ValueError(f"Invalid date format for birthdate: '{birthdate_str}'")
+    E   ValueError: Invalid date format for birthdate: '2000-13-01'
+    ```
+    -   **What this tells us**: The traceback clearly shows a `ValueError` was raised from within our `_validate_age` method, exactly as we designed. The problem is that our test didn't catch it.
+
+**Root cause identified**: The test code does not handle the `ValueError` that the application code correctly raises.
+**Why the current approach can't solve this**: A test function, by default, is expected to run to completion without raising exceptions. An unhandled exception is always an error.
+**What we need**: A way to tell pytest, "I expect this specific block of code to raise this specific exception. If it does, the test passes. If it doesn't, or if it raises a different exception, the test fails."
+
+### Technique: The `pytest.raises` Context Manager
+
+Pytest provides a clean, expressive context manager for this exact purpose: `pytest.raises`.
+
+You use it like this:
+```python
 import pytest
 
-def divide(a, b):
-    if b == 0:
-        raise ValueError("Cannot divide by zero")
-    return a / b
+def test_something_that_raises():
+    with pytest.raises(ExpectedException):
+        # Code that is expected to raise ExpectedException
+        call_my_function()
+```
 
-def test_divide_by_zero_with_message_check():
+If `call_my_function()` raises `ExpectedException`, the `with` block catches it, and the test passes. If it raises a different exception or no exception at all, the test fails.
+
+Let's fix our test using this pattern.
+
+```python
+# test_validator.py (fixed with pytest.raises)
+import pytest
+# ... (other imports and tests) ...
+
+def test_invalid_date_format_raises_exception():
+    """
+    Tests that a malformed birthdate string raises a ValueError.
+    """
+    invalid_data = {
+        "username": "test_user",
+        "birthdate": "2000-13-01", # Invalid month
+        "email": "test@example.com"
+    }
+    validator = UserValidator(invalid_data)
+    
+    # BEFORE: This crashed the test
+    # validator.is_valid()
+
+    # AFTER: We wrap the call in pytest.raises
+    with pytest.raises(ValueError):
+        validator.is_valid()
+```
+
+### Verification
+
+Running pytest now shows all tests passing.
+
+```bash
+$ pytest -v
+========================= test session starts ==========================
+...
+collected 4 items
+
+test_validator.py::test_valid_user PASSED                         [ 25%]
+test_validator.py::test_underage_user PASSED                      [ 50%]
+test_validator.py::test_validation_rule_count PASSED              [ 75%]
+test_validator.py::test_invalid_date_format_raises_exception PASSED [100%]
+
+========================== 4 passed in ...s ==========================
+```
+
+### Asserting on Exception Details
+
+Passing is good, but we can be more specific. What if the function raises a `ValueError` for the wrong reason? The `pytest.raises` context manager can give you access to the exception object itself.
+
+You can capture it using `as excinfo`:
+
+```python
+# test_validator.py (enhanced test)
+
+def test_invalid_date_format_raises_exception_with_message():
+    """
+    Tests that a malformed birthdate string raises a ValueError
+    with a specific error message.
+    """
+    bad_date = "2000-13-01"
+    invalid_data = {
+        "username": "test_user",
+        "birthdate": bad_date,
+        "email": "test@example.com"
+    }
+    validator = UserValidator(invalid_data)
+    
     with pytest.raises(ValueError) as excinfo:
-        divide(10, 0)
+        validator.is_valid()
     
     # excinfo is an ExceptionInfo object
-    # excinfo.value is the actual exception instance
-    assert "Cannot divide by zero" in str(excinfo.value)
+    # .value is the actual exception instance
+    assert bad_date in str(excinfo.value)
+    assert "Invalid date format" in str(excinfo.value)
+
+    # A more convenient way is to use the match parameter
+    match_str = f"Invalid date format for birthdate: '{bad_date}'"
+    with pytest.raises(ValueError, match=match_str):
+        validator.is_valid()
 ```
 
-The `excinfo` object is a wrapper around the actual exception. It gives you access to:
--   `excinfo.type`: The type of the exception (e.g., `ValueError`).
--   `excinfo.value`: The exception instance itself.
--   `excinfo.traceback`: The traceback object.
+The `match` parameter is particularly useful. It checks the exception's string representation against a regular expression. This makes your test more robust and readable.
 
-### Using `match` for Cleaner Message Checks
+### Common Failure Modes and Their Signatures
 
-Checking the message with `str(excinfo.value)` works, but pytest provides an even more convenient way: the `match` parameter. It asserts that the exception message matches a regular expression.
+#### Symptom: The expected exception was never raised.
 
-```python
-# test_exceptions_right.py
-import pytest
-
-def divide(a, b):
-    if b == 0:
-        raise ValueError("Cannot divide by zero")
-    return a / b
-
-def test_divide_by_zero_with_match():
-    # The match parameter accepts a regex pattern.
-    # 'zero' will match "Cannot divide by zero"
-    with pytest.raises(ValueError, match="divide by zero"):
-        divide(10, 0)
+**Pytest output pattern**:
 ```
+>       with pytest.raises(ValueError):
+E       Failed: DID NOT RAISE <class 'ValueError'>
 
-Using `match` is often preferred because it's more concise and directly states the expectation in the `pytest.raises` call. It makes the test's intent clearer at a glance.
+test_validator.py:65: Failed
+```
+**Diagnostic clues**: The output explicitly says `DID NOT RAISE`.
+**Root cause**: The code inside the `with` block completed without raising the specified exception. This indicates a bug in your application code—it's not failing when it should.
+**Solution**: Debug the application code to find out why the exception isn't being raised under the test conditions.
+
+#### Symptom: A different exception was raised.
+
+**Pytest output pattern**:
+```
+>       with pytest.raises(ValueError):
+>           raise TypeError("Something else went wrong")
+E       TypeError: Something else went wrong
+
+...
+During handling of the above exception, another exception occurred:
+...
+E       Failed: DID NOT RAISE <class 'ValueError'>
+```
+**Diagnostic clues**: You'll see the traceback for the *unexpected* exception (`TypeError` in this case), followed by the `Failed: DID NOT RAISE <class 'ValueError'>` message.
+**Root cause**: The code raised an exception, but not the one you were expecting. This could be a bug in your application or a mistake in your test's expectation.
+**Solution**: Analyze the unexpected exception. Is it the correct behavior? If so, update your test to expect `TypeError`. If not, fix the application code to raise `ValueError` as intended.
 
 ## Testing Warnings with pytest.warns()
 
-## Testing Warnings with pytest.warns()
+## Iteration 3: Capturing Expected Warnings
 
-Warnings are a way for libraries to inform users about deprecated features, potential bugs, or upcoming changes without raising a full exception. Like exceptions, it's important to test that your code emits the correct warnings when it should.
+Exceptions are for errors, but what about conditions that aren't errors yet but might be in the future? Python has a built-in warning system for this, commonly used for deprecation notices.
 
-Pytest provides `pytest.warns`, which works almost identically to `pytest.raises`.
+Let's evolve our `UserValidator`. Suppose we decide that the `username` field is being deprecated in favor of using the `email` as the primary identifier. We want to keep the username validation for now, but we want to warn the user whenever it's being validated.
 
-### A Function That Emits a Warning
+### Current Limitation
 
-Let's create a function that uses Python's built-in `warnings` module.
+Our tests check for return values and exceptions, but they are completely blind to warnings. A test would pass, and the warning would be printed to the console, but it wouldn't be programmatically verified.
+
+### New Scenario: Deprecated Username Validation
+
+Let's modify `_validate_username` to issue a `DeprecationWarning`.
 
 ```python
-# test_warnings.py
+# user_validator.py (updated)
 import warnings
+# ...
+
+class UserValidator:
+    # ...
+    def _validate_username(self):
+        """Username cannot be 'admin'. Issues a warning."""
+        warnings.warn(
+            "'username' is a deprecated field.",
+            DeprecationWarning
+        )
+        username = self.data.get("username")
+        if username == "admin":
+            self.errors["username"] = "Username cannot be 'admin'"
+    # ...
+```
+
+If we run our existing tests, they will pass, but we'll see a `DeprecationWarning` in the output. This is okay, but it's not a guarantee. We want a test that *fails* if this warning is *not* issued.
+
+### Failure Demonstration
+
+How can we make a test fail if a warning isn't present? A common CI/CD practice is to treat warnings as errors to keep the codebase clean. We can simulate this using the `-W error` pytest flag.
+
+```bash
+$ pytest -v -W error
+========================= test session starts ==========================
+...
+collected 5 items
+
+test_validator.py::test_valid_user FAILED                         [ 20%]
+test_validator.py::test_underage_user FAILED                      [ 40%]
+test_validator.py::test_validation_rule_count PASSED              [ 60%]
+test_validator.py::test_invalid_date_format_raises_exception_with_message PASSED [ 80%]
+test_validator.py::test_invalid_date_format_raises_exception PASSED [100%]
+
+=============================== FAILURES ===============================
+____________________________ test_valid_user ___________________________
+...
+>       validator.is_valid()
+E       DeprecationWarning: 'username' is a deprecated field.
+...
+======================= short test summary info ========================
+FAILED test_validator.py::test_valid_user - DeprecationWarning: 'user...
+FAILED test_validator.py::test_underage_user - DeprecationWarning: 'u...
+===================== 2 failed, 3 passed in ...s =====================
+```
+
+### Diagnostic Analysis: Reading the Failure
+
+**The complete output**: (Shown above)
+
+1.  **The summary line**: `FAILED test_validator.py::test_valid_user - DeprecationWarning: ...`
+    -   **What this tells us**: The test failed because it encountered a `DeprecationWarning`, which we told pytest to treat as an error.
+
+2.  **The traceback**:
+    ```
+    >       validator.is_valid()
+    E       DeprecationWarning: 'username' is a deprecated field.
+    ```
+    -   **What this tells us**: The warning was triggered by the call to `validator.is_valid()`.
+
+**Root cause identified**: Our code is correctly issuing a warning, but our tests aren't explicitly handling it. When running in a strict mode (`-W error`), this unhandled warning becomes a failure.
+**Why the current approach can't solve this**: We have no mechanism to declare "this warning is expected and should be ignored for this specific test."
+**What we need**: A tool similar to `pytest.raises` but for warnings.
+
+### Technique: The `pytest.warns` Context Manager
+
+Unsurprisingly, pytest provides `pytest.warns`, which has an almost identical API to `pytest.raises`.
+
+```python
 import pytest
 
-def old_function(x):
-    """This is a deprecated function."""
-    warnings.warn("old_function() is deprecated, use new_function() instead.", DeprecationWarning)
-    return x * 2
-
-def new_function(x):
-    """This is the new function."""
-    return x * 2
+def test_something_that_warns():
+    with pytest.warns(ExpectedWarning, match="..."):
+        # Code that is expected to issue ExpectedWarning
+        call_my_function()
 ```
 
-### Testing for a Specific Warning
+This block will catch the expected warning, allowing the test to pass (even with `-W error`), and fail if the warning is not issued.
 
-We can use `pytest.warns` as a context manager to assert that code inside the `with` block triggers a specific type of warning.
+Let's write a new test specifically for this warning.
 
 ```python
-# test_warnings.py
-# ... (previous code) ...
+# test_validator.py (added test)
+import pytest
+# ...
 
-def test_old_function_emits_warning():
-    with pytest.warns(DeprecationWarning):
-        old_function(5)
+def test_username_validation_issues_deprecation_warning():
+    """
+    Tests that validating a user with a username issues a DeprecationWarning.
+    """
+    data = {
+        "username": "test_user",
+        "birthdate": "2000-01-01",
+        "email": "test@example.com"
+    }
+    validator = UserValidator(data)
 
-def test_new_function_does_not_emit_warning():
-    # This will fail if any warning is emitted
-    with pytest.warns(None) as record:
-        new_function(5)
+    with pytest.warns(DeprecationWarning, match="'username' is a deprecated field."):
+        validator.is_valid()
+```
+
+### Verification
+
+Now, when we run pytest, this new test will pass, and importantly, we can update our other tests to ignore this specific warning if needed, though it's often better to have a dedicated test for the warning and ensure other tests use data that doesn't trigger it.
+
+```bash
+$ pytest -v
+========================= test session starts ==========================
+...
+collected 6 items
+
+...
+test_validator.py::test_username_validation_issues_deprecation_warning PASSED [100%]
+
+=================== 5 passed, 1 skipped in ...s ====================
+(Note: Previous tests might show warnings in the output if not run with -W error, but the new test passes cleanly)
+```
+
+### Common Failure Modes and Their Signatures
+
+#### Symptom: The expected warning was not issued.
+
+**Pytest output pattern**:
+```
+>       with pytest.warns(DeprecationWarning):
+E       Failed: DID NOT WARN.
+
+test_my_code.py:10: Failed
+```
+**Diagnostic clues**: The output is a very clear `DID NOT WARN`.
+**Root cause**: The code inside the `with` block completed without issuing any warnings of the specified type.
+**Solution**: Debug the application code to see why the `warnings.warn()` call is not being reached.
+
+## Context Managers for Advanced Assertions
+
+## Beyond Built-ins: Custom Assertion Contexts
+
+We've seen how `pytest.raises` and `pytest.warns` are powerful tools. They work by wrapping a piece of code in a context manager (`with ...:`) and asserting something about the *behavior* of that code block—did it raise? did it warn?
+
+This pattern is not limited to pytest's built-in tools. You can create your own assertion context managers to verify complex behaviors that are difficult to check with a simple `assert` on a return value. This is an advanced technique, but it demonstrates the power and extensibility of Python's testing patterns.
+
+### Scenario: Asserting on Side Effects
+
+Let's imagine our `UserValidator` has a new requirement: when a user is successfully validated, their email must be added to a "welcome list" in a database.
+
+```python
+# user_validator.py (final version)
+# ... (imports)
+
+class MockDB:
+    """A fake database for demonstration purposes."""
+    def __init__(self):
+        self.welcome_list = []
     
-    # Assert that the 'record' list is empty
-    assert len(record) == 0
+    def add_to_welcome_list(self, email):
+        print(f"Adding {email} to welcome list.")
+        self.welcome_list.append(email)
+
+class UserValidator:
+    def __init__(self, user_data: dict, db: MockDB):
+        self.data = user_data
+        self.db = db
+        # ... (rest of __init__)
+
+    # ... (other methods) ...
+
+    def is_valid(self) -> bool:
+        """
+        Runs all validations. If successful, adds user email to the
+        welcome list.
+        """
+        self.errors = {}
+        for validation_func in self._validations:
+            validation_func()
+        
+        is_successful = not self.errors
+        if is_successful:
+            self.db.add_to_welcome_list(self.data.get("email"))
+            
+        return is_successful
 ```
 
-If the code inside `pytest.warns(DeprecationWarning)` does not raise that specific warning, the test will fail with a clear message, just like `pytest.raises`.
-
-### Inspecting the Warning Message
-
-Just like `pytest.raises`, you can use the `match` parameter to check the warning's message.
+How do we test this? We could do this:
 
 ```python
-# test_warnings.py
-# ... (previous code) ...
+# test_validator.py (a simple test for the side effect)
 
-def test_old_function_warning_message():
-    with pytest.warns(DeprecationWarning, match="is deprecated, use new_function()"):
-        old_function(10)
+from user_validator import MockDB
+
+def test_valid_user_is_added_to_welcome_list():
+    db = MockDB()
+    valid_data = {
+        "username": "john_doe",
+        "birthdate": "2001-05-15",
+        "email": "john.doe@example.com"
+    }
+    validator = UserValidator(valid_data, db)
+    
+    validator.is_valid()
+    
+    assert "john.doe@example.com" in db.welcome_list
 ```
 
-You can also capture the warning objects into a list for more detailed inspection. This is useful if a block of code is expected to emit multiple warnings.
+This works, but what if we want to create a more general and expressive assertion? For example, "I assert that executing this block of code adds exactly one user to the welcome list."
+
+### Technique: Creating a Custom Assertion Context Manager
+
+We can build our own context manager that checks the state of the database *before* and *after* the code block runs.
 
 ```python
-# test_warnings.py
-# ... (previous code) ...
+# test_validator.py (with a custom context manager)
 
-def function_with_multiple_warnings():
-    warnings.warn("First warning", UserWarning)
-    warnings.warn("Second warning", RuntimeWarning)
-
-def test_multiple_warnings():
-    with pytest.warns(UserWarning) as record:
-        function_with_multiple_warnings()
-
-    # The test only passes if at least one UserWarning was caught.
-    # The record contains only the captured warnings of the specified type.
-    assert len(record) == 1
-    assert "First warning" in str(record[0].message)
-```
-
-Using `pytest.warns` ensures that your application's communication about deprecations and potential issues remains correct and reliable as your codebase evolves.
-
-## Context Managers for Advanced Assertions
-
-## Context Managers for Advanced Assertions
-
-You've already seen two powerful examples of context managers used for assertions: `pytest.raises` and `pytest.warns`. This pattern—using a `with` statement to assert something about the code block inside it—is incredibly powerful and can be extended for custom, complex assertions.
-
-A context manager is any object in Python that defines `__enter__` and `__exit__` methods, allowing it to be used with the `with` statement. This is perfect for "setup" and "teardown" logic around a piece of code. In testing, we can use the "teardown" part (`__exit__`) to perform assertions about what happened during the "setup" part (`__enter__` and the `with` block).
-
-### Example: Asserting on Log Messages
-
-Imagine you want to test that a specific log message is emitted by a function. You could redirect `stdout` or mock the logging framework, but a custom context manager provides a much cleaner, reusable solution.
-
-Let's build an `assert_logs` context manager.
-
-```python
-# test_advanced_assertions.py
-import logging
+import pytest
 from contextlib import contextmanager
+from user_validator import UserValidator, MockDB
 
-# This is our custom context manager
 @contextmanager
-def assert_logs(logger, level, expected_message):
-    """A context manager to assert that a logger emits a specific message."""
-    # Setup: Capture logs
-    from io import StringIO
-    log_capture_string = StringIO()
-    handler = logging.StreamHandler(log_capture_string)
-    logger.addHandler(handler)
+def assert_adds_to_welcome_list(db: MockDB, expected_count: int):
+    """
+    A context manager to assert that a block of code adds a specific
+    number of users to the welcome list.
+    """
+    # ARRANGE: Get the state *before* the action
+    initial_count = len(db.welcome_list)
     
-    # Store original level and set the desired one
-    original_level = logger.level
-    logger.setLevel(level)
-
-    yield  # The code inside the 'with' block runs here
-
-    # Teardown: Perform assertions
-    logger.removeHandler(handler)
-    logger.setLevel(original_level)
+    # ACT: Yield to let the code inside the 'with' block run
+    yield
     
-    log_contents = log_capture_string.getvalue()
-    assert expected_message in log_contents
+    # ASSERT: Get the state *after* and compare
+    final_count = len(db.welcome_list)
+    added_count = final_count - initial_count
+    
+    assert added_count == expected_count, (
+        f"Expected to add {expected_count} user(s) to welcome list, "
+        f"but added {added_count}."
+    )
 
-# --- Code to be tested ---
-app_logger = logging.getLogger("my_app")
-app_logger.setLevel(logging.INFO)
+# New test using the context manager
+def test_valid_user_is_added_to_welcome_list_with_context_manager():
+    db = MockDB()
+    valid_data = {
+        "username": "john_doe",
+        "birthdate": "2001-05-15",
+        "email": "john.doe@example.com"
+    }
+    validator = UserValidator(valid_data, db)
+    
+    with assert_adds_to_welcome_list(db, expected_count=1):
+        validator.is_valid()
 
-def process_data(data):
-    if not data:
-        app_logger.warning("Received empty data payload.")
-        return
-    app_logger.info(f"Processing data: {data}")
-    # ... processing logic ...
+# A test for the negative case
+def test_invalid_user_is_not_added_to_welcome_list():
+    db = MockDB()
+    invalid_data = {"username": "admin"} # This will fail validation
+    validator = UserValidator(invalid_data, db)
 
-# --- The Test ---
-import pytest
-
-def test_process_data_logs_warning_for_empty_payload():
-    with assert_logs(app_logger, logging.WARNING, "Received empty data payload."):
-        process_data(None)
-
-def test_process_data_logs_info():
-    with assert_logs(app_logger, logging.INFO, "Processing data: {'id': 1}"):
-        process_data({'id': 1})
+    with assert_adds_to_welcome_list(db, expected_count=0):
+        validator.is_valid()
 ```
 
-### How It Works
+This custom context manager makes the test's intent incredibly clear. It reads like a sentence: "Assert that running `validator.is_valid()` adds exactly one user to the welcome list."
 
-1.  **`@contextmanager`**: This decorator from Python's standard library lets us write a generator-based context manager, which is simpler than writing a full class.
-2.  **Setup (`__enter__`)**: Everything before the `yield` is the setup. We create an in-memory text stream (`StringIO`), add a handler to our logger to redirect its output to our stream, and set the logging level.
-3.  **`yield`**: This is where control is passed back to the `with` block in the test. The `process_data()` function runs at this point.
-4.  **Teardown (`__exit__`)**: Everything after the `yield` is the teardown. We remove our custom handler to stop capturing logs and restore the logger's original level. This cleanup is critical to avoid interfering with other tests.
-5.  **Assertion**: Finally, we get the captured log content from our stream and assert that our expected message is present.
+This pattern is extremely powerful for testing code with side effects, such as database interactions, file system changes, or API calls. It encapsulates the setup and teardown logic for the assertion, keeping the test itself clean and focused on the action. It's the same principle that makes `pytest.raises` and `pytest.warns` so effective, applied to your own application's logic.
 
-This pattern is extremely powerful. You can create context managers to assert on all kinds of behavior:
--   That a database transaction was committed or rolled back.
--   That a file was created or deleted.
--   That a cache was written to or cleared.
--   That a certain number of API calls were made.
+### The Journey: From Problem to Solution
 
-While you won't write custom assertion context managers every day, understanding this pattern helps you recognize the power of `pytest.raises` and `pytest.warns` and gives you a tool for creating highly expressive and reusable assertions for complex scenarios.
+| Iteration | Failure Mode                               | Technique Applied          | Result                                                              |
+| --------- | ------------------------------------------ | -------------------------- | ------------------------------------------------------------------- |
+| 0         | Simple assertion on a dictionary failed    | Assertion Introspection    | Pytest's diff pinpointed the exact string mismatch in our test data.  |
+| 1         | `assert 2 == 3` lacked context             | Custom Assertion Message   | The failure report now explains the business logic behind the numbers.  |
+| 2         | An expected exception crashed the test     | `pytest.raises()`          | The test now correctly expects and catches the `ValueError`.          |
+| 3         | An expected warning was unverified         | `pytest.warns()`           | The test now guarantees that a `DeprecationWarning` is issued.        |
+| 4         | Asserting on a side-effect was verbose     | Custom Context Manager     | The test's intent is now declarative and encapsulated.                |
+
+### Decision Framework: Which Assertion Approach When?
+
+| Assertion Type                 | Use Case                                                              | Example                                                              |
+| ------------------------------ | --------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `assert a == b`                | Verifying the state or return value of an object. The most common case. | `assert user.is_active() is True`                                    |
+| `assert a == b, "message"`     | The `assert` is simple, but the *reason* for the expected value is not. | `assert len(items) == 5, "API should return 5 items per page"`       |
+| `with pytest.raises(Error):`   | Verifying that a specific block of code *must* raise an exception.      | `with pytest.raises(KeyError): my_dict["missing"]`                   |
+| `with pytest.warns(Warning):`  | Verifying that a specific block of code *must* issue a warning.         | `with pytest.warns(FutureWarning): legacy_function()`                 |
+| Custom Context Manager         | Verifying a complex side effect (e.g., DB change, file write, API call).| `with assert_db_commit(): service.save()`                            |
+
+### Lessons Learned
+
+-   **Treat every failure as data.** Pytest's output is a rich report, not a simple "pass/fail." Learn to read the traceback, introspection diffs, and summary lines to diagnose problems instantly.
+-   **Use the right tool for the job.** Don't write `try/except` blocks in your tests when `pytest.raises` exists. Use the framework's idiomatic tools to make your tests clearer and more concise.
+-   **Assert on intent.** A good assertion verifies not just *what* happened, but that it happened for the *right reason*. Adding custom messages or using `pytest.raises` with `match` makes your tests more precise.
+-   **Think beyond return values.** Tests should verify behavior and side effects, not just the output of a function. Context managers are the primary pattern for asserting on behavior over time.

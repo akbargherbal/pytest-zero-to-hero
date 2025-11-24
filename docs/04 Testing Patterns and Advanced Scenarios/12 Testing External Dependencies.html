@@ -359,504 +359,928 @@
         <div class="content">
             <h1 id="chapter-12-testing-external-dependencies">Chapter 12: Testing External Dependencies</h1>
 <h2 id="database-testing-strategies">Database Testing Strategies</h2>
-<h2 id="why-testing-with-databases-is-hard">Why Testing with Databases is Hard</h2>
-<p>Your application code rarely lives in isolation. It interacts with the outside world: databases, APIs, file systems, and more. These interactions, or "external dependencies," introduce significant challenges for testing. Unlike pure functions that always produce the same output for the same input, external systems have <em>state</em>. A database's content changes, an API might be down, or a file might not exist.</p>
-<p>Testing code that interacts with a database is particularly tricky for several reasons:</p>
+<h2 id="the-challenge-of-the-outside-world">The Challenge of the Outside World</h2>
+<p>So far, we have focused on testing "pure" functions—code whose output depends only on its input. This is the ideal scenario for testing. However, most real-world applications are not so simple. They interact with the outside world: they query databases, call external APIs, read from the filesystem, and send emails.</p>
+<p>These interactions, known as <strong>side effects</strong> or <strong>I/O (Input/Output)</strong>, introduce significant challenges for testing:</p>
+<ul>
+<li><strong>Slowness:</strong> A network request or database query can take hundreds of milliseconds, orders of magnitude slower than a pure function call. A suite with hundreds of such tests can become unusably slow.</li>
+<li><strong>Unreliability:</strong> What if the network is down? The database is offline for maintenance? The API rate limit is exceeded? External systems can fail for reasons completely outside your control, causing your tests to fail sporadically. This is known as "flakiness."</li>
+<li><strong>Statefulness:</strong> A test that writes data to a database might affect the outcome of the next test that reads from it. This lack of <strong>test isolation</strong> makes tests order-dependent and hard to debug.</li>
+<li><strong>Cost &amp; Complexity:</strong> Setting up a dedicated test database or paying for API calls during testing can be expensive and complicated.</li>
+</ul>
+<p>The goal of this chapter is to learn strategies for taming these external dependencies, allowing us to write fast, reliable, and isolated tests for complex, real-world code.</p>
+<h3 id="phase-1-establish-the-reference-implementation">Phase 1: Establish the Reference Implementation</h3>
+<p>We will build our chapter around a single, realistic function that incorporates three common types of external dependencies: a database, an external API, and the filesystem.</p>
+<p>Our anchor example is a function called <code>process_user_report</code>. Its job is to:
+1.  Fetch a user's details from a <strong>database</strong>.
+2.  Use the user's IP address to get their geographical location from an external <strong>API</strong>.
+3.  Write a combined report to a <strong>file</strong>.</p>
+<p>Let's start by defining the components of our system. We'll place this code in a new directory <code>user_reporter</code>.</p>
+<div class="codehilite"><pre><span></span><code>mkdir<span class="w"> </span>user_reporter
+touch<span class="w"> </span>user_reporter/__init__.py
+touch<span class="w"> </span>user_reporter/main.py
+touch<span class="w"> </span>user_reporter/db.py
+touch<span class="w"> </span>user_reporter/api.py
+</code></pre></div>
+
+<p>First, the database interaction logic in <code>user_reporter/db.py</code>. We'll use SQLite for simplicity.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># user_reporter/db.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sqlite3</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">User</span><span class="p">:</span>
+    <span class="nb">id</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">ip_address</span><span class="p">:</span> <span class="nb">str</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">UserDatabase</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">db_path</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">db_path</span> <span class="o">=</span> <span class="n">db_path</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">conn</span> <span class="o">=</span> <span class="n">sqlite3</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">db_path</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_user</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">User</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
+            <span class="s2">&quot;SELECT id, name, ip_address FROM users WHERE id = ?&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">user_id</span><span class="p">,)</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">res</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">User</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="n">res</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">name</span><span class="o">=</span><span class="n">res</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">ip_address</span><span class="o">=</span><span class="n">res</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">close</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">conn</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">setup_database</span><span class="p">(</span><span class="n">db_path</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A helper to create and populate the database for our example.&quot;&quot;&quot;</span>
+    <span class="n">conn</span> <span class="o">=</span> <span class="n">sqlite3</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">db_path</span><span class="p">)</span>
+    <span class="n">cursor</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+    <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">&quot;DROP TABLE IF EXISTS users&quot;</span><span class="p">)</span>
+    <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        CREATE TABLE users (</span>
+<span class="s2">            id INTEGER PRIMARY KEY,</span>
+<span class="s2">            name TEXT NOT NULL,</span>
+<span class="s2">            ip_address TEXT NOT NULL</span>
+<span class="s2">        )</span>
+<span class="s2">    &quot;&quot;&quot;</span><span class="p">)</span>
+    <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
+        <span class="s2">&quot;INSERT INTO users (id, name, ip_address) VALUES (?, ?, ?)&quot;</span><span class="p">,</span>
+        <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;Alice&quot;</span><span class="p">,</span> <span class="s2">&quot;192.168.1.100&quot;</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">conn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+    <span class="n">conn</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</code></pre></div>
+
+<p>Next, the API client in <code>user_reporter/api.py</code>. It calls a fictional geolocation API.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># user_reporter/api.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">requests</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">GeolocationClient</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base_url</span><span class="o">=</span><span class="s2">&quot;https://api.geolocation.com&quot;</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">base_url</span> <span class="o">=</span> <span class="n">base_url</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_country_for_ip</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ip_address</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Fetches the country for a given IP address.&quot;&quot;&quot;</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">base_url</span><span class="si">}</span><span class="s2">/ip/</span><span class="si">{</span><span class="n">ip_address</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">response</span><span class="o">.</span><span class="n">raise_for_status</span><span class="p">()</span>  <span class="c1"># Raise an exception for bad status codes</span>
+        <span class="k">return</span> <span class="n">response</span><span class="o">.</span><span class="n">json</span><span class="p">()[</span><span class="s2">&quot;country&quot;</span><span class="p">]</span>
+</code></pre></div>
+
+<p>Finally, the main logic that ties everything together in <code>user_reporter/main.py</code>.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># user_reporter/main.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.db</span><span class="w"> </span><span class="kn">import</span> <span class="n">UserDatabase</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.api</span><span class="w"> </span><span class="kn">import</span> <span class="n">GeolocationClient</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">process_user_report</span><span class="p">(</span><span class="n">user_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">db_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">output_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Fetches user data, enriches it with geo IP info, and writes a report.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">db</span> <span class="o">=</span> <span class="n">UserDatabase</span><span class="p">(</span><span class="n">db_path</span><span class="p">)</span>
+    <span class="n">user</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">get_user</span><span class="p">(</span><span class="n">user_id</span><span class="p">)</span>
+    <span class="n">db</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">user</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;User with ID </span><span class="si">{</span><span class="n">user_id</span><span class="si">}</span><span class="s2"> not found.&quot;</span><span class="p">)</span>
+
+    <span class="n">api_client</span> <span class="o">=</span> <span class="n">GeolocationClient</span><span class="p">()</span>
+    <span class="n">country</span> <span class="o">=</span> <span class="n">api_client</span><span class="o">.</span><span class="n">get_country_for_ip</span><span class="p">(</span><span class="n">user</span><span class="o">.</span><span class="n">ip_address</span><span class="p">)</span>
+
+    <span class="n">report_path</span> <span class="o">=</span> <span class="n">output_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;user_report_</span><span class="si">{</span><span class="n">user_id</span><span class="si">}</span><span class="s2">.txt&quot;</span>
+    <span class="n">report_content</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;User Report for </span><span class="si">{</span><span class="n">user</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
+    <span class="n">report_content</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot;IP Address: </span><span class="si">{</span><span class="n">user</span><span class="o">.</span><span class="n">ip_address</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
+    <span class="n">report_content</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot;Country: </span><span class="si">{</span><span class="n">country</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
+
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">report_path</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">report_content</span><span class="p">)</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Report generated at </span><span class="si">{</span><span class="n">report_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+
+<h3 id="the-naive-integration-test">The Naive Integration Test</h3>
+<p>Now, let's write our first test for <code>process_user_report</code>. This test will be an <em>integration test</em>—it will interact with a real database file and attempt to make a real network call. This is the most straightforward, but also the most problematic, way to test our function.</p>
+<p>We'll create a <code>tests</code> directory and our test file.</p>
+<div class="codehilite"><pre><span></span><code>mkdir<span class="w"> </span>tests
+touch<span class="w"> </span>tests/test_user_reporter.py
+</code></pre></div>
+
+<p>Here is our initial, problematic test.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_user_reporter.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">user_reporter.main</span><span class="w"> </span><span class="kn">import</span> <span class="n">process_user_report</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">user_reporter.db</span><span class="w"> </span><span class="kn">import</span> <span class="n">setup_database</span>
+
+<span class="c1"># --- WARNING: This is a problematic test setup! ---</span>
+
+<span class="n">DB_PATH</span> <span class="o">=</span> <span class="s2">&quot;test_users.db&quot;</span>
+<span class="n">OUTPUT_DIR</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;./test_reports&quot;</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_user_report_naive</span><span class="p">():</span>
+    <span class="c1"># 1. Setup: Create a real database file and output directory</span>
+    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">DB_PATH</span><span class="p">):</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">DB_PATH</span><span class="p">)</span>
+    <span class="n">setup_database</span><span class="p">(</span><span class="n">DB_PATH</span><span class="p">)</span>
+    <span class="n">OUTPUT_DIR</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="c1"># 2. Execute the function under test</span>
+    <span class="c1"># This will make a REAL network request to a non-existent API!</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">process_user_report</span><span class="p">(</span><span class="n">user_id</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">db_path</span><span class="o">=</span><span class="n">DB_PATH</span><span class="p">,</span> <span class="n">output_dir</span><span class="o">=</span><span class="n">OUTPUT_DIR</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="c1"># We expect this to fail because the API doesn&#39;t exist.</span>
+        <span class="c1"># For now, we&#39;ll just print the error to see what happens.</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;API call failed as expected: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="c1"># In a real scenario, this test would just fail unpredictably.</span>
+
+    <span class="c1"># 3. Teardown: Clean up the created files</span>
+    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">DB_PATH</span><span class="p">):</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">DB_PATH</span><span class="p">)</span>
+
+    <span class="c1"># We are not cleaning up the report file, which is another problem.</span>
+</code></pre></div>
+
+<p>This test has numerous problems that we will solve one by one throughout this chapter:</p>
 <ol>
-<li><strong>Statefulness</strong>: A test that writes data to a database can affect the outcome of the next test that reads from it. This leads to flaky, order-dependent tests, which are a nightmare to maintain.</li>
-<li><strong>Slowness</strong>: Establishing a database connection, creating tables, and running queries is slow. A test suite with hundreds of database interactions can take minutes to run, discouraging developers from running it frequently.</li>
-<li><strong>Complex Setup</strong>: To run tests, you need a database server running, configured with the correct schema, and accessible to the test runner. This complicates both local development and Continuous Integration (CI) environments.</li>
+<li><strong>Database Coupling:</strong> It creates a real file (<code>test_users.db</code>) on disk. If two tests run in parallel, they could interfere with each other. Cleaning up this file manually is error-prone.</li>
+<li><strong>Network Dependency:</strong> It tries to make a real HTTP request to <code>https://api.geolocation.com</code>. This will fail because the domain doesn't exist, but more importantly, it makes our test suite dependent on the network. It's slow and unreliable.</li>
+<li><strong>Filesystem Pollution:</strong> It creates a <code>test_reports</code> directory and writes a file into it. It doesn't clean up this file, leaving artifacts behind after the test run.</li>
 </ol>
-<p>To manage this complexity, developers have adopted several strategies, each with its own set of trade-offs between speed and fidelity.</p>
-<h2 id="three-core-strategies">Three Core Strategies</h2>
-<p>There are three primary approaches to testing database-dependent code. The right choice depends on what you are trying to prove with your test.</p>
-<h3 id="strategy-1-mocking-the-database-layer-unit-testing">Strategy 1: Mocking the Database Layer (Unit Testing)</h3>
-<p>In this approach, you don't use a database at all. You replace the part of your code that talks to the database (like a repository or a data access object) with a "mock" object.</p>
-<ul>
-<li><strong>How it works</strong>: You use a library like <code>unittest.mock</code> to create a fake object that mimics the behavior of your database access layer. Your test then configures this mock to return predefined data (e.g., "when <code>get_user(id=1)</code> is called, return this fake User object").</li>
-<li><strong>Pros</strong>:<ul>
-<li><strong>Extremely Fast</strong>: No database connection, no network latency. Tests run in milliseconds.</li>
-<li><strong>Total Isolation</strong>: The test is completely isolated from the database, focusing solely on the business logic of the code under test.</li>
-</ul>
-</li>
-<li><strong>Cons</strong>:<ul>
-<li><strong>Low Fidelity</strong>: You are not testing the actual database interaction. Your test will pass even if your SQL query is invalid, if you violate a database constraint, or if your object-relational mapper (ORM) is misconfigured.</li>
-<li><strong>Brittle</strong>: If you change your database schema, you have to remember to update all your mocks, or your tests will become misleading.</li>
-</ul>
-</li>
-</ul>
-<p>This strategy is best for pure <strong>unit tests</strong> where you want to verify business logic without touching the database. We covered mocking in detail in Chapters 8 and 9.</p>
-<h3 id="strategy-2-using-an-in-memory-database-integration-testing">Strategy 2: Using an In-Memory Database (Integration Testing)</h3>
-<p>This is a popular middle ground. Instead of connecting to a full-fledged database server like PostgreSQL or MySQL, you use a lightweight, in-memory database like SQLite.</p>
-<ul>
-<li><strong>How it works</strong>: For each test run, you create a brand new SQLite database directly in memory. It's incredibly fast to set up and tear down.</li>
-<li><strong>Pros</strong>:<ul>
-<li><strong>Fast</strong>: Much faster than a real disk-based database. Setup and teardown are nearly instantaneous.</li>
-<li><strong>Good Isolation</strong>: Each test can get its own pristine, empty database, ensuring tests don't interfere with each other.</li>
-<li><strong>High Fidelity for ORMs</strong>: You can test that your ORM (like SQLAlchemy or Django's ORM) correctly generates queries and maps objects.</li>
-</ul>
-</li>
-<li><strong>Cons</strong>:<ul>
-<li><strong>Dialect Differences</strong>: In-memory databases like SQLite don't always behave identically to production databases like PostgreSQL. They might have different data types, support different SQL features, or have looser constraint checking. A query that works on SQLite might fail on PostgreSQL.</li>
-</ul>
-</li>
-</ul>
-<p>This strategy is excellent for <strong>integration tests</strong> of your application's data layer, where you want to test your code's interaction with a database-like system without the overhead of a real one.</p>
-<h3 id="strategy-3-using-a-real-test-database-end-to-end-testing">Strategy 3: Using a Real Test Database (End-to-End Testing)</h3>
-<p>This approach offers the highest fidelity. You run your tests against a dedicated instance of the same database software you use in production (e.g., PostgreSQL), but with a separate, temporary database created just for the test suite.</p>
-<ul>
-<li><strong>How it works</strong>: Your test setup script (often managed with tools like Docker) spins up a real database instance. Your test suite connects to it, creates the schema, runs the tests, and then tears it all down.</li>
-<li><strong>Pros</strong>:<ul>
-<li><strong>Maximum Fidelity</strong>: You are testing against the real thing. If it works in the test suite, it will almost certainly work in production. You can test native database features, stored procedures, and complex constraints.</li>
-</ul>
-</li>
-<li><strong>Cons</strong>:<ul>
-<li><strong>Slow</strong>: This is the slowest approach by far. Starting a Docker container and setting up a database can take several seconds.</li>
-<li><strong>Complex Setup</strong>: Requires managing a separate database service for testing, which can be complex to configure locally and in CI.</li>
-</ul>
-</li>
-</ul>
-<p>This strategy is best for a smaller set of <strong>end-to-end tests</strong> that verify critical paths of your application against a production-like environment.</p>
-<p>In the next section, we'll focus on Strategy 2, using an in-memory SQLite database with pytest fixtures, as it provides a fantastic balance of speed and realism for most development workflows.</p>
+<p>In the following sections, we will systematically replace each of these real dependencies with test-friendly replacements, transforming this brittle integration test into a fast and reliable unit test.</p>
 <h2 id="using-fixtures-for-database-setup">Using Fixtures for Database Setup</h2>
-<h2 id="the-problem-manual-setup-and-teardown">The Problem: Manual Setup and Teardown</h2>
-<p>Let's imagine we have a simple application that uses SQLAlchemy to manage a <code>User</code> model.</p>
-<p>First, let's define our application code. We'll need to install SQLAlchemy to run this.</p>
-<div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>SQLAlchemy
+<h2 id="iteration-1-isolating-the-database">Iteration 1: Isolating the Database</h2>
+<p>Our first problem is the hardcoded database file (<code>test_users.db</code>). Tests should never share state, and writing to a fixed file path is a classic example of shared state. If one test modifies the database, it could cause another test to fail.</p>
+<h3 id="the-problem-test-interference">The Problem: Test Interference</h3>
+<p>Let's demonstrate this problem. Imagine we have two tests. The first test processes a user report, and a second test checks how many users are in the database.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_user_reporter_db_problem.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sqlite3</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">user_reporter.db</span><span class="w"> </span><span class="kn">import</span> <span class="n">setup_database</span>
+
+<span class="n">DB_PATH</span> <span class="o">=</span> <span class="s2">&quot;shared_test.db&quot;</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">setup_module</span><span class="p">(</span><span class="n">module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Set up the database once for all tests in this file.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">DB_PATH</span><span class="p">):</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">DB_PATH</span><span class="p">)</span>
+    <span class="n">setup_database</span><span class="p">(</span><span class="n">DB_PATH</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">--- Database &#39;</span><span class="si">{</span><span class="n">DB_PATH</span><span class="si">}</span><span class="s2">&#39; set up ---&quot;</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">teardown_module</span><span class="p">(</span><span class="n">module</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tear down the database once after all tests.&quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">DB_PATH</span><span class="p">):</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">DB_PATH</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">--- Database &#39;</span><span class="si">{</span><span class="n">DB_PATH</span><span class="si">}</span><span class="s2">&#39; torn down ---&quot;</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_adds_a_new_user</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;This test modifies the database state.&quot;&quot;&quot;</span>
+    <span class="n">conn</span> <span class="o">=</span> <span class="n">sqlite3</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">DB_PATH</span><span class="p">)</span>
+    <span class="n">cursor</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+    <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
+        <span class="s2">&quot;INSERT INTO users (id, name, ip_address) VALUES (?, ?, ?)&quot;</span><span class="p">,</span>
+        <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;Bob&quot;</span><span class="p">,</span> <span class="s2">&quot;10.0.0.5&quot;</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">conn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+    <span class="n">conn</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+    <span class="c1"># Check that the user was added</span>
+    <span class="n">conn</span> <span class="o">=</span> <span class="n">sqlite3</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">DB_PATH</span><span class="p">)</span>
+    <span class="n">count</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">&quot;SELECT COUNT(*) FROM users&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">conn</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+    <span class="k">assert</span> <span class="n">count</span> <span class="o">==</span> <span class="mi">2</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_initial_user_count_is_one</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;This test assumes a clean initial state.&quot;&quot;&quot;</span>
+    <span class="n">conn</span> <span class="o">=</span> <span class="n">sqlite3</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">DB_PATH</span><span class="p">)</span>
+    <span class="n">cursor</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+    <span class="n">count</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">&quot;SELECT COUNT(*) FROM users&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="n">conn</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+    <span class="k">assert</span> <span class="n">count</span> <span class="o">==</span> <span class="mi">1</span>
 </code></pre></div>
 
-<p>Here is our simple model and a function to create a user.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># src/database.py</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
-    <span class="n">create_engine</span><span class="p">,</span>
-    <span class="n">Column</span><span class="p">,</span>
-    <span class="n">Integer</span><span class="p">,</span>
-    <span class="n">String</span><span class="p">,</span>
-<span class="p">)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy.orm</span><span class="w"> </span><span class="kn">import</span> <span class="n">sessionmaker</span><span class="p">,</span> <span class="n">declarative_base</span>
+<p>Let's run this file with <code>pytest -v -s</code>. The <code>-s</code> flag is important to see our <code>print</code> statements. Pytest will run tests in alphabetical order, so <code>test_adds_a_new_user</code> runs first.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>-s<span class="w"> </span>tests/test_user_reporter_db_problem.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
 
-<span class="n">Base</span> <span class="o">=</span> <span class="n">declarative_base</span><span class="p">()</span>
+---<span class="w"> </span>Database<span class="w"> </span><span class="s1">&#39;shared_test.db&#39;</span><span class="w"> </span><span class="nb">set</span><span class="w"> </span>up<span class="w"> </span>---
+tests/test_user_reporter_db_problem.py::test_adds_a_new_user<span class="w"> </span>PASSED
+tests/test_user_reporter_db_problem.py::test_initial_user_count_is_one<span class="w"> </span><span class="nv">FAILED</span>
 
-<span class="k">class</span><span class="w"> </span><span class="nc">User</span><span class="p">(</span><span class="n">Base</span><span class="p">):</span>
-    <span class="n">__tablename__</span> <span class="o">=</span> <span class="s2">&quot;users&quot;</span>
-    <span class="nb">id</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">Integer</span><span class="p">,</span> <span class="n">primary_key</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-    <span class="n">name</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">String</span><span class="p">,</span> <span class="n">nullable</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
-    <span class="n">email</span> <span class="o">=</span> <span class="n">Column</span><span class="p">(</span><span class="n">String</span><span class="p">,</span> <span class="n">unique</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="o">=================================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">=================================</span>
+____________<span class="w"> </span>test_initial_user_count_is_one<span class="w"> </span>____________
 
-    <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
-        <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;&lt;User(id=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s2">, name=&#39;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">&#39;)&gt;&quot;</span>
+<span class="w">    </span>def<span class="w"> </span>test_initial_user_count_is_one<span class="o">()</span>:
+<span class="w">        </span><span class="s2">&quot;&quot;&quot;This test assumes a clean initial state.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="nv">conn</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>sqlite3.connect<span class="o">(</span>DB_PATH<span class="o">)</span>
+<span class="w">        </span><span class="nv">cursor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>conn.cursor<span class="o">()</span>
+<span class="w">        </span><span class="nv">count</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>cursor.execute<span class="o">(</span><span class="s2">&quot;SELECT COUNT(*) FROM users&quot;</span><span class="o">)</span>.fetchone<span class="o">()[</span><span class="m">0</span><span class="o">]</span>
+<span class="w">        </span>conn.close<span class="o">()</span>
+&gt;<span class="w">       </span>assert<span class="w"> </span><span class="nv">count</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">1</span>
+E<span class="w">       </span>assert<span class="w"> </span><span class="nv">2</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">1</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">create_user</span><span class="p">(</span><span class="n">session</span><span class="p">,</span> <span class="n">name</span><span class="p">,</span> <span class="n">email</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Adds a new user to the database.&quot;&quot;&quot;</span>
-    <span class="n">new_user</span> <span class="o">=</span> <span class="n">User</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="n">email</span><span class="p">)</span>
-    <span class="n">session</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="n">new_user</span><span class="p">)</span>
-    <span class="n">session</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
-    <span class="k">return</span> <span class="n">new_user</span>
+tests/test_user_reporter_db_problem.py:40:<span class="w"> </span>AssertionError
+---<span class="w"> </span>Database<span class="w"> </span><span class="s1">&#39;shared_test.db&#39;</span><span class="w"> </span>torn<span class="w"> </span>down<span class="w"> </span>---
+<span class="o">=========================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>failed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">=========================</span>
 </code></pre></div>
 
-<p>Now, how would we test <code>create_user</code>? Without fixtures, we might be tempted to write setup and teardown code directly in our test function. This is the "wrong way" that illuminates the need for a better approach.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_database_manual.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_engine</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy.orm</span><span class="w"> </span><span class="kn">import</span> <span class="n">sessionmaker</span>
-
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.database</span><span class="w"> </span><span class="kn">import</span> <span class="n">Base</span><span class="p">,</span> <span class="n">create_user</span><span class="p">,</span> <span class="n">User</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_create_user_manual_setup</span><span class="p">():</span>
-    <span class="c1"># 1. Setup: Create an in-memory SQLite database</span>
-    <span class="n">engine</span> <span class="o">=</span> <span class="n">create_engine</span><span class="p">(</span><span class="s2">&quot;sqlite:///:memory:&quot;</span><span class="p">)</span>
-    <span class="n">Base</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">create_all</span><span class="p">(</span><span class="n">engine</span><span class="p">)</span>
-    <span class="n">Session</span> <span class="o">=</span> <span class="n">sessionmaker</span><span class="p">(</span><span class="n">bind</span><span class="o">=</span><span class="n">engine</span><span class="p">)</span>
-    <span class="n">session</span> <span class="o">=</span> <span class="n">Session</span><span class="p">()</span>
-
-    <span class="c1"># 2. The actual test</span>
-    <span class="n">user</span> <span class="o">=</span> <span class="n">create_user</span><span class="p">(</span><span class="n">session</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;Alice&quot;</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="s2">&quot;alice@example.com&quot;</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">user</span><span class="o">.</span><span class="n">id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-
-    <span class="n">retrieved_user</span> <span class="o">=</span> <span class="n">session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">User</span><span class="p">)</span><span class="o">.</span><span class="n">filter_by</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;Alice&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">first</span><span class="p">()</span>
-    <span class="k">assert</span> <span class="n">retrieved_user</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;Alice&quot;</span>
-    <span class="k">assert</span> <span class="n">retrieved_user</span><span class="o">.</span><span class="n">email</span> <span class="o">==</span> <span class="s2">&quot;alice@example.com&quot;</span>
-
-    <span class="c1"># 3. Teardown: Close the session</span>
-    <span class="n">session</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
-    <span class="c1"># The in-memory database is automatically discarded</span>
-</code></pre></div>
-
-<p>This works, but imagine having ten tests like this. You would be copying and pasting the entire setup and teardown block every single time. This violates the DRY (Don't Repeat Yourself) principle and makes the tests harder to read and maintain.</p>
-<p>Worse, if we were using a file-based database, a failing test might skip the cleanup step, leaving artifacts that could cause other tests to fail mysteriously. This is where fixtures become essential.</p>
-<h3 id="the-solution-a-fixture-for-database-sessions">The Solution: A Fixture for Database Sessions</h3>
-<p>Let's refactor this using a fixture. A fixture can handle the setup (creating the engine and tables) and the teardown (cleaning up) in one place. We'll place this in <code>tests/conftest.py</code> so it's available to all our tests.</p>
+<h3 id="diagnostic-analysis-reading-the-failure">Diagnostic Analysis: Reading the Failure</h3>
+<p><strong>The complete output</strong>: The output clearly shows one test passing and one failing with an <code>AssertionError</code>.</p>
+<p><strong>Let's parse this section by section</strong>:</p>
+<ol>
+<li>
+<p><strong>The summary line</strong>: <code>FAILED tests/test_user_reporter_db_problem.py::test_initial_user_count_is_one - AssertionError</code></p>
+<ul>
+<li>What this tells us: The test named <code>test_initial_user_count_is_one</code> failed because an <code>assert</code> statement was false.</li>
+</ul>
+</li>
+<li>
+<p><strong>The traceback</strong>: The traceback is very short, pointing directly to the failing line: <code>assert count == 1</code>.</p>
+</li>
+<li>
+<p><strong>The assertion introspection</strong>:
+    <code>E       assert 2 == 1</code></p>
+<ul>
+<li>What this tells us: Pytest's excellent introspection shows us the values at the time of the assertion. The variable <code>count</code> was <code>2</code>, but the test expected it to be <code>1</code>.</li>
+</ul>
+</li>
+</ol>
+<p><strong>Root cause identified</strong>: The <code>test_adds_a_new_user</code> test ran first and added a user to the database. The <code>test_initial_user_count_is_one</code> test ran second and saw the modified database, not the clean state it expected. The tests are not isolated.</p>
+<p><strong>Why the current approach can't solve this</strong>: Using <code>setup_module</code> and <code>teardown_module</code> creates a shared database for all tests in the file. This is efficient but leads to state pollution.</p>
+<p><strong>What we need</strong>: A mechanism to provide each test function with its own, clean, isolated database session, and automatically clean up any changes after the test finishes. This is a perfect job for fixtures.</p>
+<h3 id="the-solution-transactional-database-fixtures">The Solution: Transactional Database Fixtures</h3>
+<p>We will create a fixture that provides a database session. For each test, it will:
+1.  Begin a transaction.
+2.  Yield the database session to the test.
+3.  After the test completes, roll back the transaction.</p>
+<p>Rolling back the transaction effectively erases any changes the test made to the database, ensuring the next test starts from a pristine state. We'll use an in-memory SQLite database to avoid creating files altogether.</p>
+<p>Let's create a <code>conftest.py</code> file to hold our new fixture.</p>
 <div class="codehilite"><pre><span></span><code><span class="c1"># tests/conftest.py</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_engine</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">sqlalchemy.orm</span><span class="w"> </span><span class="kn">import</span> <span class="n">sessionmaker</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sqlite3</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">user_reporter.db</span><span class="w"> </span><span class="kn">import</span> <span class="n">User</span>
 
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.database</span><span class="w"> </span><span class="kn">import</span> <span class="n">Base</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">&quot;session&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">db_connection</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A session-scoped fixture for a single in-memory DB connection.&quot;&quot;&quot;</span>
+    <span class="n">conn</span> <span class="o">=</span> <span class="n">sqlite3</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="s2">&quot;:memory:&quot;</span><span class="p">)</span>
+    <span class="n">cursor</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+    <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">        CREATE TABLE users (</span>
+<span class="s2">            id INTEGER PRIMARY KEY,</span>
+<span class="s2">            name TEXT NOT NULL,</span>
+<span class="s2">            ip_address TEXT NOT NULL</span>
+<span class="s2">        )</span>
+<span class="s2">    &quot;&quot;&quot;</span><span class="p">)</span>
+    <span class="n">conn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+    <span class="k">yield</span> <span class="n">conn</span>
+    <span class="n">conn</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
 
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span><span class="p">(</span><span class="n">scope</span><span class="o">=</span><span class="s2">&quot;function&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">db_session</span><span class="p">():</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">db_session</span><span class="p">(</span><span class="n">db_connection</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Fixture to create a new in-memory database session for each test function.</span>
+<span class="sd">    A function-scoped fixture to provide a clean database state for each test.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># Setup: create an in-memory SQLite database</span>
-    <span class="n">engine</span> <span class="o">=</span> <span class="n">create_engine</span><span class="p">(</span><span class="s2">&quot;sqlite:///:memory:&quot;</span><span class="p">)</span>
-    <span class="n">Base</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">create_all</span><span class="p">(</span><span class="n">engine</span><span class="p">)</span>
-    <span class="n">Session</span> <span class="o">=</span> <span class="n">sessionmaker</span><span class="p">(</span><span class="n">bind</span><span class="o">=</span><span class="n">engine</span><span class="p">)</span>
-    <span class="n">session</span> <span class="o">=</span> <span class="n">Session</span><span class="p">()</span>
+    <span class="c1"># Seed the database with initial data for each test</span>
+    <span class="n">cursor</span> <span class="o">=</span> <span class="n">db_connection</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+    <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
+        <span class="s2">&quot;INSERT INTO users (id, name, ip_address) VALUES (?, ?, ?)&quot;</span><span class="p">,</span>
+        <span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;Alice&quot;</span><span class="p">,</span> <span class="s2">&quot;192.168.1.100&quot;</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">db_connection</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
 
-    <span class="k">yield</span> <span class="n">session</span>  <span class="c1"># This is where the testing happens</span>
+    <span class="k">yield</span> <span class="n">db_connection</span>
 
-    <span class="c1"># Teardown: close the session and drop tables</span>
-    <span class="n">session</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
-    <span class="n">Base</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">drop_all</span><span class="p">(</span><span class="n">engine</span><span class="p">)</span>
+    <span class="c1"># Teardown: Clean up by deleting all data</span>
+    <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">&quot;DELETE FROM users&quot;</span><span class="p">)</span>
+    <span class="n">db_connection</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
 </code></pre></div>
 
-<p>Let's break down this fixture:</p>
-<ol>
-<li><strong><code>@pytest.fixture(scope="function")</code></strong>: We define a fixture named <code>db_session</code>. The <code>scope="function"</code> (the default) is crucial here. It means pytest will run this fixture's setup and teardown code <em>for each test function that uses it</em>. This guarantees a clean, empty database for every single test, providing perfect test isolation.</li>
-<li><strong>Setup</strong>: The code before the <code>yield</code> is the setup phase. It creates the in-memory engine, creates all tables defined by our <code>Base</code> metadata, and creates a session.</li>
-<li><strong><code>yield session</code></strong>: The <code>yield</code> keyword passes control to the test function. The value yielded (<code>session</code>) is what gets injected into our test function's argument.</li>
-<li><strong>Teardown</strong>: The code after the <code>yield</code> is the teardown phase. It runs after the test function completes, whether it passed, failed, or raised an error. Here, we close the session and drop all tables to be extra clean.</li>
-</ol>
-<p>Now, our test becomes beautifully simple and declarative.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_database_fixture.py</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.database</span><span class="w"> </span><span class="kn">import</span> <span class="n">create_user</span><span class="p">,</span> <span class="n">User</span>
+<p>Let's break this down:
+*   <code>db_connection</code>: This is a <code>session</code>-scoped fixture. It creates a single in-memory database connection that lasts for the entire test run. This is efficient. It also creates the <code>users</code> table just once.
+*   <code>db_session</code>: This is a <code>function</code>-scoped fixture (the default scope). It runs for <em>every single test function</em> that requests it.
+    *   It depends on <code>db_connection</code> to get the shared connection.
+    *   Before yielding to the test, it inserts our initial "Alice" user. This ensures every test starts with the exact same known data.
+    *   After the test finishes, the <code>yield</code> statement resumes, and it runs the teardown code: <code>DELETE FROM users</code>. This wipes the table clean, guaranteeing isolation for the next test.</p>
+<p>Now, let's rewrite our failing tests to use this fixture.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_user_reporter_db_solution.py</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sqlite3</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_create_user</span><span class="p">(</span><span class="n">db_session</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Given a database session,</span>
-<span class="sd">    When create_user is called,</span>
-<span class="sd">    Then a new User should be created in the database.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># The db_session is provided by our fixture in conftest.py</span>
-    <span class="n">user</span> <span class="o">=</span> <span class="n">create_user</span><span class="p">(</span><span class="n">db_session</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;Bob&quot;</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="s2">&quot;bob@example.com&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_adds_a_new_user_isolated</span><span class="p">(</span><span class="n">db_session</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;This test modifies the database state, but changes are isolated.&quot;&quot;&quot;</span>
+    <span class="n">cursor</span> <span class="o">=</span> <span class="n">db_session</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+    <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
+        <span class="s2">&quot;INSERT INTO users (id, name, ip_address) VALUES (?, ?, ?)&quot;</span><span class="p">,</span>
+        <span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;Bob&quot;</span><span class="p">,</span> <span class="s2">&quot;10.0.0.5&quot;</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">db_session</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
 
-    <span class="k">assert</span> <span class="n">user</span><span class="o">.</span><span class="n">id</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+    <span class="n">count</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">&quot;SELECT COUNT(*) FROM users&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">assert</span> <span class="n">count</span> <span class="o">==</span> <span class="mi">2</span>
 
-    <span class="n">retrieved_user</span> <span class="o">=</span> <span class="n">db_session</span><span class="o">.</span><span class="n">query</span><span class="p">(</span><span class="n">User</span><span class="p">)</span><span class="o">.</span><span class="n">filter_by</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="s2">&quot;Bob&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">first</span><span class="p">()</span>
-    <span class="k">assert</span> <span class="n">retrieved_user</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-    <span class="k">assert</span> <span class="n">retrieved_user</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;Bob&quot;</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_user_email_uniqueness</span><span class="p">(</span><span class="n">db_session</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Given a user in the database,</span>
-<span class="sd">    When another user with the same email is created,</span>
-<span class="sd">    Then an IntegrityError should be raised.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="kn">import</span><span class="w"> </span><span class="nn">sqlalchemy.exc</span>
-
-    <span class="c1"># Create an initial user</span>
-    <span class="n">create_user</span><span class="p">(</span><span class="n">db_session</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;Charlie&quot;</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="s2">&quot;charlie@example.com&quot;</span><span class="p">)</span>
-
-    <span class="c1"># Try to create another user with the same email</span>
-    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">sqlalchemy</span><span class="o">.</span><span class="n">exc</span><span class="o">.</span><span class="n">IntegrityError</span><span class="p">):</span>
-        <span class="n">create_user</span><span class="p">(</span><span class="n">db_session</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">&quot;Charles&quot;</span><span class="p">,</span> <span class="n">email</span><span class="o">=</span><span class="s2">&quot;charlie@example.com&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_initial_user_count_is_one_isolated</span><span class="p">(</span><span class="n">db_session</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;This test now gets a clean state and passes.&quot;&quot;&quot;</span>
+    <span class="n">cursor</span> <span class="o">=</span> <span class="n">db_session</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+    <span class="n">count</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">&quot;SELECT COUNT(*) FROM users&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">assert</span> <span class="n">count</span> <span class="o">==</span> <span class="mi">1</span>
 </code></pre></div>
 
-<p>Look at the difference!</p>
-<ul>
-<li>The tests are focused purely on the behavior being tested.</li>
-<li>There is no repetitive setup/teardown code.</li>
-<li>We can be certain that <code>test_create_user</code> and <code>test_user_email_uniqueness</code> run with completely separate, clean databases, thanks to the <code>function</code> scope of our fixture.</li>
-</ul>
-<h3 id="fixture-scopes-and-trade-offs">Fixture Scopes and Trade-offs</h3>
-<p>While <code>scope="function"</code> provides the best isolation, it can be slow if your schema is large, as it rebuilds the database for every test. You can change the scope to speed things up, but you must manage the trade-offs.</p>
-<ul>
-<li><strong><code>scope="module"</code></strong>: The fixture runs once per test module (file). All tests in that file share the same database connection and data. Faster, but you must manually clean up data created by each test to avoid interference.</li>
-<li><strong><code>scope="session"</code></strong>: The fixture runs once for the entire test session. Extremely fast, but carries a high risk of test interdependency. This is often used for setting up a connection to a real test database (Strategy 3) that persists for the whole run.</li>
-</ul>
-<p>For most cases, starting with <code>scope="function"</code> is the safest and most reliable choice. Only optimize to a larger scope if database setup becomes a significant bottleneck in your test suite.</p>
+<h3 id="verification">Verification</h3>
+<p>Let's run the new test file.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>tests/test_user_reporter_db_solution.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
+
+tests/test_user_reporter_db_solution.py::test_adds_a_new_user_isolated<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+tests/test_user_reporter_db_solution.py::test_initial_user_count_is_one_isolated<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">============================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">==============================</span>
+</code></pre></div>
+
+<p>Success! Both tests pass, regardless of the order they are run in. The <code>db_session</code> fixture ensures that <code>test_initial_user_count_is_one_isolated</code> sees only the single "Alice" user that was set up for it, because the "Bob" user added by the other test was cleaned up automatically.</p>
+<p>We have successfully isolated our tests from the database state. Now, let's apply this to our main <code>process_user_report</code> function. But first, we need to make a small but critical change to our application code to make it more testable. This pattern is called <strong>Dependency Injection</strong>.</p>
 <h2 id="testing-api-calls">Testing API Calls</h2>
-<h2 id="the-challenge-of-network-bound-code">The Challenge of Network-Bound Code</h2>
-<p>Many applications rely on external APIs. Your code might fetch user data from a third-party service, process a payment through a gateway, or post a message to a chat service. Testing this code presents a major challenge.</p>
-<p>Let's consider a simple function that fetches a user's public repositories from the GitHub API using the popular <code>requests</code> library.</p>
-<p>First, install <code>requests</code>:</p>
-<div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>requests
+<h2 id="iteration-2-taming-the-network">Iteration 2: Taming the Network</h2>
+<p>Our tests are now isolated from the database, but our main function <code>process_user_report</code> still has a major problem: it instantiates its own <code>GeolocationClient</code> and makes a real network call.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># user_reporter/main.py (Original)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">process_user_report</span><span class="p">(</span><span class="o">...</span><span class="p">):</span>
+    <span class="c1"># ...</span>
+    <span class="n">api_client</span> <span class="o">=</span> <span class="n">GeolocationClient</span><span class="p">()</span> <span class="c1"># Problem: Hardcoded dependency</span>
+    <span class="n">country</span> <span class="o">=</span> <span class="n">api_client</span><span class="o">.</span><span class="n">get_country_for_ip</span><span class="p">(</span><span class="n">user</span><span class="o">.</span><span class="n">ip_address</span><span class="p">)</span>
+    <span class="c1"># ...</span>
 </code></pre></div>
 
-<p>Now, here's our function:</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># src/api_client.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">requests</span>
+<p>This makes testing difficult. We can't easily replace the real <code>GeolocationClient</code> with a fake one for testing. The solution is to refactor the function to accept its dependencies as arguments.</p>
+<h3 id="refactoring-for-testability-dependency-injection">Refactoring for Testability: Dependency Injection</h3>
+<p>Let's modify <code>process_user_report</code> and the other components to allow dependencies to be "injected".</p>
+<p>First, we'll update <code>UserDatabase</code> to accept a connection object instead of creating its own. This allows our fixture to provide the connection.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># user_reporter/db.py (Updated)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">sqlite3</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
 
-<span class="k">class</span><span class="w"> </span><span class="nc">GitHubAPIClient</span><span class="p">:</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">get_user_repos</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">username</span><span class="p">):</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">        Fetches the names of public repositories for a given GitHub user.</span>
-<span class="sd">        Returns a list of repo names or None if the user is not found.</span>
-<span class="sd">        &quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">username</span><span class="p">,</span> <span class="nb">str</span><span class="p">)</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">username</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Username must be a non-empty string&quot;</span><span class="p">)</span>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">User</span><span class="p">:</span>
+    <span class="nb">id</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">ip_address</span><span class="p">:</span> <span class="nb">str</span>
 
-        <span class="n">url</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;https://api.github.com/users/</span><span class="si">{</span><span class="n">username</span><span class="si">}</span><span class="s2">/repos&quot;</span>
-        <span class="n">response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">url</span><span class="p">)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">UserDatabase</span><span class="p">:</span>
+    <span class="c1"># It now accepts an existing connection</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">connection</span><span class="p">:</span> <span class="n">sqlite3</span><span class="o">.</span><span class="n">Connection</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">conn</span> <span class="o">=</span> <span class="n">connection</span>
 
-        <span class="k">if</span> <span class="n">response</span><span class="o">.</span><span class="n">status_code</span> <span class="o">==</span> <span class="mi">200</span><span class="p">:</span>
-            <span class="n">repos</span> <span class="o">=</span> <span class="n">response</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
-            <span class="k">return</span> <span class="p">[</span><span class="n">repo</span><span class="p">[</span><span class="s2">&quot;name&quot;</span><span class="p">]</span> <span class="k">for</span> <span class="n">repo</span> <span class="ow">in</span> <span class="n">repos</span><span class="p">]</span>
-        <span class="k">elif</span> <span class="n">response</span><span class="o">.</span><span class="n">status_code</span> <span class="o">==</span> <span class="mi">404</span><span class="p">:</span>
-            <span class="k">return</span> <span class="kc">None</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="n">response</span><span class="o">.</span><span class="n">raise_for_status</span><span class="p">()</span> <span class="c1"># Raise an exception for other errors</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_user</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">User</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="c1"># ... (rest of the method is the same)</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
+            <span class="s2">&quot;SELECT id, name, ip_address FROM users WHERE id = ?&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">user_id</span><span class="p">,)</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">res</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">User</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="n">res</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">name</span><span class="o">=</span><span class="n">res</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">ip_address</span><span class="o">=</span><span class="n">res</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+        <span class="k">return</span> <span class="kc">None</span>
+
+    <span class="c1"># No longer needs a close() method, as the connection is managed externally</span>
 </code></pre></div>
 
-<p>How would we test this? We could write a test that calls the real GitHub API.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_api_client_wrong.py</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.api_client</span><span class="w"> </span><span class="kn">import</span> <span class="n">GitHubAPIClient</span>
+<p>Now, the main function. It will now accept instances of <code>UserDatabase</code> and <code>GeolocationClient</code>.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># user_reporter/main.py (Updated)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.db</span><span class="w"> </span><span class="kn">import</span> <span class="n">UserDatabase</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.api</span><span class="w"> </span><span class="kn">import</span> <span class="n">GeolocationClient</span>
 
-<span class="c1"># DO NOT DO THIS IN A REAL TEST SUITE!</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_get_user_repos_real_call</span><span class="p">():</span>
-    <span class="n">client</span> <span class="o">=</span> <span class="n">GitHubAPIClient</span><span class="p">()</span>
-    <span class="c1"># This test depends on the real state of the &#39;pytest-dev&#39; user on GitHub</span>
-    <span class="n">repos</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">get_user_repos</span><span class="p">(</span><span class="s2">&quot;pytest-dev&quot;</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="s2">&quot;pytest&quot;</span> <span class="ow">in</span> <span class="n">repos</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">process_user_report</span><span class="p">(</span>
+    <span class="n">user_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> 
+    <span class="n">db</span><span class="p">:</span> <span class="n">UserDatabase</span><span class="p">,</span> 
+    <span class="n">api_client</span><span class="p">:</span> <span class="n">GeolocationClient</span><span class="p">,</span> 
+    <span class="n">output_dir</span><span class="p">:</span> <span class="n">Path</span>
+<span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Fetches user data, enriches it with geo IP info, and writes a report.</span>
+<span class="sd">    Dependencies are now injected.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">user</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">get_user</span><span class="p">(</span><span class="n">user_id</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">user</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;User with ID </span><span class="si">{</span><span class="n">user_id</span><span class="si">}</span><span class="s2"> not found.&quot;</span><span class="p">)</span>
+
+    <span class="n">country</span> <span class="o">=</span> <span class="n">api_client</span><span class="o">.</span><span class="n">get_country_for_ip</span><span class="p">(</span><span class="n">user</span><span class="o">.</span><span class="n">ip_address</span><span class="p">)</span>
+
+    <span class="n">report_path</span> <span class="o">=</span> <span class="n">output_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;user_report_</span><span class="si">{</span><span class="n">user_id</span><span class="si">}</span><span class="s2">.txt&quot;</span>
+    <span class="n">report_content</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;User Report for </span><span class="si">{</span><span class="n">user</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
+    <span class="n">report_content</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot;IP Address: </span><span class="si">{</span><span class="n">user</span><span class="o">.</span><span class="n">ip_address</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
+    <span class="n">report_content</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot;Country: </span><span class="si">{</span><span class="n">country</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
+
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">report_path</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">report_content</span><span class="p">)</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Report generated at </span><span class="si">{</span><span class="n">report_path</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </code></pre></div>
 
-<p>This is a terrible idea for an automated test suite. Why?</p>
+<p>This refactoring is a game-changer. Our function is no longer responsible for creating its dependencies; it just uses the ones it's given. In production, we'll pass in real objects. In testing, we can pass in fakes.</p>
+<h3 id="the-problem-unreliable-network-calls">The Problem: Unreliable Network Calls</h3>
+<p>Let's write a test for our refactored function. We'll use our <code>db_session</code> fixture, but for now, we'll still use a real <code>GeolocationClient</code>.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_user_reporter.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">user_reporter.main</span><span class="w"> </span><span class="kn">import</span> <span class="n">process_user_report</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">user_reporter.db</span><span class="w"> </span><span class="kn">import</span> <span class="n">UserDatabase</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">user_reporter.api</span><span class="w"> </span><span class="kn">import</span> <span class="n">GeolocationClient</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_user_report_network_problem</span><span class="p">(</span><span class="n">db_session</span><span class="p">):</span>
+    <span class="c1"># Arrange: Use our DB fixture and a real API client</span>
+    <span class="n">db</span> <span class="o">=</span> <span class="n">UserDatabase</span><span class="p">(</span><span class="n">db_session</span><span class="p">)</span>
+    <span class="n">api_client</span> <span class="o">=</span> <span class="n">GeolocationClient</span><span class="p">(</span><span class="n">base_url</span><span class="o">=</span><span class="s2">&quot;https://api.geolocation.com&quot;</span><span class="p">)</span> <span class="c1"># Non-existent API</span>
+    <span class="n">output_dir</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;./reports&quot;</span><span class="p">)</span> <span class="c1"># Another problem: writing to a real directory</span>
+    <span class="n">output_dir</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="c1"># Act &amp; Assert: This will fail because of the network call</span>
+    <span class="n">process_user_report</span><span class="p">(</span>
+        <span class="n">user_id</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+        <span class="n">db</span><span class="o">=</span><span class="n">db</span><span class="p">,</span>
+        <span class="n">api_client</span><span class="o">=</span><span class="n">api_client</span><span class="p">,</span>
+        <span class="n">output_dir</span><span class="o">=</span><span class="n">output_dir</span>
+    <span class="p">)</span>
+</code></pre></div>
+
+<p>Let's run this test. It will fail, but the failure is informative.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>tests/test_user_reporter.py::test_process_user_report_network_problem
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
+
+tests/test_user_reporter.py::test_process_user_report_network_problem<span class="w"> </span>FAILED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">=================================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">=================================</span>
+_______<span class="w"> </span>test_process_user_report_network_problem<span class="w"> </span>_______
+
+<span class="nv">db_session</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>&lt;sqlite3.Connection<span class="w"> </span>object<span class="w"> </span>at<span class="w"> </span>0x...&gt;
+
+<span class="w">    </span>def<span class="w"> </span>test_process_user_report_network_problem<span class="o">(</span>db_session<span class="o">)</span>:
+<span class="w">        </span><span class="c1"># ... (Arrange)</span>
+
+<span class="w">        </span><span class="c1"># Act &amp; Assert: This will fail because of the network call</span>
+&gt;<span class="w">       </span>process_user_report<span class="o">(</span>
+<span class="w">            </span><span class="nv">user_id</span><span class="o">=</span><span class="m">1</span>,
+<span class="w">            </span><span class="nv">db</span><span class="o">=</span>db,
+<span class="w">            </span><span class="nv">api_client</span><span class="o">=</span>api_client,
+<span class="w">            </span><span class="nv">output_dir</span><span class="o">=</span>output_dir
+<span class="w">        </span><span class="o">)</span>
+
+tests/test_user_reporter.py:16:<span class="w"> </span>
+_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>_<span class="w"> </span>
+user_reporter/main.py:17:<span class="w"> </span><span class="k">in</span><span class="w"> </span>process_user_report
+<span class="w">    </span><span class="nv">country</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>api_client.get_country_for_ip<span class="o">(</span>user.ip_address<span class="o">)</span>
+user_reporter/api.py:9:<span class="w"> </span><span class="k">in</span><span class="w"> </span>get_country_for_ip
+<span class="w">    </span><span class="nv">response</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>requests.get<span class="o">(</span>f<span class="s2">&quot;{self.base_url}/ip/{ip_address}&quot;</span><span class="o">)</span>
+...
+<span class="w">    </span>raise<span class="w"> </span>ConnectionError<span class="o">(</span>e,<span class="w"> </span><span class="nv">request</span><span class="o">=</span>request<span class="o">)</span>
+E<span class="w">   </span>requests.exceptions.ConnectionError:<span class="w"> </span>HTTPSConnectionPool<span class="o">(</span><span class="nv">host</span><span class="o">=</span><span class="s1">&#39;api.geolocation.com&#39;</span>,<span class="w"> </span><span class="nv">port</span><span class="o">=</span><span class="m">443</span><span class="o">)</span>:<span class="w"> </span>Max<span class="w"> </span>retries<span class="w"> </span>exceeded<span class="w"> </span>with<span class="w"> </span>url:<span class="w"> </span>/ip/192.168.1.100<span class="w"> </span><span class="o">(</span>Caused<span class="w"> </span>by<span class="w"> </span>NameResolutionError<span class="o">(</span><span class="s2">&quot;&lt;urllib3.connection.HTTPSConnection object at 0x...&gt;: Failed to resolve &#39;api.geolocation.com&#39; ([Errno 8] nodename nor servname provided, or not known)&quot;</span><span class="o">))</span>
+<span class="o">=========================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>failed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">=========================</span>
+</code></pre></div>
+
+<h3 id="diagnostic-analysis-reading-the-failure_1">Diagnostic Analysis: Reading the Failure</h3>
+<p><strong>The complete output</strong>: The test fails with a <code>requests.exceptions.ConnectionError</code>.</p>
+<p><strong>Let's parse this section by section</strong>:</p>
 <ol>
-<li><strong>Unreliable</strong>: If you have no internet connection, or if GitHub's API is temporarily down, your test will fail. This is a false negative—your code is correct, but the external dependency failed.</li>
-<li><strong>Slow</strong>: The test has to make a real network request across the internet, which can take hundreds of milliseconds or even seconds. A suite of such tests would be painfully slow.</li>
-<li><strong>Brittle</strong>: The test depends on the state of the real world. If the <code>pytest-dev</code> organization renames its <code>pytest</code> repository, this test will break.</li>
-<li><strong>Rate Limiting</strong>: Many APIs, including GitHub's, have rate limits. Running your test suite frequently could get your IP address temporarily blocked.</li>
+<li>
+<p><strong>The summary line</strong>: <code>FAILED ... - requests.exceptions.ConnectionError</code></p>
+<ul>
+<li>What this tells us: The test failed because the <code>requests</code> library couldn't connect to the server.</li>
+</ul>
+</li>
+<li>
+<p><strong>The traceback</strong>:
+    <code>user_reporter/main.py:17: in process_user_report
+        country = api_client.get_country_for_ip(user.ip_address)
+    user_reporter/api.py:9: in get_country_for_ip
+        response = requests.get(f"{self.base_url}/ip/{ip_address}")</code></p>
+<ul>
+<li>What this tells us: The failure originated deep inside the <code>requests</code> library, but the call chain shows it was triggered by <code>api_client.get_country_for_ip</code> inside our <code>process_user_report</code> function.</li>
+</ul>
+</li>
+<li>
+<p><strong>The exception details</strong>: <code>Failed to resolve 'api.geolocation.com'</code></p>
+<ul>
+<li>What this tells us: The specific reason for the connection error is that the domain name could not be found. This is expected, as we made it up. If it were a real API that was temporarily down, we might see a timeout error or a different connection error.</li>
+</ul>
+</li>
 </ol>
-<p>The solution is to <strong>mock the HTTP request</strong>. We need to intercept the outgoing call from the <code>requests</code> library and feed it a fake, controlled response. This way, our test verifies our code's logic (how it handles a 200 OK, a 404 Not Found, etc.) without ever actually touching the network.</p>
+<p><strong>Root cause identified</strong>: The test is attempting to make a real HTTP request to an external service, making it slow and subject to network failures.</p>
+<p><strong>Why the current approach can't solve this</strong>: We are passing a real <code>GeolocationClient</code> to our function. Its entire purpose is to make real network calls.</p>
+<p><strong>What we need</strong>: A way to intercept the outgoing HTTP request made by the <code>requests</code> library and return a fake, predefined response without ever touching the network. This is called <strong>mocking</strong>.</p>
 <h2 id="mocking-http-requests-with-responses">Mocking HTTP Requests with responses</h2>
-<h2 id="a-better-way-the-responses-library">A Better Way: The <code>responses</code> Library</h2>
-<p>While you can mock network calls with <code>unittest.mock.patch</code>, it can be cumbersome. A far more elegant and powerful tool for this specific job is the <code>responses</code> library, which integrates beautifully with pytest via <code>pytest-responses</code>.</p>
-<p>First, let's install it:</p>
-<div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>pytest-responses
+<h2 id="the-solution-mocking-with-the-responses-library">The Solution: Mocking with the <code>responses</code> Library</h2>
+<p>While <code>unittest.mock</code> (covered in Chapter 11) can be used to patch the <code>requests</code> library, there are specialized tools that make mocking HTTP requests much cleaner and more powerful. One of the best is the <code>responses</code> library.</p>
+<p>First, let's install it.</p>
+<div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>responses
 </code></pre></div>
 
-<p>The <code>pytest-responses</code> plugin provides a <code>responses</code> fixture that acts as a request-response manager. You tell it which URLs to watch for and what fake responses to return.</p>
-<h3 id="testing-the-success-path">Testing the Success Path</h3>
-<p>Let's write a proper test for the <code>get_user_repos</code> method. We will simulate a successful API call that returns two repositories.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_api_client.py</span>
+<p>The <code>responses</code> library works as a context manager or a decorator that patches <code>requests</code> for you. Inside its context, any call to <code>requests.get</code>, <code>requests.post</code>, etc., is intercepted. If the call matches a URL you've registered, your predefined fake response is returned. If it doesn't match, it raises an error.</p>
+<h3 id="creating-a-mocking-fixture">Creating a Mocking Fixture</h3>
+<p>We can wrap the <code>responses</code> functionality in a pytest fixture for easy reuse. Let's add this to our <code>tests/conftest.py</code>.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/conftest.py (additions)</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">responses</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">mock_responses</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A fixture to mock out the requests library.&quot;&quot;&quot;</span>
+    <span class="k">with</span> <span class="n">responses</span><span class="o">.</span><span class="n">RequestsMock</span><span class="p">()</span> <span class="k">as</span> <span class="n">rsps</span><span class="p">:</span>
+        <span class="k">yield</span> <span class="n">rsps</span>
+</code></pre></div>
+
+<p>This fixture starts a <code>RequestsMock</code> context, yields the mock object (<code>rsps</code>) to the test so it can register fake URLs, and ensures everything is cleaned up afterward.</p>
+<h3 id="iteration-2-solution-applying-the-mock">Iteration 2 Solution: Applying the Mock</h3>
+<p>Now we can rewrite our failing test to use this fixture. We will inject a real <code>GeolocationClient</code>, but because our <code>mock_responses</code> fixture is active, the client's call to <code>requests.get</code> will be intercepted and never reach the network.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_user_reporter.py (updated test)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">responses</span> <span class="c1"># Import the library</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">user_reporter.main</span><span class="w"> </span><span class="kn">import</span> <span class="n">process_user_report</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">user_reporter.db</span><span class="w"> </span><span class="kn">import</span> <span class="n">UserDatabase</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">user_reporter.api</span><span class="w"> </span><span class="kn">import</span> <span class="n">GeolocationClient</span>
+
+<span class="c1"># We still have the filesystem problem, which we&#39;ll fix next.</span>
+<span class="c1"># For now, we&#39;ll just use a dummy path and not check the file contents.</span>
+<span class="n">DUMMY_OUTPUT_DIR</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;./dummy_reports&quot;</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_user_report_with_mock_api</span><span class="p">(</span><span class="n">db_session</span><span class="p">,</span> <span class="n">mock_responses</span><span class="p">):</span>
+    <span class="c1"># Arrange (Database)</span>
+    <span class="n">db</span> <span class="o">=</span> <span class="n">UserDatabase</span><span class="p">(</span><span class="n">db_session</span><span class="p">)</span>
+
+    <span class="c1"># Arrange (API Mock)</span>
+    <span class="c1"># We tell `responses` that any GET request to this specific URL...</span>
+    <span class="n">mock_responses</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+        <span class="s2">&quot;https://api.geolocation.com/ip/192.168.1.100&quot;</span><span class="p">,</span>
+        <span class="n">json</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;country&quot;</span><span class="p">:</span> <span class="s2">&quot;USA&quot;</span><span class="p">},</span> <span class="c1"># ...should return this JSON payload...</span>
+        <span class="n">status</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="c1"># ...with a 200 OK status code.</span>
+    <span class="p">)</span>
+    <span class="c1"># We still pass a real API client, but its requests will be intercepted.</span>
+    <span class="n">api_client</span> <span class="o">=</span> <span class="n">GeolocationClient</span><span class="p">(</span><span class="n">base_url</span><span class="o">=</span><span class="s2">&quot;https://api.geolocation.com&quot;</span><span class="p">)</span>
+
+    <span class="c1"># Arrange (Filesystem)</span>
+    <span class="n">DUMMY_OUTPUT_DIR</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="c1"># Act</span>
+    <span class="n">process_user_report</span><span class="p">(</span>
+        <span class="n">user_id</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+        <span class="n">db</span><span class="o">=</span><span class="n">db</span><span class="p">,</span>
+        <span class="n">api_client</span><span class="o">=</span><span class="n">api_client</span><span class="p">,</span>
+        <span class="n">output_dir</span><span class="o">=</span><span class="n">DUMMY_OUTPUT_DIR</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Assert</span>
+    <span class="c1"># For now, we can&#39;t easily check the file. We&#39;ll just assert the test runs without error.</span>
+    <span class="c1"># We will add a proper file assertion in the next section.</span>
+    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">mock_responses</span><span class="o">.</span><span class="n">calls</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
+    <span class="k">assert</span> <span class="n">mock_responses</span><span class="o">.</span><span class="n">calls</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">request</span><span class="o">.</span><span class="n">url</span> <span class="o">==</span> <span class="s2">&quot;https://api.geolocation.com/ip/192.168.1.100&quot;</span>
+    <span class="k">assert</span> <span class="n">mock_responses</span><span class="o">.</span><span class="n">calls</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">response</span><span class="o">.</span><span class="n">status_code</span> <span class="o">==</span> <span class="mi">200</span>
+</code></pre></div>
+
+<h3 id="verification_1">Verification</h3>
+<p>Let's run our new test.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>tests/test_user_reporter.py::test_process_user_report_with_mock_api
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
+
+tests/test_user_reporter.py::test_process_user_report_with_mock_api<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">============================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">==============================</span>
+</code></pre></div>
+
+<p>It passes! And it does so almost instantly. The <code>requests.exceptions.ConnectionError</code> is gone. We have successfully isolated our test from the network.</p>
+<p>The assertions at the end are also very powerful. The <code>mock_responses</code> object records all intercepted calls, so we can assert that:
+*   Exactly one API call was made (<code>len(mock_responses.calls) == 1</code>).
+*   The correct URL was called.
+*   The response we received was the one we mocked.</p>
+<h3 id="testing-failure-cases">Testing Failure Cases</h3>
+<p>Mocking is not just for simulating success. It's crucial for testing how your code handles API errors. What if the API returns a 404 Not Found? Our current <code>GeolocationClient</code> would raise an exception via <code>response.raise_for_status()</code>. Let's test that our main function propagates this error correctly.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_user_reporter.py (new test for API failure)</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.api_client</span><span class="w"> </span><span class="kn">import</span> <span class="n">GitHubAPIClient</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_get_user_repos_success</span><span class="p">(</span><span class="n">responses</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Test fetching user repos successfully.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># 1. Define the fake response data</span>
-    <span class="n">username</span> <span class="o">=</span> <span class="s2">&quot;testuser&quot;</span>
-    <span class="n">expected_repos</span> <span class="o">=</span> <span class="p">[{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;repo1&quot;</span><span class="p">},</span> <span class="p">{</span><span class="s2">&quot;name&quot;</span><span class="p">:</span> <span class="s2">&quot;repo2&quot;</span><span class="p">}]</span>
-
-    <span class="c1"># 2. Register the mock URL with the &#39;responses&#39; fixture</span>
-    <span class="n">responses</span><span class="o">.</span><span class="n">add</span><span class="p">(</span>
-        <span class="n">responses</span><span class="o">.</span><span class="n">GET</span><span class="p">,</span>
-        <span class="sa">f</span><span class="s2">&quot;https://api.github.com/users/</span><span class="si">{</span><span class="n">username</span><span class="si">}</span><span class="s2">/repos&quot;</span><span class="p">,</span>
-        <span class="n">json</span><span class="o">=</span><span class="n">expected_repos</span><span class="p">,</span>
-        <span class="n">status</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span>
-    <span class="p">)</span>
-
-    <span class="c1"># 3. Call our code</span>
-    <span class="n">client</span> <span class="o">=</span> <span class="n">GitHubAPIClient</span><span class="p">()</span>
-    <span class="n">repos</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">get_user_repos</span><span class="p">(</span><span class="n">username</span><span class="p">)</span>
-
-    <span class="c1"># 4. Assert the results</span>
-    <span class="k">assert</span> <span class="n">repos</span> <span class="o">==</span> <span class="p">[</span><span class="s2">&quot;repo1&quot;</span><span class="p">,</span> <span class="s2">&quot;repo2&quot;</span><span class="p">]</span>
-    <span class="c1"># Optional: Assert that the mock was called exactly once</span>
-    <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">responses</span><span class="o">.</span><span class="n">calls</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
-    <span class="k">assert</span> <span class="n">responses</span><span class="o">.</span><span class="n">calls</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">request</span><span class="o">.</span><span class="n">url</span> <span class="o">==</span> <span class="sa">f</span><span class="s2">&quot;https://api.github.com/users/</span><span class="si">{</span><span class="n">username</span><span class="si">}</span><span class="s2">/repos&quot;</span>
-</code></pre></div>
-
-<p>Let's break down this test:</p>
-<ol>
-<li><strong><code>test_get_user_repos_success(responses)</code></strong>: We request the <code>responses</code> fixture, which activates the mocking mechanism for this test.</li>
-<li><strong><code>responses.add(...)</code></strong>: This is the core of the mock. We are telling the <code>responses</code> library: "If you see an HTTP <code>GET</code> request to <code>https://api.github.com/users/testuser/repos</code>, intercept it. Do not let it go to the internet. Instead, pretend you received a response with a <code>200</code> status code and this JSON body."</li>
-<li><strong><code>client.get_user_repos(username)</code></strong>: When this line executes, <code>requests.get()</code> is called internally. The <code>responses</code> library intercepts this call because the URL matches our rule. It returns a fake <code>Response</code> object with the data we specified.</li>
-<li><strong>Assertions</strong>: We can now assert that our function correctly parsed the fake JSON and returned the list of repository names. We can also inspect <code>responses.calls</code> to verify that the expected network call was made.</li>
-</ol>
-<p>If our code tried to access any other URL, the <code>responses</code> library would raise an error, preventing unexpected network access.</p>
-<h3 id="testing-failure-paths">Testing Failure Paths</h3>
-<p>Mocking is even more valuable for testing how your code handles errors. It's difficult to reliably trigger a 404 or 500 error from a real API, but with <code>responses</code>, it's trivial.</p>
-<p>Let's test the "user not found" case.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_api_client.py (continued)</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_get_user_repos_not_found</span><span class="p">(</span><span class="n">responses</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Test handling of a 404 Not Found error.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">username</span> <span class="o">=</span> <span class="s2">&quot;nonexistentuser&quot;</span>
-    <span class="n">responses</span><span class="o">.</span><span class="n">add</span><span class="p">(</span>
-        <span class="n">responses</span><span class="o">.</span><span class="n">GET</span><span class="p">,</span>
-        <span class="sa">f</span><span class="s2">&quot;https://api.github.com/users/</span><span class="si">{</span><span class="n">username</span><span class="si">}</span><span class="s2">/repos&quot;</span><span class="p">,</span>
-        <span class="n">json</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;error&quot;</span><span class="p">:</span> <span class="s2">&quot;Not Found&quot;</span><span class="p">},</span>
-        <span class="n">status</span><span class="o">=</span><span class="mi">404</span><span class="p">,</span>
-    <span class="p">)</span>
-
-    <span class="n">client</span> <span class="o">=</span> <span class="n">GitHubAPIClient</span><span class="p">()</span>
-    <span class="n">repos</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">get_user_repos</span><span class="p">(</span><span class="n">username</span><span class="p">)</span>
-
-    <span class="k">assert</span> <span class="n">repos</span> <span class="ow">is</span> <span class="kc">None</span>
-</code></pre></div>
-
-<p>Here, we configured the mock to return a <code>404</code> status code. Our test verifies that <code>get_user_repos</code> correctly handles this by returning <code>None</code>, just as we designed it to.</p>
-<p>We can also test how our code handles unexpected server errors.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_api_client.py (continued)</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">requests</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_get_user_repos_server_error</span><span class="p">(</span><span class="n">responses</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Test handling of a 500 Internal Server Error.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">username</span> <span class="o">=</span> <span class="s2">&quot;anyuser&quot;</span>
-    <span class="n">responses</span><span class="o">.</span><span class="n">add</span><span class="p">(</span>
-        <span class="n">responses</span><span class="o">.</span><span class="n">GET</span><span class="p">,</span>
-        <span class="sa">f</span><span class="s2">&quot;https://api.github.com/users/</span><span class="si">{</span><span class="n">username</span><span class="si">}</span><span class="s2">/repos&quot;</span><span class="p">,</span>
-        <span class="n">status</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_user_report_api_error</span><span class="p">(</span><span class="n">db_session</span><span class="p">,</span> <span class="n">mock_responses</span><span class="p">):</span>
+    <span class="c1"># Arrange</span>
+    <span class="n">db</span> <span class="o">=</span> <span class="n">UserDatabase</span><span class="p">(</span><span class="n">db_session</span><span class="p">)</span>
+    <span class="n">mock_responses</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+        <span class="s2">&quot;https://api.geolocation.com/ip/192.168.1.100&quot;</span><span class="p">,</span>
+        <span class="n">json</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;error&quot;</span><span class="p">:</span> <span class="s2">&quot;IP not found&quot;</span><span class="p">},</span>
+        <span class="n">status</span><span class="o">=</span><span class="mi">404</span><span class="p">,</span> <span class="c1"># Simulate a 404 Not Found error</span>
     <span class="p">)</span>
+    <span class="n">api_client</span> <span class="o">=</span> <span class="n">GeolocationClient</span><span class="p">(</span><span class="n">base_url</span><span class="o">=</span><span class="s2">&quot;https://api.geolocation.com&quot;</span><span class="p">)</span>
 
-    <span class="n">client</span> <span class="o">=</span> <span class="n">GitHubAPIClient</span><span class="p">()</span>
-    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">requests</span><span class="o">.</span><span class="n">exceptions</span><span class="o">.</span><span class="n">HTTPError</span><span class="p">):</span>
-        <span class="n">client</span><span class="o">.</span><span class="n">get_user_repos</span><span class="p">(</span><span class="n">username</span><span class="p">)</span>
+    <span class="c1"># Act &amp; Assert</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">requests</span><span class="o">.</span><span class="n">exceptions</span><span class="o">.</span><span class="n">HTTPError</span><span class="p">)</span> <span class="k">as</span> <span class="n">excinfo</span><span class="p">:</span>
+        <span class="n">process_user_report</span><span class="p">(</span>
+            <span class="n">user_id</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+            <span class="n">db</span><span class="o">=</span><span class="n">db</span><span class="p">,</span>
+            <span class="n">api_client</span><span class="o">=</span><span class="n">api_client</span><span class="p">,</span>
+            <span class="n">output_dir</span><span class="o">=</span><span class="n">DUMMY_OUTPUT_DIR</span>
+        <span class="p">)</span>
+
+    <span class="c1"># Optionally, assert on the error message or status code</span>
+    <span class="k">assert</span> <span class="s2">&quot;404 Client Error: Not Found&quot;</span> <span class="ow">in</span> <span class="nb">str</span><span class="p">(</span><span class="n">excinfo</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>
 </code></pre></div>
 
-<p>In this test, we simulate a <code>500</code> error. Our code is designed to call <code>response.raise_for_status()</code> in this case, which should raise an <code>HTTPError</code>. Using <code>pytest.raises</code>, we can elegantly assert that this expected exception was indeed raised.</p>
-<p>By using <code>responses</code>, we have created a fast, reliable, and comprehensive test suite for our API client without ever making a single real network request.</p>
+<p>This test also passes instantly, giving us confidence that our application behaves correctly even when its dependencies fail. This kind of negative testing is extremely difficult and unreliable without mocking.</p>
 <h2 id="testing-file-io">Testing File I/O</h2>
-<h2 id="the-perils-of-a-persistent-file-system">The Perils of a Persistent File System</h2>
-<p>Just like databases, the file system is a form of external state. Tests that read or write files can interfere with each other and leave a mess on your machine if not handled carefully.</p>
-<p>Consider a function that processes a text file, counting the number of lines that contain a specific keyword.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># src/file_processor.py</span>
+<h2 id="iteration-3-controlling-the-filesystem">Iteration 3: Controlling the Filesystem</h2>
+<p>We have isolated our database and network interactions. The last remaining dependency is the filesystem. Our function currently writes a report to a directory that we create manually.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_user_reporter.py (current state)</span>
+<span class="n">DUMMY_OUTPUT_DIR</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;./dummy_reports&quot;</span><span class="p">)</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">analyze_log_file</span><span class="p">(</span><span class="n">file_path</span><span class="p">,</span> <span class="n">keyword</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Counts the number of lines containing a keyword in a file.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">try</span><span class="p">:</span>
-        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">file_path</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-            <span class="n">lines</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">readlines</span><span class="p">()</span>
-        <span class="k">return</span> <span class="nb">sum</span><span class="p">(</span><span class="mi">1</span> <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">lines</span> <span class="k">if</span> <span class="n">keyword</span> <span class="ow">in</span> <span class="n">line</span><span class="p">)</span>
-    <span class="k">except</span> <span class="ne">FileNotFoundError</span><span class="p">:</span>
-        <span class="k">return</span> <span class="o">-</span><span class="mi">1</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_user_report_with_mock_api</span><span class="p">(</span><span class="o">...</span><span class="p">):</span>
+    <span class="c1"># ...</span>
+    <span class="n">DUMMY_OUTPUT_DIR</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">process_user_report</span><span class="p">(</span><span class="o">...</span><span class="p">,</span> <span class="n">output_dir</span><span class="o">=</span><span class="n">DUMMY_OUTPUT_DIR</span><span class="p">)</span>
+    <span class="c1"># ...</span>
 </code></pre></div>
 
-<h3 id="the-wrong-way-using-real-files">The Wrong Way: Using Real Files</h3>
-<p>A naive approach to testing this would be to create a real file on disk.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_file_processor_wrong.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<p>This has several problems:
+*   <strong>State Pollution:</strong> The <code>dummy_reports</code> directory and its contents are left behind after the test run, cluttering your project.
+*   <strong>Test Interference:</strong> If two tests write to the same filename, they can overwrite each other's output, leading to flaky tests.
+*   <strong>Assertion Difficulty:</strong> To check the report's contents, we have to manually construct the file path, open it, read it, and then remember to clean it up. This is tedious and error-prone.</p>
+<h3 id="the-problem-shared-filesystem-state">The Problem: Shared Filesystem State</h3>
+<p>Let's demonstrate the interference problem. Imagine two tests that process reports for the same user ID, but expect different content (perhaps due to different API responses).</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_file_problem.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">shutil</span>
 
-<span class="c1"># DO NOT DO THIS!</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_analyze_log_file_with_real_file</span><span class="p">():</span>
-    <span class="n">file_path</span> <span class="o">=</span> <span class="s2">&quot;test_log.txt&quot;</span>
-    <span class="n">content</span> <span class="o">=</span> <span class="s2">&quot;INFO: Starting process</span><span class="se">\n</span><span class="s2">WARNING: Low disk space</span><span class="se">\n</span><span class="s2">INFO: Process finished</span><span class="se">\n</span><span class="s2">&quot;</span>
-
-    <span class="c1"># Setup: Create the file</span>
-    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">file_path</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+<span class="c1"># A simplified function that just writes a file</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">write_report</span><span class="p">(</span><span class="n">user_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">content</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">output_dir</span><span class="p">:</span> <span class="n">Path</span><span class="p">):</span>
+    <span class="n">report_path</span> <span class="o">=</span> <span class="n">output_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;user_report_</span><span class="si">{</span><span class="n">user_id</span><span class="si">}</span><span class="s2">.txt&quot;</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">report_path</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
         <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">content</span><span class="p">)</span>
 
-    <span class="c1"># The actual test</span>
-    <span class="n">count</span> <span class="o">=</span> <span class="n">analyze_log_file</span><span class="p">(</span><span class="n">file_path</span><span class="p">,</span> <span class="s2">&quot;INFO&quot;</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="n">count</span> <span class="o">==</span> <span class="mi">2</span>
+<span class="n">OUTPUT_DIR</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="s2">&quot;./shared_reports&quot;</span><span class="p">)</span>
 
-    <span class="c1"># Teardown: Clean up the file</span>
-    <span class="n">os</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">file_path</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">setup_function</span><span class="p">(</span><span class="n">function</span><span class="p">):</span>
+    <span class="n">OUTPUT_DIR</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">teardown_function</span><span class="p">(</span><span class="n">function</span><span class="p">):</span>
+    <span class="k">if</span> <span class="n">OUTPUT_DIR</span><span class="o">.</span><span class="n">exists</span><span class="p">():</span>
+        <span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">OUTPUT_DIR</span><span class="p">)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_report_for_usa</span><span class="p">():</span>
+    <span class="n">user_id</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">write_report</span><span class="p">(</span><span class="n">user_id</span><span class="p">,</span> <span class="s2">&quot;Country: USA&quot;</span><span class="p">,</span> <span class="n">OUTPUT_DIR</span><span class="p">)</span>
+
+    <span class="n">report_path</span> <span class="o">=</span> <span class="n">OUTPUT_DIR</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;user_report_</span><span class="si">{</span><span class="n">user_id</span><span class="si">}</span><span class="s2">.txt&quot;</span>
+    <span class="n">content</span> <span class="o">=</span> <span class="n">report_path</span><span class="o">.</span><span class="n">read_text</span><span class="p">()</span>
+    <span class="k">assert</span> <span class="s2">&quot;Country: USA&quot;</span> <span class="ow">in</span> <span class="n">content</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_report_for_canada</span><span class="p">():</span>
+    <span class="n">user_id</span> <span class="o">=</span> <span class="mi">1</span> <span class="c1"># Same user ID!</span>
+    <span class="n">write_report</span><span class="p">(</span><span class="n">user_id</span><span class="p">,</span> <span class="s2">&quot;Country: Canada&quot;</span><span class="p">,</span> <span class="n">OUTPUT_DIR</span><span class="p">)</span>
+
+    <span class="n">report_path</span> <span class="o">=</span> <span class="n">OUTPUT_DIR</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;user_report_</span><span class="si">{</span><span class="n">user_id</span><span class="si">}</span><span class="s2">.txt&quot;</span>
+    <span class="n">content</span> <span class="o">=</span> <span class="n">report_path</span><span class="o">.</span><span class="n">read_text</span><span class="p">()</span>
+    <span class="k">assert</span> <span class="s2">&quot;Country: Canada&quot;</span> <span class="ow">in</span> <span class="n">content</span>
 </code></pre></div>
 
-<p>This approach is fraught with problems:</p>
-<ol>
-<li><strong>Cleanup is Not Guaranteed</strong>: If the assertion fails, <code>os.remove(file_path)</code> is never called. The <code>test_log.txt</code> file will be left behind, cluttering your project directory.</li>
-<li><strong>Race Conditions</strong>: If you run tests in parallel (e.g., with <code>pytest-xdist</code>), multiple processes might try to write to and delete <code>test_log.txt</code> at the same time, causing unpredictable failures.</li>
-<li><strong>Pathing Issues</strong>: Where should <code>test_log.txt</code> be created? In the project root? In the <code>tests/</code> directory? This can become messy and non-portable.</li>
-</ol>
-<p>We need a way to create files and directories in a temporary, isolated location that is automatically and reliably cleaned up after the test finishes.</p>
+<p>These tests will pass if run individually. But what if we run them together and a test runner decides to run them in parallel in the future? Or if one test fails after writing the file but before its assertion? The file from one test can be read by another.</p>
+<p>Let's simulate a more direct conflict. What if <code>test_report_for_usa</code> also checked that the file <em>doesn't</em> contain "Canada"?</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_file_problem_fail.py</span>
+<span class="c1"># ... (setup is the same as above) ...</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_report_for_canada_first</span><span class="p">():</span>
+    <span class="n">user_id</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="n">write_report</span><span class="p">(</span><span class="n">user_id</span><span class="p">,</span> <span class="s2">&quot;Country: Canada&quot;</span><span class="p">,</span> <span class="n">OUTPUT_DIR</span><span class="p">)</span>
+    <span class="c1"># This test passes, but leaves behind a file.</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_report_for_usa_reads_stale_file</span><span class="p">():</span>
+    <span class="n">user_id</span> <span class="o">=</span> <span class="mi">1</span>
+    <span class="c1"># Let&#39;s assume this test runs second, but the teardown from the first failed.</span>
+    <span class="c1"># To simulate, we&#39;ll just check the state of the file.</span>
+    <span class="n">report_path</span> <span class="o">=</span> <span class="n">OUTPUT_DIR</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;user_report_</span><span class="si">{</span><span class="n">user_id</span><span class="si">}</span><span class="s2">.txt&quot;</span>
+    <span class="n">content</span> <span class="o">=</span> <span class="n">report_path</span><span class="o">.</span><span class="n">read_text</span><span class="p">()</span>
+    <span class="k">assert</span> <span class="s2">&quot;Country: USA&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">content</span> <span class="c1"># This should pass</span>
+    <span class="k">assert</span> <span class="s2">&quot;Country: Canada&quot;</span> <span class="ow">in</span> <span class="n">content</span> <span class="c1"># This will fail!</span>
+</code></pre></div>
+
+<p>This is a contrived example, but it shows the core issue: when tests share a writable directory, they are no longer independent.</p>
+<p><strong>Root cause identified</strong>: Tests are writing to a hardcoded, shared directory on the filesystem, breaking test isolation.</p>
+<p><strong>Why the current approach can't solve this</strong>: Manual setup and teardown of directories is brittle. If a test fails unexpectedly, the teardown code might not run, leaving artifacts that poison subsequent test runs.</p>
+<p><strong>What we need</strong>: A mechanism that provides each test function with its own unique, empty, temporary directory that is automatically and reliably cleaned up after the test, regardless of whether it passes or fails.</p>
 <h2 id="working-with-temporary-files-and-directories">Working with Temporary Files and Directories</h2>
-<h2 id="pytests-built-in-tmp_path-fixture">Pytest's Built-in <code>tmp_path</code> Fixture</h2>
-<p>Pytest provides a brilliant solution to this problem with its built-in <code>tmp_path</code> fixture.</p>
-<p>When you add <code>tmp_path</code> as an argument to your test function, pytest does the following:</p>
-<ol>
-<li>Before the test runs, it creates a unique new temporary directory (e.g., <code>/tmp/pytest-of-user/pytest-1/test_my_function0/</code>).</li>
-<li>It passes a <code>pathlib.Path</code> object pointing to this directory into your test function.</li>
-<li>After the test finishes (pass or fail), it recursively removes the entire directory and all its contents.</li>
-</ol>
-<p>This gives you a pristine, private sandbox for each test to work with files, guaranteeing isolation and cleanup.</p>
-<h3 id="refactoring-with-tmp_path">Refactoring with <code>tmp_path</code></h3>
-<p>Let's rewrite our test for <code>analyze_log_file</code> using <code>tmp_path</code>.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_file_processor.py</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.file_processor</span><span class="w"> </span><span class="kn">import</span> <span class="n">analyze_log_file</span>
+<h2 id="the-solution-pytests-tmp_path-fixture">The Solution: Pytest's <code>tmp_path</code> Fixture</h2>
+<p>Pytest provides a fantastic built-in fixture for this exact problem: <code>tmp_path</code>.</p>
+<p>The <code>tmp_path</code> fixture is a <code>pathlib.Path</code> object that points to a unique temporary directory created for each individual test function. Pytest guarantees that this directory will be removed after the test finishes.</p>
+<h3 id="iteration-3-solution-applying-tmp_path">Iteration 3 Solution: Applying <code>tmp_path</code></h3>
+<p>Using <code>tmp_path</code> is incredibly simple. You just add it as an argument to your test function, and pytest provides the path.</p>
+<p>Let's write the final, fully isolated version of our test for <code>process_user_report</code>. It will use all three of our techniques:
+1.  <code>db_session</code> for database isolation.
+2.  <code>mock_responses</code> for network isolation.
+3.  <code>tmp_path</code> for filesystem isolation.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_user_reporter_final.py</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">responses</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">user_reporter.main</span><span class="w"> </span><span class="kn">import</span> <span class="n">process_user_report</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">user_reporter.db</span><span class="w"> </span><span class="kn">import</span> <span class="n">UserDatabase</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">user_reporter.api</span><span class="w"> </span><span class="kn">import</span> <span class="n">GeolocationClient</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_analyze_log_file_with_tmp_path</span><span class="p">(</span><span class="n">tmp_path</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Given a temporary file created via tmp_path,</span>
-<span class="sd">    When analyze_log_file is called,</span>
-<span class="sd">    Then it should return the correct count of lines with the keyword.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># tmp_path is a pathlib.Path object to a temporary directory</span>
-    <span class="c1"># 1. Setup: Create a file inside the temporary directory</span>
-    <span class="n">log_file</span> <span class="o">=</span> <span class="n">tmp_path</span> <span class="o">/</span> <span class="s2">&quot;my_log.txt&quot;</span>
-    <span class="n">log_file</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="s2">&quot;INFO: Starting process</span><span class="se">\n</span><span class="s2">WARNING: Low disk space</span><span class="se">\n</span><span class="s2">INFO: Process finished</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_process_user_report_final</span><span class="p">(</span><span class="n">db_session</span><span class="p">,</span> <span class="n">mock_responses</span><span class="p">,</span> <span class="n">tmp_path</span><span class="p">):</span>
+    <span class="c1"># Arrange (Database)</span>
+    <span class="n">db</span> <span class="o">=</span> <span class="n">UserDatabase</span><span class="p">(</span><span class="n">db_session</span><span class="p">)</span>
 
-    <span class="c1"># 2. Run the test</span>
-    <span class="n">count</span> <span class="o">=</span> <span class="n">analyze_log_file</span><span class="p">(</span><span class="n">log_file</span><span class="p">,</span> <span class="s2">&quot;INFO&quot;</span><span class="p">)</span>
+    <span class="c1"># Arrange (API Mock)</span>
+    <span class="n">mock_responses</span><span class="o">.</span><span class="n">get</span><span class="p">(</span>
+        <span class="s2">&quot;https://api.geolocation.com/ip/192.168.1.100&quot;</span><span class="p">,</span>
+        <span class="n">json</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;country&quot;</span><span class="p">:</span> <span class="s2">&quot;USA&quot;</span><span class="p">},</span>
+        <span class="n">status</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">api_client</span> <span class="o">=</span> <span class="n">GeolocationClient</span><span class="p">(</span><span class="n">base_url</span><span class="o">=</span><span class="s2">&quot;https://api.geolocation.com&quot;</span><span class="p">)</span>
 
-    <span class="c1"># 3. Assert the result</span>
-    <span class="k">assert</span> <span class="n">count</span> <span class="o">==</span> <span class="mi">2</span>
+    <span class="c1"># Arrange (Filesystem)</span>
+    <span class="c1"># `tmp_path` is a Path object to a unique temp directory.</span>
+    <span class="c1"># We pass it directly to our function.</span>
+    <span class="n">output_dir</span> <span class="o">=</span> <span class="n">tmp_path</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_analyze_log_file_not_found</span><span class="p">(</span><span class="n">tmp_path</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Given a path that does not exist,</span>
-<span class="sd">    When analyze_log_file is called,</span>
-<span class="sd">    Then it should return -1.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">non_existent_file</span> <span class="o">=</span> <span class="n">tmp_path</span> <span class="o">/</span> <span class="s2">&quot;ghost.txt&quot;</span>
+    <span class="c1"># Act</span>
+    <span class="n">process_user_report</span><span class="p">(</span>
+        <span class="n">user_id</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
+        <span class="n">db</span><span class="o">=</span><span class="n">db</span><span class="p">,</span>
+        <span class="n">api_client</span><span class="o">=</span><span class="n">api_client</span><span class="p">,</span>
+        <span class="n">output_dir</span><span class="o">=</span><span class="n">output_dir</span>
+    <span class="p">)</span>
 
-    <span class="n">count</span> <span class="o">=</span> <span class="n">analyze_log_file</span><span class="p">(</span><span class="n">non_existent_file</span><span class="p">,</span> <span class="s2">&quot;ERROR&quot;</span><span class="p">)</span>
+    <span class="c1"># Assert</span>
+    <span class="c1"># The report file should exist inside the temporary directory.</span>
+    <span class="n">expected_report_path</span> <span class="o">=</span> <span class="n">output_dir</span> <span class="o">/</span> <span class="s2">&quot;user_report_1.txt&quot;</span>
+    <span class="k">assert</span> <span class="n">expected_report_path</span><span class="o">.</span><span class="n">exists</span><span class="p">()</span>
 
-    <span class="k">assert</span> <span class="n">count</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span>
+    <span class="c1"># We can now safely read the content and assert on it.</span>
+    <span class="n">report_content</span> <span class="o">=</span> <span class="n">expected_report_path</span><span class="o">.</span><span class="n">read_text</span><span class="p">()</span>
+    <span class="k">assert</span> <span class="s2">&quot;User Report for Alice&quot;</span> <span class="ow">in</span> <span class="n">report_content</span>
+    <span class="k">assert</span> <span class="s2">&quot;IP Address: 192.168.1.100&quot;</span> <span class="ow">in</span> <span class="n">report_content</span>
+    <span class="k">assert</span> <span class="s2">&quot;Country: USA&quot;</span> <span class="ow">in</span> <span class="n">report_content</span>
 </code></pre></div>
 
-<p>This is a massive improvement:</p>
+<h3 id="verification_2">Verification</h3>
+<p>Let's run this final version.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>tests/test_user_reporter_final.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
+
+tests/test_user_reporter_final.py::test_process_user_report_final<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">============================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span>...s<span class="w"> </span><span class="o">==============================</span>
+</code></pre></div>
+
+<p>Perfect. The test passes, and we can be confident that it:
+*   Ran instantly because it didn't touch the network.
+*   Started with a clean, predictable database state.
+*   Wrote its output to a safe, temporary location.
+*   Left no trace behind after it finished.</p>
+<p>This test is fast, reliable, and robust. It is a high-quality unit test that precisely verifies the logic of <code>process_user_report</code> without being coupled to the availability or state of its external dependencies.</p>
+<h3 id="tmp_path-vs-tmpdir"><code>tmp_path</code> vs <code>tmpdir</code></h3>
+<p>You may also see an older fixture called <code>tmpdir</code>.
+*   <code>tmpdir</code>: Returns a <code>py.path.local</code> object from the <code>py</code> library.
+*   <code>tmp_path</code>: Returns a standard <code>pathlib.Path</code> object.</p>
+<p>The <code>pathlib</code> module is the modern, standard way to handle filesystem paths in Python. <strong>You should always prefer <code>tmp_path</code> over <code>tmpdir</code> in new code.</strong></p>
+<h3 id="synthesis-the-complete-journey">Synthesis: The Complete Journey</h3>
+<p>We have taken a complex function with multiple external dependencies and systematically made it testable.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Iteration</th>
+<th style="text-align: left;">Failure Mode</th>
+<th style="text-align: left;">Technique Applied</th>
+<th style="text-align: left;">Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">0</td>
+<td style="text-align: left;">Brittle integration test</td>
+<td style="text-align: left;">None</td>
+<td style="text-align: left;">Slow, unreliable, stateful test that pollutes the environment.</td>
+</tr>
+<tr>
+<td style="text-align: left;">1</td>
+<td style="text-align: left;">Database state pollution</td>
+<td style="text-align: left;"><code>db_session</code> fixture with transactions</td>
+<td style="text-align: left;">Tests are isolated from each other's database changes.</td>
+</tr>
+<tr>
+<td style="text-align: left;">2</td>
+<td style="text-align: left;">Network dependency (slowness, flakiness)</td>
+<td style="text-align: left;"><code>responses</code> library and <code>mock_responses</code> fixture</td>
+<td style="text-align: left;">Network calls are mocked, making tests fast and deterministic.</td>
+</tr>
+<tr>
+<td style="text-align: left;">3</td>
+<td style="text-align: left;">Filesystem pollution &amp; interference</td>
+<td style="text-align: left;"><code>tmp_path</code> built-in fixture</td>
+<td style="text-align: left;">File I/O is redirected to a clean, temporary, isolated directory.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="final-implementation">Final Implementation</h3>
+<p>Here is the final, testable application code, incorporating the dependency injection patterns we established.</p>
+<p><strong><code>user_reporter/db.py</code></strong></p>
+<div class="codehilite"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">sqlite3</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
+
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">User</span><span class="p">:</span>
+    <span class="nb">id</span><span class="p">:</span> <span class="nb">int</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">ip_address</span><span class="p">:</span> <span class="nb">str</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">UserDatabase</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">connection</span><span class="p">:</span> <span class="n">sqlite3</span><span class="o">.</span><span class="n">Connection</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">conn</span> <span class="o">=</span> <span class="n">connection</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_user</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">user_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">User</span> <span class="o">|</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">cursor</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="n">cursor</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span>
+            <span class="s2">&quot;SELECT id, name, ip_address FROM users WHERE id = ?&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">user_id</span><span class="p">,)</span>
+        <span class="p">)</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">res</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">User</span><span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="n">res</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">name</span><span class="o">=</span><span class="n">res</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span> <span class="n">ip_address</span><span class="o">=</span><span class="n">res</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+        <span class="k">return</span> <span class="kc">None</span>
+</code></pre></div>
+
+<p><strong><code>user_reporter/api.py</code></strong></p>
+<div class="codehilite"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">requests</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">GeolocationClient</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">base_url</span><span class="o">=</span><span class="s2">&quot;https://api.geolocation.com&quot;</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">base_url</span> <span class="o">=</span> <span class="n">base_url</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_country_for_ip</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">ip_address</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="n">response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">base_url</span><span class="si">}</span><span class="s2">/ip/</span><span class="si">{</span><span class="n">ip_address</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">response</span><span class="o">.</span><span class="n">raise_for_status</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">response</span><span class="o">.</span><span class="n">json</span><span class="p">()[</span><span class="s2">&quot;country&quot;</span><span class="p">]</span>
+</code></pre></div>
+
+<p><strong><code>user_reporter/main.py</code></strong></p>
+<div class="codehilite"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.db</span><span class="w"> </span><span class="kn">import</span> <span class="n">UserDatabase</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">.api</span><span class="w"> </span><span class="kn">import</span> <span class="n">GeolocationClient</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">process_user_report</span><span class="p">(</span>
+    <span class="n">user_id</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> 
+    <span class="n">db</span><span class="p">:</span> <span class="n">UserDatabase</span><span class="p">,</span> 
+    <span class="n">api_client</span><span class="p">:</span> <span class="n">GeolocationClient</span><span class="p">,</span> 
+    <span class="n">output_dir</span><span class="p">:</span> <span class="n">Path</span>
+<span class="p">):</span>
+    <span class="n">user</span> <span class="o">=</span> <span class="n">db</span><span class="o">.</span><span class="n">get_user</span><span class="p">(</span><span class="n">user_id</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">user</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;User with ID </span><span class="si">{</span><span class="n">user_id</span><span class="si">}</span><span class="s2"> not found.&quot;</span><span class="p">)</span>
+
+    <span class="n">country</span> <span class="o">=</span> <span class="n">api_client</span><span class="o">.</span><span class="n">get_country_for_ip</span><span class="p">(</span><span class="n">user</span><span class="o">.</span><span class="n">ip_address</span><span class="p">)</span>
+
+    <span class="n">report_path</span> <span class="o">=</span> <span class="n">output_dir</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;user_report_</span><span class="si">{</span><span class="n">user_id</span><span class="si">}</span><span class="s2">.txt&quot;</span>
+    <span class="n">report_content</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;User Report for </span><span class="si">{</span><span class="n">user</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
+    <span class="n">report_content</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot;IP Address: </span><span class="si">{</span><span class="n">user</span><span class="o">.</span><span class="n">ip_address</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
+    <span class="n">report_content</span> <span class="o">+=</span> <span class="sa">f</span><span class="s2">&quot;Country: </span><span class="si">{</span><span class="n">country</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
+
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">report_path</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">report_content</span><span class="p">)</span>
+</code></pre></div>
+
+<h3 id="lessons-learned">Lessons Learned</h3>
 <ul>
-<li><strong>Clean and Declarative</strong>: The test clearly shows its intent. It creates a file, calls the function, and checks the result.</li>
-<li><strong>No Manual Cleanup</strong>: We don't need any <code>try...finally</code> blocks or <code>os.remove()</code> calls. Pytest handles it all.</li>
-<li><strong><code>pathlib</code> Power</strong>: <code>tmp_path</code> is a <code>pathlib.Path</code> object, which provides a modern, object-oriented API for file system operations (<code>/</code> for joining paths, <code>.write_text()</code>, <code>.read_text()</code>, etc.).</li>
-<li><strong>Complete Isolation</strong>: Each test function gets its own unique <code>tmp_path</code>, so there is zero chance of interference.</li>
+<li><strong>Isolate Your Tests:</strong> The primary goal when testing code with side effects is to isolate your test from the external dependency. This makes your tests fast, reliable, and deterministic.</li>
+<li><strong>Dependency Injection is Key:</strong> The most powerful pattern for enabling testability is Dependency Injection. By passing dependencies (like database connections or API clients) into your functions, you create "seams" where you can substitute real objects with test doubles (fakes, mocks) during testing.</li>
+<li><strong>Use the Right Tool for the Job:</strong><ul>
+<li>For <strong>databases</strong>, use fixtures to manage connections and transactions for isolation.</li>
+<li>For <strong>HTTP requests</strong>, use specialized libraries like <code>responses</code> to cleanly mock the network layer.</li>
+<li>For the <strong>filesystem</strong>, use pytest's built-in <code>tmp_path</code> fixture to get a safe, clean, temporary workspace.</li>
 </ul>
-<h3 id="testing-functions-that-write-files">Testing Functions That Write Files</h3>
-<p>The <code>tmp_path</code> fixture is also perfect for testing functions that <em>create</em> files. Let's imagine a function that generates a report.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># src/file_processor.py (continued)</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">generate_report</span><span class="p">(</span><span class="n">output_path</span><span class="p">,</span> <span class="n">data</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Writes a simple report to the given output path.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">output_path</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-        <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s2">&quot;--- REPORT ---</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="k">for</span> <span class="n">key</span><span class="p">,</span> <span class="n">value</span> <span class="ow">in</span> <span class="n">data</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
-            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">key</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">value</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="s2">&quot;--- END ---</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
-</code></pre></div>
-
-<p>Our test can use <code>tmp_path</code> to provide a safe output location and then verify the contents of the created file.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_file_processor.py (continued)</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.file_processor</span><span class="w"> </span><span class="kn">import</span> <span class="n">generate_report</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_generate_report</span><span class="p">(</span><span class="n">tmp_path</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Given a temporary output path,</span>
-<span class="sd">    When generate_report is called,</span>
-<span class="sd">    Then it should create a file with the correct content.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
-    <span class="n">report_file</span> <span class="o">=</span> <span class="n">tmp_path</span> <span class="o">/</span> <span class="s2">&quot;report.txt&quot;</span>
-    <span class="n">data</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;user_count&quot;</span><span class="p">:</span> <span class="mi">150</span><span class="p">,</span> <span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;OK&quot;</span><span class="p">}</span>
-
-    <span class="n">generate_report</span><span class="p">(</span><span class="n">report_file</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
-
-    <span class="c1"># Assert that the file was created and has the correct content</span>
-    <span class="k">assert</span> <span class="n">report_file</span><span class="o">.</span><span class="n">exists</span><span class="p">()</span>
-
-    <span class="n">content</span> <span class="o">=</span> <span class="n">report_file</span><span class="o">.</span><span class="n">read_text</span><span class="p">()</span>
-    <span class="k">assert</span> <span class="s2">&quot;--- REPORT ---&quot;</span> <span class="ow">in</span> <span class="n">content</span>
-    <span class="k">assert</span> <span class="s2">&quot;user_count: 150&quot;</span> <span class="ow">in</span> <span class="n">content</span>
-    <span class="k">assert</span> <span class="s2">&quot;status: OK&quot;</span> <span class="ow">in</span> <span class="n">content</span>
-    <span class="k">assert</span> <span class="s2">&quot;--- END ---&quot;</span> <span class="ow">in</span> <span class="n">content</span>
-</code></pre></div>
-
-<p>By using fixtures like <code>db_session</code> for databases, <code>responses</code> for APIs, and <code>tmp_path</code> for files, you can tame the complexity of external dependencies. These tools allow you to write tests that are fast, reliable, and isolated, forming the bedrock of a robust and maintainable test suite.</p>
+</li>
+<li><strong>Test the Logic, Not the Framework:</strong> Our final test verifies the business logic of <code>process_user_report</code> (that it correctly combines data and formats a string) without actually testing SQLite, the <code>requests</code> library, or the operating system's filesystem. We trust that those well-tested components work and focus our tests on our own code.</li>
+</ul>
         </div>
         <div class="footer">
-            Generated on 2025-11-22 17:25:04 | Made with ❤️ by GitHub Pages Generator
+            Generated on 2025-11-24 14:31:16 | Made with ❤️ by GitHub Pages Generator
         </div>
     </div>
     <script>

@@ -359,290 +359,310 @@
         <div class="content">
             <h1 id="chapter-16-continuous-integration-and-automation">Chapter 16: Continuous Integration and Automation</h1>
 <h2 id="running-tests-in-cicd-pipelines">Running Tests in CI/CD Pipelines</h2>
-<h2 id="the-automation-imperative">The Automation Imperative</h2>
-<p>So far, you've been running <code>pytest</code> on your local machine. This is essential for development, but it has a fundamental flaw: it relies on you, the developer, to remember to run the tests. What happens if you're in a hurry and forget? What if a colleague makes a change and doesn't run the full test suite?</p>
-<p>This is where Continuous Integration (CI) comes in.</p>
-<p><strong>Continuous Integration</strong> is the practice of automatically building and testing your code every time a change is pushed to a shared repository. A <strong>CI/CD Pipeline</strong> is the automated workflow that executes these steps.</p>
-<p>The core idea is simple but powerful:
-1.  A developer pushes a code change to a repository (e.g., on GitHub, GitLab).
-2.  This push automatically triggers a process on a server called a "runner" or "agent".
-3.  The runner creates a clean, temporary environment.
-4.  It checks out the latest code.
-5.  It installs the project's dependencies.
-6.  It runs the entire test suite using <code>pytest</code>.
-7.  It reports the result:
-    *   <strong>Success:</strong> All tests passed. The change is considered safe to merge.
-    *   <strong>Failure:</strong> At least one test failed. The change is flagged as problematic, preventing broken code from being integrated.</p>
-<p>This automated process acts as a safety net for your entire team. It ensures that no change can break the existing functionality without immediate detection. It's the foundation of modern, high-quality software development.</p>
-<p>In this chapter, we'll move pytest from your local machine into this automated world. We'll explore how to set up CI pipelines on popular platforms to run your tests automatically, providing constant feedback and protecting your codebase. The commands you've learned, like <code>pytest</code>, remain the same; we're just changing <em>who</em> (or what) runs them.</p>
-<h2 id="github-actions-for-python-testing">GitHub Actions for Python Testing</h2>
-<h2 id="github-actions-for-python-testing_1">GitHub Actions for Python Testing</h2>
-<p>GitHub Actions is a CI/CD system built directly into GitHub. If your code is hosted there, it's one of the easiest ways to get started with automation. Workflows are defined in YAML files placed in a special directory within your project.</p>
-<h3 id="the-wrong-way-manual-testing">The Wrong Way: Manual Testing</h3>
-<p>Imagine you have a simple project with a <code>requirements.txt</code> and a <code>tests/</code> directory. The manual process is:</p>
-<ol>
-<li><code>git pull</code> to get the latest code.</li>
-<li><code>pip install -r requirements.txt</code> to update dependencies.</li>
-<li><code>pytest</code> to run the tests.</li>
-</ol>
-<p>This is fine for one person, but it doesn't scale and is prone to human error. Let's automate it.</p>
-<h3 id="setting-up-your-first-workflow">Setting Up Your First Workflow</h3>
-<p>To create a GitHub Action, you need to create a YAML file in the <code>.github/workflows/</code> directory of your repository. Let's call our file <code>ci.yml</code>.</p>
-<p>First, let's create a simple project structure to test.</p>
-<p><strong>Project Structure:</strong></p>
-<div class="codehilite"><pre><span></span><code>my_project/
-├── .github/
-│   └── workflows/
-│       └── ci.yml
-├── src/
-│   └── calculator.py
-├── tests/
-│   └── test_calculator.py
-└── requirements.txt
+<h2 id="the-problem-the-fragility-of-manual-testing">The Problem: The Fragility of Manual Testing</h2>
+<p>So far, we have mastered writing and running tests on our local machines. We type <code>pytest</code> in our terminal, see the green dots, and feel confident about our code. This is a crucial first step, but it's fundamentally fragile and doesn't scale in a team environment.</p>
+<p>This process relies entirely on individual discipline. What happens when:
+- A developer is in a hurry and forgets to run the tests before pushing a change?
+- A new team member's machine has a slightly different version of a dependency, causing their tests to pass while they would fail elsewhere?
+- A change passes all tests on Python 3.11, but breaks compatibility with Python 3.8, which your project is supposed to support?</p>
+<p>Relying on "remembering to run tests" is a recipe for disaster. The solution is to automate the process, creating an impartial, consistent gatekeeper that validates every change. This is the world of Continuous Integration (CI).</p>
+<h3 id="what-is-continuous-integration">What is Continuous Integration?</h3>
+<p>Continuous Integration (CI) is a development practice where developers frequently merge their code changes into a central repository, after which automated builds and tests are run. The key goals are to find and address bugs quicker, improve software quality, and reduce the time it takes to validate and release new software updates.</p>
+<p>A typical CI workflow looks like this:
+1.  <strong>Commit:</strong> A developer commits code to a shared repository (e.g., on GitHub, GitLab).
+2.  <strong>Trigger:</strong> The commit automatically triggers a process on a CI server.
+3.  <strong>Build:</strong> The CI server checks out the code, creates a clean, isolated environment, and installs all necessary dependencies.
+4.  <strong>Test:</strong> The server runs the entire test suite using a command like <code>pytest</code>.
+5.  <strong>Report:</strong> The server reports the status (pass or fail) back to the developer and the team.</p>
+<p>If any test fails, the build is marked as "broken." The team is notified immediately, and the faulty change can be identified and fixed before it gets merged into the main codebase.</p>
+<h3 id="phase-1-establish-the-reference-implementation">Phase 1: Establish the Reference Implementation</h3>
+<p>To explore CI/CD, we need a simple but realistic project. This will be our <strong>anchor example</strong> for the entire chapter. We'll build a simple <code>wallet</code> application that can handle deposits, withdrawals, and check balances.</p>
+<p>First, let's set up the project structure.</p>
+<div class="codehilite"><pre><span></span><code>mkdir<span class="w"> </span>wallet_project
+<span class="nb">cd</span><span class="w"> </span>wallet_project
+touch<span class="w"> </span>wallet.py<span class="w"> </span>tests/test_wallet.py<span class="w"> </span>requirements.txt
+mkdir<span class="w"> </span>tests
 </code></pre></div>
 
-<p>Here's the code for our simple project.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># src/calculator.py</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="n">b</span><span class="p">):</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Adds two numbers together.&quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">a</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">))</span> <span class="ow">or</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">)):</span>
-        <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span><span class="s2">&quot;Both arguments must be numbers&quot;</span><span class="p">)</span>
-    <span class="k">return</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
+<p>Here is the initial implementation of our <code>wallet</code> module.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># wallet.py</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">InsufficientAmount</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Custom exception for when a withdrawal is larger than the balance.&quot;&quot;&quot;</span>
+    <span class="k">pass</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">Wallet</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A simple wallet class to hold a balance.&quot;&quot;&quot;</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">initial_amount</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">initial_amount</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">))</span> <span class="ow">or</span> <span class="n">initial_amount</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Initial amount must be a non-negative number.&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">=</span> <span class="n">initial_amount</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">spend_cash</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">amount</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">amount</span> <span class="o">&gt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">balance</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">InsufficientAmount</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;You cannot spend </span><span class="si">{</span><span class="n">amount</span><span class="si">}</span><span class="s2">, you only have </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">balance</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">-=</span> <span class="n">amount</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_cash</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">amount</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">+=</span> <span class="n">amount</span>
 </code></pre></div>
 
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_calculator.py</span>
+<p>And here are the corresponding tests.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_wallet.py</span>
+
 <span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">src.calculator</span><span class="w"> </span><span class="kn">import</span> <span class="n">add</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">wallet</span><span class="w"> </span><span class="kn">import</span> <span class="n">Wallet</span><span class="p">,</span> <span class="n">InsufficientAmount</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_add_integers</span><span class="p">():</span>
-    <span class="k">assert</span> <span class="n">add</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">)</span> <span class="o">==</span> <span class="mi">5</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">empty_wallet</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Returns a Wallet instance with a zero balance.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">Wallet</span><span class="p">()</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_add_floats</span><span class="p">():</span>
-    <span class="k">assert</span> <span class="n">add</span><span class="p">(</span><span class="mf">2.5</span><span class="p">,</span> <span class="mf">3.5</span><span class="p">)</span> <span class="o">==</span> <span class="mf">6.0</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">fixture</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">wallet_with_20</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Returns a Wallet instance with a balance of 20.&quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_add_raises_type_error_for_strings</span><span class="p">():</span>
-    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="ne">TypeError</span><span class="p">):</span>
-        <span class="n">add</span><span class="p">(</span><span class="s2">&quot;two&quot;</span><span class="p">,</span> <span class="s2">&quot;three&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_default_initial_amount</span><span class="p">(</span><span class="n">empty_wallet</span><span class="p">):</span>
+    <span class="k">assert</span> <span class="n">empty_wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">0</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_setting_initial_amount</span><span class="p">(</span><span class="n">wallet_with_20</span><span class="p">):</span>
+    <span class="k">assert</span> <span class="n">wallet_with_20</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">20</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_wallet_add_cash</span><span class="p">(</span><span class="n">wallet_with_20</span><span class="p">):</span>
+    <span class="n">wallet_with_20</span><span class="o">.</span><span class="n">add_cash</span><span class="p">(</span><span class="mi">80</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">wallet_with_20</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">100</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_wallet_spend_cash</span><span class="p">(</span><span class="n">wallet_with_20</span><span class="p">):</span>
+    <span class="n">wallet_with_20</span><span class="o">.</span><span class="n">spend_cash</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">wallet_with_20</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">10</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_wallet_spend_cash_raises_exception_on_insufficient_amount</span><span class="p">(</span><span class="n">empty_wallet</span><span class="p">):</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">InsufficientAmount</span><span class="p">):</span>
+        <span class="n">empty_wallet</span><span class="o">.</span><span class="n">spend_cash</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span>
 </code></pre></div>
 
+<p>Finally, we need a <code>requirements.txt</code> file to specify our dependencies, which for now is just pytest.</p>
 <div class="codehilite"><pre><span></span><code># requirements.txt
 pytest
 </code></pre></div>
 
-<p>Now, let's create the GitHub Actions workflow file. This file tells GitHub what to do when code is pushed.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># .github/workflows/ci.yml</span>
+<p>We can run our tests locally and see that everything passes.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements.txt
+$<span class="w"> </span><span class="nv">pytest</span>
+<span class="o">=============================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==============================</span>
+...
+collected<span class="w"> </span><span class="m">5</span><span class="w"> </span>items
 
-<span class="c1"># A name for the workflow, which will be displayed on GitHub</span>
-<span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Python CI</span>
+tests/test_wallet.py<span class="w"> </span>.....<span class="w">                                               </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
 
-<span class="c1"># Trigger the workflow on pushes and pull requests to the &#39;main&#39; branch</span>
+<span class="o">==============================</span><span class="w"> </span><span class="m">5</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.01s<span class="w"> </span><span class="o">===============================</span>
+</code></pre></div>
+
+<p>This is our starting point. The code works, the tests pass, but the process is manual. Our goal in this chapter is to build a robust, automated system around this simple project.</p>
+<h2 id="github-actions-for-python-testing">GitHub Actions for Python Testing</h2>
+<h2 id="iteration-1-automating-tests-with-github-actions">Iteration 1: Automating Tests with GitHub Actions</h2>
+<p>Our tests work locally, but this relies on developer discipline. We want to create a safety net that automatically runs our test suite for every change proposed to our main branch.</p>
+<h3 id="current-limitation-the-manual-bottleneck">Current Limitation: The Manual Bottleneck</h3>
+<p>The biggest problem with our current setup is its manual nature. A developer could easily push code that breaks a test they forgot to run. For example, imagine a developer "refactors" the <code>Wallet</code> constructor but introduces a bug.</p>
+<p>Let's simulate this. A developer changes <code>wallet.py</code> to accept a string for the initial amount, which is incorrect behavior.</p>
+<p><strong>Before (Correct):</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># wallet.py (original)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Wallet</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">initial_amount</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">initial_amount</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">float</span><span class="p">))</span> <span class="ow">or</span> <span class="n">initial_amount</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Initial amount must be a non-negative number.&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">=</span> <span class="n">initial_amount</span>
+    <span class="c1"># ... rest of the class</span>
+</code></pre></div>
+
+<p><strong>After (Bug Introduced):</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># wallet.py (with bug)</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Wallet</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">initial_amount</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+        <span class="c1"># BUG: This no longer validates the type correctly!</span>
+        <span class="c1"># It allows strings, which will cause errors later.</span>
+        <span class="k">if</span> <span class="n">initial_amount</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Initial amount must be a non-negative number.&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">=</span> <span class="n">initial_amount</span>
+    <span class="c1"># ... rest of the class</span>
+</code></pre></div>
+
+<p>The developer forgets to add a test for invalid types and pushes the code. The existing tests still pass because they only use numbers. The bug now lies dormant in our codebase, waiting to cause a production issue.</p>
+<h3 id="the-new-scenario-automated-pull-request-checks">The New Scenario: Automated Pull Request Checks</h3>
+<p>We need a system that does the following:
+1.  Watches for any new Pull Request (PR) or a push to the <code>main</code> branch.
+2.  Spins up a clean environment.
+3.  Installs our project's dependencies.
+4.  Runs our complete <code>pytest</code> suite.
+5.  Reports a clear "pass" or "fail" status directly on the PR.</p>
+<p>This is a perfect job for GitHub Actions.</p>
+<h3 id="technique-introduced-github-actions-workflows">Technique Introduced: GitHub Actions Workflows</h3>
+<p>GitHub Actions is a CI/CD platform built directly into GitHub. You define your automation workflows in YAML files placed in a special directory: <code>.github/workflows/</code>.</p>
+<p>A workflow is composed of:
+-   <strong>Events (<code>on</code>)</strong>: Triggers that start the workflow (e.g., <code>push</code>, <code>pull_request</code>).
+-   <strong>Jobs</strong>: A set of steps that execute on a specific runner.
+-   <strong>Runners (<code>runs-on</code>)</strong>: The virtual machine environment to run the job (e.g., <code>ubuntu-latest</code>).
+-   <strong>Steps (<code>steps</code>)</strong>: Individual commands or actions that are executed in sequence.</p>
+<h3 id="solution-implementation">Solution Implementation</h3>
+<p>Let's create our first workflow. Create the directory <code>.github/workflows</code> in your project root and add the following file.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># .github/workflows/python-tests.yml</span>
+
+<span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Python Tests</span>
+
+<span class="c1"># 1. Controls when the workflow will run</span>
 <span class="nt">on</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">push</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">branches</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="s">&quot;main&quot;</span><span class="w"> </span><span class="p p-Indicator">]</span>
 <span class="w">  </span><span class="nt">pull_request</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">branches</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="s">&quot;main&quot;</span><span class="w"> </span><span class="p p-Indicator">]</span>
 
-<span class="c1"># Define the jobs to be run. We only have one job here: &#39;build&#39;.</span>
+<span class="c1"># 2. A workflow run is made up of one or more jobs that can run sequentially or in parallel</span>
 <span class="nt">jobs</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">build</span><span class="p">:</span>
-<span class="w">    </span><span class="c1"># The type of runner that the job will run on.</span>
-<span class="w">    </span><span class="c1"># &#39;ubuntu-latest&#39; is a good default.</span>
+<span class="w">    </span><span class="c1"># 3. The type of runner that the job will run on</span>
 <span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ubuntu-latest</span>
 
-<span class="w">    </span><span class="c1"># A job is a sequence of steps.</span>
+<span class="w">    </span><span class="c1"># 4. Steps represent a sequence of tasks that will be executed as part of the job</span>
 <span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
-<span class="w">      </span><span class="c1"># Step 1: Check out the repository code so the runner can access it.</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Check out repository</span>
-<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/checkout@v4</span>
+<span class="w">      </span><span class="c1"># 5. Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Checkout code</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/checkout@v3</span>
 
-<span class="w">      </span><span class="c1"># Step 2: Set up a specific version of Python.</span>
+<span class="w">      </span><span class="c1"># 6. Sets up a specific version of Python</span>
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Set up Python 3.10</span>
-<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/setup-python@v5</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/setup-python@v4</span>
 <span class="w">        </span><span class="nt">with</span><span class="p">:</span>
 <span class="w">          </span><span class="nt">python-version</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;3.10&quot;</span>
 
-<span class="w">      </span><span class="c1"># Step 3: Install project dependencies.</span>
-<span class="w">      </span><span class="c1"># This is the same command you&#39;d run locally.</span>
+<span class="w">      </span><span class="c1"># 7. Installs dependencies</span>
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Install dependencies</span>
 <span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
 <span class="w">          </span><span class="no">python -m pip install --upgrade pip</span>
 <span class="w">          </span><span class="no">pip install -r requirements.txt</span>
 
-<span class="w">      </span><span class="c1"># Step 4: Run pytest.</span>
-<span class="w">      </span><span class="c1"># The core of our CI pipeline!</span>
+<span class="w">      </span><span class="c1"># 8. Runs pytest</span>
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Run tests with pytest</span>
-<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pytest</span>
-</code></pre></div>
-
-<h3 id="how-it-works">How It Works</h3>
-<p>Let's break down the YAML file:</p>
-<ul>
-<li><strong><code>name</code></strong>: The name of your workflow, shown in the "Actions" tab on GitHub.</li>
-<li><strong><code>on</code></strong>: Defines the events that trigger this workflow. Here, it runs on any <code>push</code> or <code>pull_request</code> to the <code>main</code> branch.</li>
-<li><strong><code>jobs</code></strong>: A workflow is made up of one or more jobs. Our job is named <code>build</code>.</li>
-<li><strong><code>runs-on</code></strong>: Specifies the virtual environment to run the job in. <code>ubuntu-latest</code> is a common and reliable choice.</li>
-<li><strong><code>steps</code></strong>: This is the sequence of tasks the job will execute.<ul>
-<li><code>uses: actions/checkout@v4</code>: This is a pre-built action that downloads your repository's code into the runner.</li>
-<li><code>uses: actions/setup-python@v5</code>: Another pre-built action that installs a specific Python version.</li>
-<li><code>run: ...</code>: This executes shell commands. We use it to install our dependencies from <code>requirements.txt</code> and then to run <code>pytest</code>.</li>
-</ul>
-</li>
-</ul>
-<p>Once you commit and push this file, go to the "Actions" tab of your repository on GitHub. You'll see your workflow running automatically!</p>
-<h3 id="testing-on-multiple-python-versions">Testing on Multiple Python Versions</h3>
-<p>What if your project needs to support Python 3.9, 3.10, and 3.11? Running tests on all versions manually is tedious. With CI, it's trivial. We can use a <code>strategy</code> matrix to run the same job multiple times with different Python versions.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># .github/workflows/ci.yml (updated with a matrix)</span>
-
-<span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Python CI</span>
-
-<span class="nt">on</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">push</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">branches</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="s">&quot;main&quot;</span><span class="w"> </span><span class="p p-Indicator">]</span>
-<span class="w">  </span><span class="nt">pull_request</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">branches</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="w"> </span><span class="s">&quot;main&quot;</span><span class="w"> </span><span class="p p-Indicator">]</span>
-
-<span class="nt">jobs</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">build</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ubuntu-latest</span>
-
-<span class="w">    </span><span class="c1"># Define a matrix strategy</span>
-<span class="w">    </span><span class="nt">strategy</span><span class="p">:</span>
-<span class="w">      </span><span class="c1"># Don&#39;t cancel all jobs if one fails</span>
-<span class="w">      </span><span class="nt">fail-fast</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
-<span class="w">      </span><span class="nt">matrix</span><span class="p">:</span>
-<span class="w">        </span><span class="c1"># List the Python versions to test against</span>
-<span class="w">        </span><span class="nt">python-version</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;3.9&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;3.10&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;3.11&quot;</span><span class="p p-Indicator">]</span>
-
-<span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Check out repository</span>
-<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/checkout@v4</span>
-
-<span class="w">      </span><span class="c1"># Use the python-version from the matrix</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Set up Python ${{ matrix.python-version }}</span>
-<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/setup-python@v5</span>
-<span class="w">        </span><span class="nt">with</span><span class="p">:</span>
-<span class="w">          </span><span class="nt">python-version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ matrix.python-version }}</span>
-
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Install dependencies</span>
 <span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
-<span class="w">          </span><span class="no">python -m pip install --upgrade pip</span>
-<span class="w">          </span><span class="no">pip install -r requirements.txt</span>
-
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Run tests with pytest</span>
-<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pytest</span>
+<span class="w">          </span><span class="no">pytest</span>
 </code></pre></div>
 
-<p>With this change, GitHub will now automatically start three separate jobs in parallel, one for each Python version specified in the <code>matrix</code>. The <code>${{ matrix.python-version }}</code> syntax is how you access the current value from the matrix within your steps.</p>
-<p>This is a massive leap in testing robustness. You can be confident that your code works across all supported Python versions with every single change you make.</p>
+<p>Let's break this down:
+1.  <strong><code>on</code></strong>: This workflow triggers on any <code>push</code> or <code>pull_request</code> targeting the <code>main</code> branch.
+2.  <strong><code>jobs</code></strong>: We define a single job named <code>build</code>.
+3.  <strong><code>runs-on</code></strong>: The job will run on the latest version of Ubuntu provided by GitHub.
+4.  <strong><code>steps</code></strong>: This is the core logic.
+5.  <strong><code>actions/checkout@v3</code></strong>: A pre-built "action" that downloads your repository's code onto the runner.
+6.  <strong><code>actions/setup-python@v4</code></strong>: Another pre-built action that installs a specific Python version (we've chosen 3.10).
+7.  <strong><code>Install dependencies</code></strong>: A custom step that runs shell commands to upgrade pip and install the packages from <code>requirements.txt</code>.
+8.  <strong><code>Run tests with pytest</code></strong>: The final step, which executes our test suite. If <code>pytest</code> exits with a non-zero status code (i.e., if any test fails), GitHub Actions will automatically fail the entire job.</p>
+<h3 id="verification">Verification</h3>
+<p>After committing this file and pushing it to GitHub, you will see a new "Actions" tab in your repository. When you open a pull request, a check will appear at the bottom:</p>
+<div class="codehilite"><pre><span></span><code>✓ Some checks were successful
+  Python Tests / build (pull_request) Successful in 1m 15s
+</code></pre></div>
+
+<p>A green checkmark means your tests passed! If a test had failed, you would see a red "X", preventing a merge (if your branch protection rules are configured) and allowing you to click through to see the full <code>pytest</code> output log. Our manual process is now automated.</p>
+<h3 id="limitation-preview">Limitation Preview</h3>
+<p>This is a huge improvement. We now have an automated quality gate. However, it only tests against a single Python version (3.10). What if our <code>wallet</code> library needs to support users on Python 3.8, 3.9, and 3.11 as well? Our current setup gives us a false sense of security. We'll address this multi-environment problem later in the chapter.</p>
 <h2 id="gitlab-ci-integration">GitLab CI Integration</h2>
-<h2 id="gitlab-ci-integration_1">GitLab CI Integration</h2>
-<p>GitLab has its own powerful, integrated CI/CD system. The concepts are identical to GitHub Actions—automating setup and test execution—but the syntax is different. Workflows are defined in a single file named <code>.gitlab-ci.yml</code> at the root of your repository.</p>
-<h3 id="the-gitlab-ciyml-file">The <code>.gitlab-ci.yml</code> File</h3>
-<p>GitLab CI is built around the concepts of <strong>stages</strong> and <strong>jobs</strong>. A typical pipeline might have stages like <code>build</code>, <code>test</code>, and <code>deploy</code>. Jobs are assigned to stages and run in order.</p>
-<p>Let's create a <code>.gitlab-ci.yml</code> for the same calculator project.</p>
+<h2 id="iteration-2-adapting-to-gitlab-ci">Iteration 2: Adapting to GitLab CI</h2>
+<p>While GitHub Actions is popular, many teams and organizations use other platforms like GitLab. The core principles of CI are universal, but the syntax and configuration are platform-specific.</p>
+<h3 id="current-state-recap">Current State Recap</h3>
+<p>We have a working CI pipeline in GitHub Actions that automatically runs our pytest suite on every pull request.</p>
+<h3 id="new-scenario-migrating-to-gitlab">New Scenario: Migrating to GitLab</h3>
+<p>Imagine our company decides to standardize on GitLab for all its projects. We need to replicate our automated testing setup in GitLab's CI/CD system. The goal remains the same: run <code>pytest</code> in a clean environment on every commit.</p>
+<h3 id="technique-introduced-gitlab-cicd-and-gitlab-ciyml">Technique Introduced: GitLab CI/CD and <code>.gitlab-ci.yml</code></h3>
+<p>GitLab CI/CD is configured with a file named <code>.gitlab-ci.yml</code> in the root of the repository. Its structure is conceptually similar to GitHub Actions but with different keywords.</p>
+<p>Key concepts in GitLab CI:
+-   <strong><code>image</code></strong>: Specifies the Docker image to use for the job's environment. This is a powerful feature that lets you define your entire toolchain in a container.
+-   <strong><code>stages</code></strong>: Defines the sequence of the pipeline (e.g., <code>build</code>, <code>test</code>, <code>deploy</code>). Jobs in the same stage can run in parallel.
+-   <strong>Job Name (e.g., <code>pytest-run</code>)</strong>: A top-level key that defines a job.
+-   <strong><code>stage</code></strong>: Assigns a job to a specific stage.
+-   <strong><code>script</code></strong>: A list of shell commands to be executed by the runner for that job.</p>
+<h3 id="solution-implementation_1">Solution Implementation</h3>
+<p>Here is the equivalent of our GitHub Actions workflow, written for GitLab CI.</p>
 <div class="codehilite"><pre><span></span><code><span class="c1"># .gitlab-ci.yml</span>
 
-<span class="c1"># Define the stages for the pipeline. Jobs will run in this order.</span>
-<span class="nt">stages</span><span class="p">:</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test</span>
-
-<span class="c1"># Use a Docker image that comes with Python 3.10 pre-installed.</span>
-<span class="c1"># This is the environment where our commands will run.</span>
+<span class="c1"># 1. Use an official Python Docker image.</span>
 <span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">python:3.10</span>
 
-<span class="c1"># This block of commands runs before each job.</span>
-<span class="c1"># It&#39;s a great place for setup tasks like installing dependencies.</span>
-<span class="nt">before_script</span><span class="p">:</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">python -m pip install --upgrade pip</span>
-<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pip install -r requirements.txt</span>
-
-<span class="c1"># Define a job named &#39;pytest_job&#39;. It belongs to the &#39;test&#39; stage.</span>
-<span class="nt">pytest_job</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">stage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test</span>
-<span class="w">  </span><span class="c1"># The actual commands to execute for this job.</span>
-<span class="w">  </span><span class="nt">script</span><span class="p">:</span>
-<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pytest</span>
-</code></pre></div>
-
-<h3 id="how-it-works_1">How It Works</h3>
-<ul>
-<li><strong><code>stages</code></strong>: We define a single stage named <code>test</code>.</li>
-<li><strong><code>image</code></strong>: This is a key concept in GitLab CI. It specifies a Docker image to use for the job's environment. By using <code>python:3.10</code>, we get a clean environment with Python 3.10 ready to go, saving us a setup step.</li>
-<li><strong><code>before_script</code></strong>: These commands are executed before the <code>script</code> section of any job. It's the perfect place to install dependencies, ensuring they are available for the test run.</li>
-<li><strong><code>pytest_job</code></strong>: This is the name of our job.<ul>
-<li><code>stage: test</code>: Assigns this job to the <code>test</code> stage.</li>
-<li><code>script</code>: The list of shell commands to execute. Here, we simply run <code>pytest</code>.</li>
-</ul>
-</li>
-</ul>
-<p>When you push this file to a GitLab repository, the pipeline will automatically start, create a Docker container from the <code>python:3.10</code> image, run the <code>before_script</code> commands, and finally execute the <code>pytest</code> command.</p>
-<h3 id="testing-on-multiple-python-versions-in-gitlab">Testing on Multiple Python Versions in GitLab</h3>
-<p>Just like with GitHub Actions, we can test against multiple Python versions using a matrix.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># .gitlab-ci.yml (updated with a matrix)</span>
-
+<span class="c1"># 2. Define the stages of the pipeline.</span>
 <span class="nt">stages</span><span class="p">:</span>
 <span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test</span>
 
-<span class="c1"># We don&#39;t define a global image anymore, as each job will specify its own.</span>
-
-<span class="nt">pytest_job</span><span class="p">:</span>
+<span class="c1"># 3. Define the job that runs pytest.</span>
+<span class="nt">run-pytest</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">stage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test</span>
-<span class="w">  </span><span class="c1"># The script is the same for all matrix jobs.</span>
-<span class="w">  </span><span class="nt">script</span><span class="p">:</span>
+
+<span class="w">  </span><span class="c1"># 4. Commands to run before the main script.</span>
+<span class="w">  </span><span class="nt">before_script</span><span class="p">:</span>
 <span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">python -m pip install --upgrade pip</span>
 <span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pip install -r requirements.txt</span>
+
+<span class="w">  </span><span class="c1"># 5. The main script to execute.</span>
+<span class="w">  </span><span class="nt">script</span><span class="p">:</span>
 <span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pytest</span>
 
-<span class="w">  </span><span class="c1"># Define the matrix strategy</span>
-<span class="w">  </span><span class="nt">parallel</span><span class="p">:</span>
-<span class="w">    </span><span class="nt">matrix</span><span class="p">:</span>
-<span class="w">      </span><span class="c1"># Define a variable named PYTHON_VERSION with a list of values.</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">PYTHON_VERSION</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;3.9&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;3.10&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;3.11&quot;</span><span class="p p-Indicator">]</span>
-
-<span class="w">  </span><span class="c1"># Use the matrix variable to select the Docker image for each job.</span>
-<span class="w">  </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">python:${PYTHON_VERSION}</span>
+<span class="c1"># Optional: Cache dependencies to speed up subsequent runs.</span>
+<span class="nt">cache</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">paths</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">.cache/pip</span>
 </code></pre></div>
 
-<p>Here's the updated logic:</p>
+<p>Let's compare this to the GitHub Actions file:
+1.  <strong><code>image: python:3.10</code></strong>: This replaces <code>runs-on: ubuntu-latest</code> and the <code>actions/setup-python</code> step. We start with a Docker image that already has Python 3.10 installed.
+2.  <strong><code>stages</code></strong>: We define a single <code>test</code> stage.
+3.  <strong><code>run-pytest</code></strong>: This is our job definition.
+4.  <strong><code>before_script</code></strong>: This is a convenient place for setup commands like installing dependencies. It's analogous to our "Install dependencies" step in GitHub Actions.
+5.  <strong><code>script</code></strong>: This contains the core command, <code>pytest</code>, just like our final step in the GitHub workflow.</p>
+<h3 id="verification_1">Verification</h3>
+<p>Once you commit <code>.gitlab-ci.yml</code> and push it to a GitLab repository, the pipeline will automatically trigger. In the GitLab UI, under "CI/CD &gt; Pipelines," you will see your pipeline running. A successful run will show a green "passed" status for the <code>run-pytest</code> job. A failure will be marked in red, and you can click into the job to view the logs and see the <code>pytest</code> failure output.</p>
+<h3 id="when-to-apply-this-solution">When to Apply This Solution</h3>
 <ul>
-<li>We removed the global <code>image</code> and <code>before_script</code>.</li>
-<li>The <code>pytest_job</code> now has a <code>parallel: matrix</code> section. This tells GitLab to create multiple parallel jobs based on the variables defined.</li>
-<li>We define a variable <code>PYTHON_VERSION</code> with our target versions.</li>
-<li>In the <code>image</code> key for the job, we use <code>python:${PYTHON_VERSION}</code>. GitLab substitutes this variable for each job, so it will use <code>image: python:3.9</code>, <code>image: python:3.10</code>, and so on.</li>
-<li>The setup commands are now moved inside the <code>script</code> block, as they need to run in each of the parallel jobs.</li>
+<li><strong>GitHub Actions</strong>: Choose when your project is hosted on GitHub. It has excellent integration with the GitHub ecosystem (Pull Requests, Issues, etc.) and a vast marketplace of pre-built actions.</li>
+<li><strong>GitLab CI</strong>: Choose when your project is hosted on GitLab. It's known for its powerful, all-in-one DevOps platform capabilities, including a built-in container registry and security scanning tools.</li>
 </ul>
-<p>The principle is the same as with GitHub Actions: define your variations in a matrix and use a variable to apply that variation to your job's configuration. The result is a robust test suite that runs automatically across all your supported environments.</p>
+<p>The core takeaway is that the <em>commands</em> you run (<code>pip install</code>, <code>pytest</code>) are the same. The CI configuration is just the "wrapper" that tells the platform <em>how</em> and <em>when</em> to run them.</p>
 <h2 id="jenkins-and-other-ci-systems">Jenkins and Other CI Systems</h2>
-<h2 id="jenkins-and-other-ci-systems_1">Jenkins and Other CI Systems</h2>
-<p>While GitHub Actions and GitLab CI are popular choices for projects hosted on their respective platforms, many other CI/CD systems exist, such as Jenkins, CircleCI, Travis CI, and Bitbucket Pipelines. Jenkins is one of the oldest and most powerful, often used for complex, self-hosted enterprise workflows.</p>
-<p>The good news is that the core principles are universal. No matter the system, you will always perform these steps:
-1.  Define a trigger (e.g., on commit).
-2.  Specify an execution environment (e.g., a Docker container, a specific virtual machine).
-3.  Check out the code.
-4.  Run shell commands to install dependencies.
-5.  Run shell commands to execute tests.</p>
-<p>The only thing that changes is the syntax of the configuration file.</p>
-<h3 id="jenkins-and-the-jenkinsfile">Jenkins and the <code>Jenkinsfile</code></h3>
-<p>Jenkins pipelines are typically defined in a file named <code>Jenkinsfile</code> in the root of the repository. This is called "pipeline-as-code."</p>
-<p>Here is a simple declarative <code>Jenkinsfile</code> that accomplishes the same task as our previous examples. This example assumes Jenkins is configured to run jobs inside a Docker container.</p>
+<h2 id="iteration-3-integrating-with-jenkins">Iteration 3: Integrating with Jenkins</h2>
+<p>Many large enterprises or long-standing projects use self-hosted CI systems like Jenkins. Jenkins is incredibly powerful and extensible but often requires more explicit configuration than modern cloud-native platforms.</p>
+<h3 id="current-state-recap_1">Current State Recap</h3>
+<p>We know how to configure CI pipelines for both GitHub and GitLab.</p>
+<h3 id="new-scenario-a-corporate-mandate-for-jenkins">New Scenario: A Corporate Mandate for Jenkins</h3>
+<p>Our new team uses a central Jenkins server for all builds. We need to create a Jenkins pipeline for our <code>wallet_project</code> to enforce the same automated testing standards.</p>
+<h3 id="technique-introduced-the-jenkinsfile">Technique Introduced: The <code>Jenkinsfile</code></h3>
+<p>Jenkins pipelines are typically defined using a <code>Jenkinsfile</code>, which is a text file that contains the definition of a Jenkins Pipeline and is checked into source control. This is known as "Pipeline as Code."</p>
+<p>Key concepts in a declarative <code>Jenkinsfile</code>:
+-   <strong><code>pipeline</code></strong>: The top-level block that encloses the entire definition.
+-   <strong><code>agent</code></strong>: Specifies where the pipeline will execute. <code>any</code> means it can run on any available Jenkins agent. You can also specify Docker images here.
+-   <strong><code>stages</code></strong>: A block containing a sequence of one or more <code>stage</code> directives.
+-   <strong><code>stage</code></strong>: Defines a distinct part of the pipeline (e.g., 'Build', 'Test').
+-   <strong><code>steps</code></strong>: Contains the actual commands to be run within a <code>stage</code>.
+-   <strong><code>sh</code></strong>: A step that executes a shell command.</p>
+<h3 id="solution-implementation_2">Solution Implementation</h3>
+<p>Here is a <code>Jenkinsfile</code> that accomplishes the same task as our previous CI configurations.</p>
 <div class="codehilite"><pre><span></span><code><span class="c1">// Jenkinsfile</span>
 
 <span class="n">pipeline</span><span class="w"> </span><span class="o">{</span>
-<span class="w">    </span><span class="c1">// Define the agent (execution environment) for the entire pipeline.</span>
-<span class="w">    </span><span class="c1">// Here, we use a Docker container with Python 3.10.</span>
-<span class="w">    </span><span class="n">agent</span><span class="w"> </span><span class="o">{</span>
-<span class="w">        </span><span class="n">docker</span><span class="w"> </span><span class="o">{</span><span class="w"> </span><span class="n">image</span><span class="w"> </span><span class="s1">&#39;python:3.10&#39;</span><span class="w"> </span><span class="o">}</span>
-<span class="w">    </span><span class="o">}</span>
+<span class="w">    </span><span class="c1">// 1. Specify the execution environment</span>
+<span class="w">    </span><span class="n">agent</span><span class="w"> </span><span class="n">any</span>
 
-<span class="w">    </span><span class="c1">// Define the stages of the pipeline.</span>
+<span class="w">    </span><span class="c1">// 2. Define the stages of the pipeline</span>
 <span class="w">    </span><span class="n">stages</span><span class="w"> </span><span class="o">{</span>
-<span class="w">        </span><span class="c1">// The &#39;Test&#39; stage</span>
-<span class="w">        </span><span class="n">stage</span><span class="o">(</span><span class="s1">&#39;Test&#39;</span><span class="o">)</span><span class="w"> </span><span class="o">{</span>
-<span class="w">            </span><span class="c1">// The steps to execute in this stage.</span>
+<span class="w">        </span><span class="n">stage</span><span class="o">(</span><span class="s1">&#39;Setup Environment&#39;</span><span class="o">)</span><span class="w"> </span><span class="o">{</span>
 <span class="w">            </span><span class="n">steps</span><span class="w"> </span><span class="o">{</span>
-<span class="w">                </span><span class="c1">// The &#39;sh&#39; step executes a shell command.</span>
-<span class="w">                </span><span class="n">sh</span><span class="w"> </span><span class="s1">&#39;python -m pip install --upgrade pip&#39;</span>
+<span class="w">                </span><span class="c1">// 3. Use sh to run shell commands</span>
+<span class="w">                </span><span class="n">sh</span><span class="w"> </span><span class="s1">&#39;python3 -m venv venv&#39;</span>
+<span class="w">                </span><span class="n">sh</span><span class="w"> </span><span class="s1">&#39;source venv/bin/activate&#39;</span>
+<span class="w">                </span><span class="n">sh</span><span class="w"> </span><span class="s1">&#39;pip install --upgrade pip&#39;</span>
 <span class="w">                </span><span class="n">sh</span><span class="w"> </span><span class="s1">&#39;pip install -r requirements.txt&#39;</span>
+<span class="w">            </span><span class="o">}</span>
+<span class="w">        </span><span class="o">}</span>
+<span class="w">        </span><span class="n">stage</span><span class="o">(</span><span class="s1">&#39;Run Tests&#39;</span><span class="o">)</span><span class="w"> </span><span class="o">{</span>
+<span class="w">            </span><span class="n">steps</span><span class="w"> </span><span class="o">{</span>
+<span class="w">                </span><span class="n">sh</span><span class="w"> </span><span class="s1">&#39;source venv/bin/activate&#39;</span>
 <span class="w">                </span><span class="n">sh</span><span class="w"> </span><span class="s1">&#39;pytest&#39;</span>
 <span class="w">            </span><span class="o">}</span>
 <span class="w">        </span><span class="o">}</span>
@@ -650,174 +670,69 @@ pytest
 <span class="o">}</span>
 </code></pre></div>
 
-<h3 id="how-it-works_2">How It Works</h3>
-<ul>
-<li><strong><code>pipeline</code></strong>: The top-level block that defines the entire workflow.</li>
-<li><strong><code>agent</code></strong>: Specifies where the pipeline will run. Using <code>agent { docker { ... } }</code> is a modern best practice, ensuring a clean, reproducible environment for every run, just like with GitLab CI.</li>
-<li><strong><code>stages</code></strong>: A container for one or more <code>stage</code> blocks.</li>
-<li><strong><code>stage('Test')</code></strong>: Defines a logical stage of the pipeline. In the Jenkins UI, you'll see the progress of each stage.</li>
-<li><strong><code>steps</code></strong>: The actual work happens here.</li>
-<li><strong><code>sh '...'</code></strong>: The command to execute a shell script. This is where we run our familiar <code>pip</code> and <code>pytest</code> commands.</li>
-</ul>
-<h3 id="the-universal-takeaway">The Universal Takeaway</h3>
-<p>Don't get bogged down in the specific syntax of each platform. Instead, focus on the pattern. Your <code>pytest</code> command is the heart of the operation. The CI system is just a wrapper—an automated shell—that prepares an environment and runs that command for you.</p>
-<p>If you need to use a new CI system, your task is to look up its documentation for the following:
-1.  How do I specify a Python environment (or Docker image)?
-2.  How do I check out code?
-3.  How do I run a shell command?</p>
-<p>Once you know those three things, you can run your pytest suite anywhere.</p>
+<p>This <code>Jenkinsfile</code> is more verbose. Let's analyze it:
+1.  <strong><code>agent any</code></strong>: We're not picky about the runner machine.
+2.  <strong><code>stages</code></strong>: We've broken the work into two logical stages: setup and testing.
+3.  <strong><code>steps</code></strong>:
+    -   Unlike the managed environments in GitHub/GitLab, with a basic Jenkins agent we often need to create our own virtual environment (<code>venv</code>) to isolate dependencies.
+    -   We <code>source</code> the activation script to use the venv.
+    -   We install dependencies and then run <code>pytest</code>.</p>
+<p>Note: This is a basic example. Advanced Jenkins setups can use Docker agents, which simplifies the environment setup to be more like GitLab CI (<code>agent { docker 'python:3.10' }</code>).</p>
+<h3 id="a-note-on-other-ci-systems-circleci-travis-ci-etc">A Note on Other CI Systems (CircleCI, Travis CI, etc.)</h3>
+<p>You will encounter many other CI systems. The good news is that they all follow the same fundamental pattern:
+1.  A YAML or script-based configuration file in your repository.
+2.  A way to define the trigger (e.g., on push).
+3.  A way to specify the environment (e.g., OS, language version, Docker image).
+4.  A sequence of shell commands to execute (<code>pip install</code>, <code>pytest</code>).</p>
+<p>Once you understand the pattern, learning a new CI system becomes a simple matter of looking up the specific syntax for that platform. The core logic of your tests and setup remains the same.</p>
 <h2 id="generating-test-reports">Generating Test Reports</h2>
-<h2 id="generating-test-reports_1">Generating Test Reports</h2>
-<p>When a CI pipeline fails, the log output tells you what went wrong. However, scrolling through hundreds of lines of text to find the error can be inefficient. Most CI systems can parse structured test reports to provide a much better user interface, showing a summary of test results, highlighting failures, and tracking test duration.</p>
-<p>The two most common report formats are <strong>JUnit XML</strong> and <strong>HTML</strong>.</p>
-<h3 id="junit-xml-reports-for-ci-integration">JUnit XML Reports for CI Integration</h3>
-<p>JUnit is a testing framework for Java, but its XML report format has become a de facto standard for CI/CD systems. Pytest can generate these reports easily.</p>
-<p>To generate a JUnit XML report, use the <code>--junitxml</code> command-line flag.</p>
-<p>Let's modify our CI scripts to generate and save this report.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># Command to run in your CI script</span>
-pytest<span class="w"> </span>--junitxml<span class="o">=</span>report.xml
+<h2 id="iteration-4-from-logs-to-actionable-reports">Iteration 4: From Logs to Actionable Reports</h2>
+<p>Our CI pipeline currently gives us a binary pass/fail signal. When a test fails, we have to scroll through potentially hundreds of lines of raw text logs in the CI interface to find the <code>pytest</code> traceback. This is inefficient, especially for large test suites.</p>
+<h3 id="current-limitation-parsing-raw-text-logs">Current Limitation: Parsing Raw Text Logs</h3>
+<p>Imagine a test run with 500 tests, where two have failed. The CI log might look like this:</p>
+<div class="codehilite"><pre><span></span><code>...
+tests/test_something.py .................................... [ 10%]
+tests/test_another.py ..F................................... [ 20%]
+...
+tests/test_final.py .................F...................... [ 99%]
+================================= FAILURES =================================
+____________________________ test_some_failure _____________________________
+... (50 lines of traceback) ...
+____________________________ test_another_failure __________________________
+... (50 lines of traceback) ...
+=========================== short test summary info ============================
+FAILED tests/test_another.py::test_some_failure - AssertionError: assert 1 == 2
+FAILED tests/test_final.py::test_another_failure - ValueError
+========================= 2 failed, 498 passed in 30.5s ========================
+Error: Process completed with exit code 1.
 </code></pre></div>
 
-<p>This command runs your tests as usual, but it also creates a file named <code>report.xml</code> with the structured results.</p>
-<p>The next step is to tell the CI system that this file is an "artifact"—a file that should be saved and associated with the pipeline run.</p>
-<h4 id="github-actions-example-with-reports">GitHub Actions Example with Reports</h4>
-<div class="codehilite"><pre><span></span><code><span class="c1"># .github/workflows/ci.yml (with reporting)</span>
-
-<span class="c1"># ... (name, on, jobs, runs-on, strategy sections are the same) ...</span>
-
-<span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Check out repository</span>
-<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/checkout@v4</span>
-
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Set up Python ${{ matrix.python-version }}</span>
-<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/setup-python@v5</span>
-<span class="w">        </span><span class="nt">with</span><span class="p">:</span>
-<span class="w">          </span><span class="nt">python-version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ matrix.python-version }}</span>
-
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Install dependencies</span>
-<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
-<span class="w">          </span><span class="no">python -m pip install --upgrade pip</span>
-<span class="w">          </span><span class="no">pip install -r requirements.txt</span>
-
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Run tests with pytest</span>
-<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pytest --junitxml=report.xml</span>
-
-<span class="w">      </span><span class="c1"># New Step: Upload the test report as an artifact</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Upload test report</span>
-<span class="w">        </span><span class="c1"># This condition ensures the step runs even if previous steps fail</span>
-<span class="w">        </span><span class="nt">if</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">always()</span>
-<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/upload-artifact@v4</span>
-<span class="w">        </span><span class="nt">with</span><span class="p">:</span>
-<span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pytest-report-${{ matrix.python-version }}</span>
-<span class="w">          </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">report.xml</span>
-</code></pre></div>
-
-<p>The new <code>Upload test report</code> step uses the <code>actions/upload-artifact</code> action. After the workflow run is complete, you can download the <code>report.xml</code> file from the workflow summary page. Many GitHub Apps can also parse these reports to provide richer feedback directly in pull requests.</p>
-<h4 id="gitlab-ci-example-with-reports">GitLab CI Example with Reports</h4>
-<div class="codehilite"><pre><span></span><code><span class="c1"># .gitlab-ci.yml (with reporting)</span>
-
-<span class="c1"># ... (stages, etc. are the same) ...</span>
-
-<span class="nt">pytest_job</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">stage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test</span>
-<span class="w">  </span><span class="nt">script</span><span class="p">:</span>
-<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pip install -r requirements.txt</span>
-<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pytest --junitxml=report.xml</span>
-
-<span class="w">  </span><span class="c1"># New Section: Define artifacts</span>
-<span class="w">  </span><span class="nt">artifacts</span><span class="p">:</span>
-<span class="w">    </span><span class="c1"># This condition ensures artifacts are saved even if the job fails</span>
-<span class="w">    </span><span class="nt">when</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">always</span>
-<span class="w">    </span><span class="nt">paths</span><span class="p">:</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">report.xml</span>
-<span class="w">    </span><span class="c1"># Specify the report type for better UI integration</span>
-<span class="w">    </span><span class="nt">reports</span><span class="p">:</span>
-<span class="w">      </span><span class="nt">junit</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">report.xml</span>
-</code></pre></div>
-
-<p>GitLab has first-class support for JUnit reports. By adding the <code>artifacts</code> section and specifying <code>reports: junit</code>, GitLab will automatically parse the <code>report.xml</code> file. In a merge request, it will show a summary of test changes, telling you which tests started failing, which were fixed, and which are new. This is incredibly valuable for code review.</p>
-<h3 id="html-reports-for-human-readable-output">HTML Reports for Human-Readable Output</h3>
-<p>While JUnit XML is great for machines, it's not easy for humans to read. For a visually appealing, shareable report, you can use the <code>pytest-html</code> plugin.</p>
-<p>First, add it to your <code>requirements.txt</code>.</p>
-<div class="codehilite"><pre><span></span><code># requirements.txt
-pytest
-pytest-html
-</code></pre></div>
-
-<p>Next, update your test command to generate an HTML report.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># Command to generate an HTML report</span>
-pytest<span class="w"> </span>--html<span class="o">=</span>report.html<span class="w"> </span>--self-contained-html
-</code></pre></div>
-
-<p>The <code>--self-contained-html</code> flag is useful for CI because it embeds the CSS into the HTML file, making it a single, portable file.</p>
-<p>You can then configure your CI pipeline to save this <code>report.html</code> as an artifact, just as we did with the XML file. This gives you a downloadable, browser-viewable report for every test run, which is excellent for manual inspection and archiving.</p>
-<h2 id="automated-testing-on-multiple-python-versions-tox">Automated Testing on Multiple Python Versions (tox)</h2>
-<h2 id="automated-testing-on-multiple-python-versions-tox_1">Automated Testing on Multiple Python Versions (tox)</h2>
-<p>We've seen how to configure CI platforms to run tests against a matrix of Python versions. This works, but it has a downside: the logic for installing dependencies and running tests is defined in the CI configuration file (e.g., <code>ci.yml</code>). If you want to run the same multi-version tests locally, you have to manually replicate those steps.</p>
-<p>This is the problem that <code>tox</code> solves. <strong>Tox is a command-line tool that automates and standardizes testing in Python.</strong> It allows you to define your test environments and commands in a single <code>tox.ini</code> file.</p>
-<h3 id="the-pain-before-tox">The Pain Before Tox</h3>
-<p>To test your project locally against Python 3.9 and 3.10, you would have to:
-1.  Make sure you have both Python 3.9 and 3.10 installed.
-2.  Create a virtual environment with Python 3.9.
-3.  Activate it and run <code>pip install -r requirements.txt</code>.
-4.  Run <code>pytest</code>.
-5.  Deactivate and delete the virtual environment.
-6.  Repeat steps 2-5 for Python 3.10.</p>
-<p>This is tedious and error-prone. <code>tox</code> automates this entire process.</p>
-<h3 id="setting-up-tox">Setting Up <code>tox</code></h3>
-<p>First, install <code>tox</code> and add it to your requirements (or a <code>requirements-dev.txt</code>).</p>
-<div class="codehilite"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>tox
-</code></pre></div>
-
-<p>Next, create a <code>tox.ini</code> file in your project's root directory.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tox.ini</span>
-
-<span class="k">[tox]</span>
-<span class="c1"># Define the environments to run by default.</span>
-<span class="c1"># &#39;py39&#39; means &quot;run with Python 3.9&quot;.</span>
-<span class="na">envlist</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">py39, py310, py311</span>
-
-<span class="k">[testenv]</span>
-<span class="c1"># Define dependencies needed for testing.</span>
-<span class="c1"># This is separate from your main requirements.txt.</span>
-<span class="na">deps</span><span class="w"> </span><span class="o">=</span>
-<span class="w">    </span><span class="na">pytest</span>
-<span class="w">    </span><span class="na">pytest-html</span>
-
-<span class="c1"># Define the command(s) to run for testing.</span>
-<span class="na">commands</span><span class="w"> </span><span class="o">=</span>
-<span class="w">    </span><span class="na">pytest --junitxml</span><span class="o">=</span><span class="s">report.xml --html=report.html</span>
-</code></pre></div>
-
-<h3 id="how-it-works_3">How It Works</h3>
+<p>Finding the relevant information requires careful reading and scrolling. We can do better.</p>
+<h3 id="new-scenario-creating-structured-test-artifacts">New Scenario: Creating Structured Test Artifacts</h3>
+<p>We want our CI job to produce a structured report that can be easily parsed by machines and humans. The two most common formats are:
+1.  <strong>JUnit XML</strong>: A standard format for test results that many CI platforms (like Jenkins and GitLab) can parse to provide a rich UI for test failures.
+2.  <strong>HTML</strong>: A human-readable report with summaries, charts, and filterable results.</p>
+<h3 id="technique-introduced-pytest-reporting-options">Technique Introduced: Pytest Reporting Options</h3>
+<p>Pytest has built-in support for generating JUnit XML reports and can be extended with plugins for other formats.</p>
 <ul>
-<li><strong><code>[tox]</code> section</strong>:<ul>
-<li><code>envlist</code>: This is the list of environments <code>tox</code> will manage. When you run the <code>tox</code> command, it will execute the test suite for each environment in this list: <code>py39</code> (Python 3.9), <code>py310</code> (Python 3.10), and <code>py311</code> (Python 3.11).</li>
+<li><code>--junitxml=PATH</code>: This command-line option tells pytest to generate a report in the JUnit XML format and save it to the specified <code>PATH</code>.</li>
+<li><code>pytest-html</code>: A popular plugin that generates a self-contained HTML report. You install it (<code>pip install pytest-html</code>) and use the <code>--html=PATH</code> flag.</li>
 </ul>
-</li>
-<li><strong><code>[testenv]</code> section</strong>:<ul>
-<li>This is a template for each environment defined in <code>envlist</code>.</li>
-<li><code>deps</code>: A list of dependencies to install into the temporary virtual environment that <code>tox</code> creates.</li>
-<li><code>commands</code>: The commands to execute within that environment.</li>
-</ul>
-</li>
-</ul>
-<p>Now, from your terminal, you can simply run:</p>
-<div class="codehilite"><pre><span></span><code>tox
+<p>After generating these files, we need to tell our CI system to save them as <strong>build artifacts</strong>—files that are associated with a specific job run and can be downloaded or viewed from the CI interface.</p>
+<h3 id="solution-implementation-updating-github-actions">Solution Implementation: Updating GitHub Actions</h3>
+<p>Let's modify our <code>.github/workflows/python-tests.yml</code> to generate and upload both types of reports.</p>
+<p><strong>Before:</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># .github/workflows/python-tests.yml (partial)</span>
+<span class="w">      </span><span class="c1"># ... (previous steps) ...</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Run tests with pytest</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">pytest</span>
 </code></pre></div>
 
-<p><code>tox</code> will perform the following actions automatically:
-1.  Look for <code>python3.9</code> on your system. If found, it creates a new virtual environment.
-2.  Installs <code>pytest</code> and <code>pytest-html</code> into that environment.
-3.  Runs the <code>pytest ...</code> command.
-4.  Repeats the process for <code>python3.10</code> and <code>python3.11</code>.
-5.  Reports a summary of which environments passed or failed.</p>
-<h3 id="integrating-tox-with-ci">Integrating <code>tox</code> with CI</h3>
-<p>The real power of <code>tox</code> comes from simplifying your CI configuration. Instead of telling your CI system <em>how</em> to test your code, you just tell it to run <code>tox</code>. The <code>tox.ini</code> file becomes the single source of truth for your testing procedure.</p>
-<p>Here is our GitHub Actions workflow, refactored to use <code>tox</code>.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># .github/workflows/ci.yml (refactored with tox)</span>
+<p><strong>After:</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># .github/workflows/python-tests.yml (updated)</span>
 
-<span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Python CI with tox</span>
+<span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Python Tests</span>
 
 <span class="nt">on</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">push</span><span class="p">:</span>
@@ -828,42 +743,333 @@ pytest<span class="w"> </span>--html<span class="o">=</span>report.html<span cla
 <span class="nt">jobs</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">build</span><span class="p">:</span>
 <span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ubuntu-latest</span>
+<span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Checkout code</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/checkout@v3</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Set up Python 3.10</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/setup-python@v4</span>
+<span class="w">        </span><span class="nt">with</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">python-version</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;3.10&quot;</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Install dependencies</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">python -m pip install --upgrade pip</span>
+<span class="w">          </span><span class="no"># Add pytest-html to requirements</span>
+<span class="w">          </span><span class="no">pip install -r requirements.txt</span>
+<span class="w">          </span><span class="no">pip install pytest-html</span>
+
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Run tests and generate reports</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">pytest --junitxml=junit/test-results.xml --html=report.html</span>
+
+<span class="w">      </span><span class="c1"># New step to upload artifacts</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Upload test reports</span>
+<span class="w">        </span><span class="c1"># This step runs only if the previous steps have failed</span>
+<span class="w">        </span><span class="nt">if</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">failure()</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/upload-artifact@v3</span>
+<span class="w">        </span><span class="nt">with</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test-reports</span>
+<span class="w">          </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">            </span><span class="no">junit/test-results.xml</span>
+<span class="w">            </span><span class="no">report.html</span>
+</code></pre></div>
+
+<p>We also need to add <code>pytest-html</code> to our <code>requirements.txt</code>.</p>
+<p>Key changes:
+1.  <strong>Install <code>pytest-html</code></strong>: We added the installation command.
+2.  <strong>Update <code>pytest</code> command</strong>: We added the <code>--junitxml</code> and <code>--html</code> flags to generate the report files.
+3.  <strong>Add <code>actions/upload-artifact@v3</code> step</strong>: This is a crucial new step.
+    -   <code>if: failure()</code>: This condition ensures that we only upload the reports when the tests fail. This saves storage and keeps the artifacts section clean on successful runs.
+    -   <code>with: name: test-reports</code>: We give the artifact bundle a name.
+    -   <code>with: path: ...</code>: We specify which files/directories to upload.</p>
+<h3 id="verification_2">Verification</h3>
+<p>Now, when a test fails in a pull request, the GitHub Actions run will still fail, but you will see a new section on the summary page called "Artifacts" with a downloadable <code>test-reports.zip</code> file.</p>
+<p>Inside the zip, you'll find:
+-   <code>test-results.xml</code>: A structured XML file.
+-   <code>report.html</code>: A rich, interactive HTML file you can open in your browser. It will clearly list which tests failed, show the error messages, and provide environment details, making debugging much faster.</p>
+<p>This moves us from hunting through logs to analyzing structured, purpose-built reports.</p>
+<h2 id="automated-testing-on-multiple-python-versions-tox">Automated Testing on Multiple Python Versions (tox)</h2>
+<h2 id="iteration-5-conquering-the-multi-version-matrix">Iteration 5: Conquering the Multi-Version Matrix</h2>
+<p>Our CI setup is getting robust, but it has a critical blind spot: it only validates our code against a single Python version. If we are developing a library intended for wide use, we must ensure it works across all supported Python versions.</p>
+<h3 id="current-limitation-a-single-point-of-view">Current Limitation: A Single Point of View</h3>
+<p>Our GitHub Action is hardcoded to use Python 3.10.
+<code>python-version: "3.10"</code></p>
+<p>Let's introduce a bug that only manifests on an older Python version. The <code>match</code> statement was introduced in Python 3.10. Let's "refactor" our <code>Wallet</code> to use it.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># wallet.py (with Python 3.10+ specific syntax)</span>
+
+<span class="c1"># ... (imports and InsufficientAmount exception) ...</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">Wallet</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">initial_amount</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+        <span class="c1"># ... (init logic) ...</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">=</span> <span class="n">initial_amount</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">spend_cash</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">amount</span><span class="p">):</span>
+        <span class="c1"># ... (spend logic) ...</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">-=</span> <span class="n">amount</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_cash</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">amount</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">+=</span> <span class="n">amount</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_status</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns a status string based on the balance.&quot;&quot;&quot;</span>
+        <span class="k">match</span> <span class="bp">self</span><span class="o">.</span><span class="n">balance</span><span class="p">:</span>
+            <span class="k">case</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="k">return</span> <span class="s2">&quot;Empty&quot;</span>
+            <span class="k">case</span> <span class="n">b</span> <span class="k">if</span> <span class="n">b</span> <span class="o">&lt;</span> <span class="mi">100</span><span class="p">:</span>
+                <span class="k">return</span> <span class="s2">&quot;Low balance&quot;</span>
+            <span class="k">case</span><span class="w"> </span><span class="k">_</span><span class="p">:</span>
+                <span class="k">return</span> <span class="s2">&quot;Healthy balance&quot;</span>
+</code></pre></div>
+
+<p>Our existing tests don't cover the <code>get_status</code> method. Let's add one.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_wallet.py (appended)</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_wallet_status</span><span class="p">(</span><span class="n">wallet_with_20</span><span class="p">):</span>
+    <span class="k">assert</span> <span class="n">wallet_with_20</span><span class="o">.</span><span class="n">get_status</span><span class="p">()</span> <span class="o">==</span> <span class="s2">&quot;Low balance&quot;</span>
+</code></pre></div>
+
+<h3 id="failure-demonstration">Failure Demonstration</h3>
+<p>When we push this code, our CI pipeline, which runs on Python 3.10, will <strong>pass</strong>! Everything seems fine.</p>
+<p>However, if a user tries to install our package in a project running Python 3.8, their application will crash with a <code>SyntaxError</code> the moment <code>wallet.py</code> is imported. Our CI gave us a false sense of security because it wasn't testing the environments our users are actually in.</p>
+<h3 id="diagnostic-analysis-reading-the-failure">Diagnostic Analysis: Reading the Failure</h3>
+<p>If we were to run this locally with Python 3.8, we'd see this:</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>python3.8<span class="w"> </span>-m<span class="w"> </span>pytest
+...
+ERROR<span class="w"> </span>collecting<span class="w"> </span>tests/test_wallet.py
+...
+tests/test_wallet.py:4:<span class="w"> </span><span class="k">in</span><span class="w"> </span>&lt;module&gt;
+<span class="w">    </span>from<span class="w"> </span>wallet<span class="w"> </span>import<span class="w"> </span>Wallet,<span class="w"> </span>InsufficientAmount
+wallet.py:23:<span class="w"> </span><span class="k">in</span><span class="w"> </span>&lt;module&gt;
+<span class="w">    </span>class<span class="w"> </span>Wallet:
+wallet.py:35:<span class="w"> </span><span class="k">in</span><span class="w"> </span>Wallet
+<span class="w">    </span>match<span class="w"> </span>self.balance:
+E<span class="w">   </span>SyntaxError:<span class="w"> </span>invalid<span class="w"> </span>syntax
+</code></pre></div>
+
+<p><strong>Let's parse this</strong>:
+1.  <strong>The summary line</strong>: <code>ERROR collecting tests/test_wallet.py</code> - The error happens before any tests can even run.
+2.  <strong>The traceback</strong>: The error isn't in the test file itself, but in <code>wallet.py</code> when <code>test_wallet.py</code> tries to import it.
+3.  <strong>Key line</strong>: <code>match self.balance: ... SyntaxError: invalid syntax</code>. This is the smoking gun. Python 3.8 doesn't understand the <code>match</code> statement.</p>
+<p><strong>Root cause identified</strong>: We used syntax specific to a newer Python version than what we claim to support.
+<strong>Why the current approach can't solve this</strong>: Our CI only runs on one Python version, so it's completely blind to compatibility issues with other versions.
+<strong>What we need</strong>: A way to run our test suite against a matrix of Python versions automatically.</p>
+<h3 id="technique-introduced-tox-for-local-environment-management">Technique Introduced: <code>tox</code> for Local Environment Management</h3>
+<p>Before we even get to CI, managing multiple Python environments locally is a pain. This is the problem <code>tox</code> was built to solve. <code>tox</code> is a command-line tool that automates testing in isolated Python environments.</p>
+<p>You define your test environments in a configuration file, <code>tox.ini</code>.</p>
+<p>First, install tox: <code>pip install tox</code>. Then, create <code>tox.ini</code>:</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tox.ini</span>
+
+<span class="k">[tox]</span>
+<span class="c1"># Define the Python versions you want to test against.</span>
+<span class="c1"># tox will look for python3.8, python3.9, etc. on your system&#39;s PATH.</span>
+<span class="na">envlist</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">py38, py39, py310, py311</span>
+
+<span class="k">[testenv]</span>
+<span class="c1"># For each environment, tox will execute these commands.</span>
+<span class="c1"># It automatically creates a virtual environment for each one.</span>
+<span class="na">deps</span><span class="w"> </span><span class="o">=</span>
+<span class="w">    </span><span class="na">pytest</span>
+<span class="w">    </span><span class="na">pytest-html</span>
+<span class="na">commands</span><span class="w"> </span><span class="o">=</span>
+<span class="w">    </span><span class="na">pytest --junitxml</span><span class="o">=</span><span class="s">junit/test-results-{envname}.xml --html=report-{envname}.html</span>
+</code></pre></div>
+
+<p>Now, instead of running <code>pytest</code> directly, you just run <code>tox</code>.</p>
+<p><code>tox</code> will:
+1.  Look for <code>python3.8</code> on your system. If found, it creates a virtual environment.
+2.  Installs the dependencies listed under <code>deps</code> into that venv.
+3.  Runs the commands listed under <code>commands</code>.
+4.  Repeats the process for <code>python3.9</code>, <code>python3.10</code>, and <code>py311</code>.</p>
+<p>This decouples your test execution from your CI runner's configuration. The CI runner's only job is to install <code>tox</code> and run it.</p>
+<h3 id="solution-implementation-combining-tox-and-github-actions-matrix">Solution Implementation: Combining <code>tox</code> and GitHub Actions Matrix</h3>
+<p>Now we can update our GitHub Actions workflow to use <code>tox</code> and a <strong>matrix strategy</strong>. A matrix allows you to run the same job multiple times with different parameters.</p>
+<p><strong>Before (CI defines the test steps):</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># .github/workflows/python-tests.yml (old version)</span>
+<span class="c1"># ...</span>
+<span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
+<span class="w">      </span><span class="c1"># ...</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Install dependencies</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pip install -r requirements.txt</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Run tests with pytest</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pytest</span>
+</code></pre></div>
+
+<p><strong>After (CI delegates to <code>tox</code>):</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># .github/workflows/python-tests.yml (final version)</span>
+
+<span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Python Tests</span>
+
+<span class="nt">on</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">push</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">pull_request</span><span class="p p-Indicator">]</span>
+
+<span class="nt">jobs</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">build</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ubuntu-latest</span>
+<span class="w">    </span><span class="c1"># 1. Define the matrix of Python versions</span>
 <span class="w">    </span><span class="nt">strategy</span><span class="p">:</span>
-<span class="w">      </span><span class="nt">fail-fast</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
 <span class="w">      </span><span class="nt">matrix</span><span class="p">:</span>
-<span class="w">        </span><span class="nt">python-version</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;3.9&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;3.10&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;3.11&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">        </span><span class="nt">python-version</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;3.8&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;3.9&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;3.10&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;3.11&quot;</span><span class="p p-Indicator">]</span>
 
 <span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Check out repository</span>
-<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/checkout@v4</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/checkout@v3</span>
 
+<span class="w">      </span><span class="c1"># 2. Set up the Python version for the current matrix job</span>
 <span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Set up Python ${{ matrix.python-version }}</span>
-<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/setup-python@v5</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/setup-python@v4</span>
 <span class="w">        </span><span class="nt">with</span><span class="p">:</span>
 <span class="w">          </span><span class="nt">python-version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ matrix.python-version }}</span>
 
-<span class="w">      </span><span class="c1"># Install tox</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Install tox</span>
-<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pip install tox</span>
+<span class="w">      </span><span class="c1"># 3. Install tox and run it</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Install and run tox</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">pip install tox</span>
+<span class="w">          </span><span class="no">tox -e py${{ matrix.python-version }}</span>
 
-<span class="w">      </span><span class="c1"># Run tox. Tox will select the correct environment based on the Python version.</span>
-<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Run tests with tox</span>
-<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">tox</span>
+<span class="w">      </span><span class="c1"># 4. Upload reports (optional, but good practice)</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Upload test reports</span>
+<span class="w">        </span><span class="nt">if</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">failure()</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/upload-artifact@v3</span>
+<span class="w">        </span><span class="nt">with</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">test-reports-${{ matrix.python-version }}</span>
+<span class="w">          </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">            </span><span class="no">junit/</span>
+<span class="w">            </span><span class="no">report-*.html</span>
 </code></pre></div>
 
-<p>Look how much simpler the testing logic is!</p>
-<ul>
-<li>The <code>Install dependencies</code> step is gone.</li>
-<li>The <code>Run tests with pytest</code> step is replaced with a simple <code>run: tox</code>.</li>
-</ul>
-<p>The CI runner sets up a specific Python version (e.g., 3.9), and when <code>tox</code> runs, it intelligently detects that it's running in a Python 3.9 environment and therefore only executes the <code>py39</code> test environment from <code>tox.ini</code>.</p>
-<p>This pattern is a professional best practice:
--   <strong>Single Source of Truth</strong>: The <code>tox.ini</code> file defines your test procedure for both local development and CI.
--   <strong>Reproducibility</strong>: Any developer can clone the repository, run <code>tox</code>, and get the exact same test results as the CI server.
--   <strong>Simplicity</strong>: Your CI configuration becomes minimal and declarative. It's only responsible for setting up environments, not for defining test logic.</p>
+<p>Key changes:
+1.  <strong><code>strategy: matrix:</code></strong>: This tells GitHub Actions to create a separate job for each version in the list: <code>3.8</code>, <code>3.9</code>, <code>3.10</code>, <code>3.11</code>.
+2.  <strong><code>Set up Python ${{ matrix.python-version }}</code></strong>: The <code>setup-python</code> action now uses the variable from the matrix to install the correct Python version for that specific job run.
+3.  <strong><code>tox -e py${{ matrix.python-version }}</code></strong>: The CI runner's job is now incredibly simple. It installs <code>tox</code> and tells it to run the single environment (<code>-e</code>) that matches the Python version of the current job. All the complex logic about dependencies and test commands now lives in <code>tox.ini</code>.</p>
+<h3 id="verification_3">Verification</h3>
+<p>When you push this change, you will see four parallel jobs start in your GitHub Actions run. The jobs for Python 3.10 and 3.11 will pass. The job for Python 3.8 will <strong>fail</strong>, and the log will show the <code>SyntaxError</code> we diagnosed earlier.</p>
+<p><strong>Our CI pipeline has successfully caught the cross-version compatibility bug!</strong></p>
+<p>To fix it, we would refactor the <code>get_status</code> method to use standard <code>if/elif/else</code> statements, making it compatible with all Python versions. After pushing the fix, all four CI jobs will turn green.</p>
+<h2 id="synthesis-the-complete-journey">Synthesis: The Complete Journey</h2>
+<h2 id="the-journey-from-problem-to-solution">The Journey: From Problem to Solution</h2>
+<p>We have transformed our testing process from a fragile, manual step into a robust, automated quality gate. Each iteration added a new layer of safety and sophistication.</p>
+<table>
+<thead>
+<tr>
+<th>Iteration</th>
+<th>Failure Mode / Limitation</th>
+<th>Technique Applied</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>Manual testing is error-prone and not scalable.</td>
+<td>None</td>
+<td>Initial state: local <code>pytest</code> runs.</td>
+</tr>
+<tr>
+<td>1</td>
+<td>Forgetting to run tests leads to bugs in <code>main</code>.</td>
+<td>Basic CI with GitHub Actions</td>
+<td>Tests run automatically on every PR.</td>
+</tr>
+<tr>
+<td>2</td>
+<td>CI configuration is tied to a specific platform.</td>
+<td>Adapting to GitLab CI, Jenkins</td>
+<td>Understanding of universal CI principles.</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Failure logs are hard to parse and analyze.</td>
+<td><code>--junitxml</code>, <code>pytest-html</code>, and build artifacts</td>
+<td>Structured, downloadable reports for easy debugging.</td>
+</tr>
+<tr>
+<td>4</td>
+<td>CI is blind to cross-version compatibility issues.</td>
+<td><code>tox</code> and CI Matrix Strategy</td>
+<td>Tests run against all supported Python versions, catching syntax/API errors.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="final-implementation">Final Implementation</h3>
+<p>Our final, production-ready testing setup for the <code>wallet_project</code> consists of these key files:</p>
+<p><strong>1. The Application Code (<code>wallet.py</code>)</strong>
+A well-tested Python module.</p>
+<p><strong>2. The Tests (<code>tests/test_wallet.py</code>)</strong>
+A standard pytest test suite.</p>
+<p><strong>3. The Test Environment Configuration (<code>tox.ini</code>)</strong>
+This file is the "source of truth" for how to test our application. It decouples the testing logic from the CI system.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># tox.ini</span>
+<span class="k">[tox]</span>
+<span class="na">envlist</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">py38, py39, py310, py311</span>
+
+<span class="k">[testenv]</span>
+<span class="na">deps</span><span class="w"> </span><span class="o">=</span>
+<span class="w">    </span><span class="na">pytest</span>
+<span class="w">    </span><span class="na">pytest-html</span>
+<span class="na">commands</span><span class="w"> </span><span class="o">=</span>
+<span class="w">    </span><span class="na">pytest --junitxml</span><span class="o">=</span><span class="s">junit/test-results-{envname}.xml --html=report-{envname}.html</span>
+</code></pre></div>
+
+<p><strong>4. The CI Workflow (<code>.github/workflows/python-tests.yml</code>)</strong>
+This file is now a simple "runner" that orchestrates <code>tox</code> across multiple Python versions.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># .github/workflows/python-tests.yml</span>
+<span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Python Tests</span>
+<span class="nt">on</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">push</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">pull_request</span><span class="p p-Indicator">]</span>
+<span class="nt">jobs</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">build</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">runs-on</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ubuntu-latest</span>
+<span class="w">    </span><span class="nt">strategy</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">matrix</span><span class="p">:</span>
+<span class="w">        </span><span class="nt">python-version</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">&quot;3.8&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;3.9&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;3.10&quot;</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">&quot;3.11&quot;</span><span class="p p-Indicator">]</span>
+<span class="w">    </span><span class="nt">steps</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/checkout@v3</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Set up Python ${{ matrix.python-version }}</span>
+<span class="w">        </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/setup-python@v4</span>
+<span class="w">        </span><span class="nt">with</span><span class="p">:</span>
+<span class="w">          </span><span class="nt">python-version</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">${{ matrix.python-version }}</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Install and run tox</span>
+<span class="w">        </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">|</span>
+<span class="w">          </span><span class="no">pip install tox</span>
+<span class="w">          </span><span class="no">tox -e py${{ matrix.python-version }}</span>
+</code></pre></div>
+
+<h3 id="decision-framework-which-approach-when">Decision Framework: Which Approach When?</h3>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Recommended Approach</th>
+<th>Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Private Application</strong> (single env)</td>
+<td>Basic CI (e.g., GitHub Actions) running <code>pytest</code> directly.</td>
+<td>Simple, direct, and sufficient if you control the deployment environment and don't need multi-version support.</td>
+</tr>
+<tr>
+<td><strong>Open Source / Reusable Library</strong></td>
+<td><strong><code>tox</code> + CI Matrix.</strong></td>
+<td>Essential. Your users will have diverse environments. <code>tox</code> ensures compatibility and makes it easy for contributors to run tests locally.</td>
+</tr>
+<tr>
+<td><strong>Complex Project with Multiple Steps</strong> (linting, docs, etc.)</td>
+<td><strong><code>tox</code> + CI Matrix.</strong> <code>tox</code> can define environments for more than just testing (e.g., <code>[testenv:lint]</code>, <code>[testenv:docs]</code>).</td>
+<td><code>tox</code> becomes the single entry point for all quality checks, simplifying the CI file and local development.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="lessons-learned">Lessons Learned</h3>
+<ol>
+<li><strong>Automate Everything</strong>: Human memory is fallible. An automated CI pipeline is the single most effective tool for maintaining code quality in a team.</li>
+<li><strong>CI Configuration is a Wrapper</strong>: The core commands (<code>pip install</code>, <code>pytest</code>) are universal. The CI file (<code>.yml</code>, <code>Jenkinsfile</code>) is just the syntax for telling a specific platform how to run them.</li>
+<li><strong>Treat Logs as a Last Resort</strong>: Generate and archive structured reports (XML, HTML). They provide far more insight, far more quickly, than raw text logs.</li>
+<li><strong>Decouple Test Logic from the CI Runner</strong>: This is the most profound lesson. By using <code>tox</code>, you define <em>how to test your project</em> inside your project's repository. The CI system's job is simplified to just preparing an environment and running <code>tox</code>. This makes your test setup portable across any CI system and easier for developers to run locally.</li>
+</ol>
         </div>
         <div class="footer">
-            Generated on 2025-11-22 17:25:04 | Made with ❤️ by GitHub Pages Generator
+            Generated on 2025-11-24 14:31:16 | Made with ❤️ by GitHub Pages Generator
         </div>
     </div>
     <script>

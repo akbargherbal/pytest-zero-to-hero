@@ -2,693 +2,619 @@
 
 ## Popular Pytest Plugins (pytest-html, pytest-xdist, pytest-sugar)
 
-## The Power of Plugins
+## The Power of Extensibility
 
-Pytest's core is powerful, but its true genius lies in its extensibility. The plugin ecosystem is what elevates pytest from a great test runner to a comprehensive testing framework that can adapt to any project's needs. Plugins are third-party packages that seamlessly integrate with pytest to add new features, change its behavior, or integrate with other tools.
+Pytest's core is powerful, but its true strength lies in its extensibility. The plugin system allows developers to alter or extend nearly every aspect of pytest's behavior, from test collection and execution to reporting. This has fostered a rich ecosystem of third-party plugins that can solve common testing problems with a simple `pip install`.
 
-Think of pytest as a high-performance car engine. Plugins are the turbochargers, custom dashboards, and advanced navigation systems you can add to it. You don't need to rebuild the engine to get new capabilities; you just install a component.
+In this chapter, we'll explore this ecosystem. We'll start by using some of the most popular plugins to solve real-world problems, then we'll dive into the mechanics of how plugins work, and finally, we'll build and package our own custom plugin.
 
-In this section, we'll explore three of the most popular and impactful plugins. We'll see how they solve common problems and dramatically improve the testing experience.
+### Phase 1: Establish the Reference Implementation
 
-### `pytest-html`: Creating Sharable Test Reports
+To see the value of plugins, we need a test suite with some tangible challenges. Let's create a simple data validation utility. Its job is to check data files for common issues. To simulate a real-world scenario, our tests will be intentionally a bit slow, making them a perfect candidate for optimization.
 
-**The Problem:** The command-line output of pytest is great for developers, but it's not ideal for sharing with managers, clients, or for archiving test results. You need a portable, human-readable report.
+Our anchor example will be a `DataValidator` that performs checks on CSV-like data.
 
-**The Solution:** `pytest-html` generates a self-contained HTML file summarizing the test run results.
-
-Let's start with a simple test suite.
+Here is the code for our utility:
 
 ```python
-# tests/test_reporting.py
-
-import pytest
+# project/validator.py
 import time
+import random
 
-def test_passing():
-    """A simple test that passes."""
-    assert (1, 2, 3) == (1, 2, 3)
+class DataValidationError(Exception):
+    pass
 
-def test_failing():
-    """A simple test that fails."""
-    assert "hello" == "world"
+class DataValidator:
+    def __init__(self, data_source):
+        # In a real app, this would read from a file or database
+        self.data = data_source.splitlines()
+        if not self.data:
+            raise DataValidationError("Data source is empty")
+        self.headers = self.data[0].split(',')
+        self.rows = [line.split(',') for line in self.data[1:]]
 
-@pytest.mark.skip(reason="Demonstration of a skipped test")
-def test_skipped():
-    """A test that is skipped."""
-    assert 1 == 1
+    def check_row_length(self):
+        """Simulates a check that all rows have the same number of columns as the header."""
+        time.sleep(0.1) # Simulate I/O and processing
+        header_len = len(self.headers)
+        for i, row in enumerate(self.rows):
+            if len(row) != header_len:
+                raise DataValidationError(f"Row {i+1} has incorrect length")
+        return True
 
-def test_slow_passing():
-    """A test that passes but takes some time."""
-    time.sleep(1)
-    assert True
+    def check_unique_id(self, column_name):
+        """Simulates a check for unique values in a given column."""
+        time.sleep(0.15) # Simulate a more expensive check
+        try:
+            idx = self.headers.index(column_name)
+        except ValueError:
+            raise DataValidationError(f"Column '{column_name}' not found")
+        
+        seen_ids = set()
+        for i, row in enumerate(self.rows):
+            row_id = row[idx]
+            if row_id in seen_ids:
+                raise DataValidationError(f"Duplicate ID '{row_id}' found in column '{column_name}'")
+            seen_ids.add(row_id)
+        return True
+
+    def check_value_range(self, column_name, min_val=0, max_val=100):
+        """Simulates checking that values in a column are within a numeric range."""
+        time.sleep(0.12) # Simulate another expensive check
+        try:
+            idx = self.headers.index(column_name)
+        except ValueError:
+            raise DataValidationError(f"Column '{column_name}' not found")
+
+        for i, row in enumerate(self.rows):
+            try:
+                val = int(row[idx])
+                if not (min_val <= val <= max_val):
+                    raise DataValidationError(f"Value {val} in row {i+1} is out of range ({min_val}-{max_val})")
+            except (ValueError, IndexError):
+                raise DataValidationError(f"Invalid numeric value in row {i+1}, column '{column_name}'")
+        return True
 ```
 
-First, let's install the plugin.
+And here is our initial test suite. We'll create a fixture to provide valid sample data.
+
+```python
+# tests/test_validator.py
+import pytest
+from project.validator import DataValidator, DataValidationError
+
+@pytest.fixture
+def valid_data():
+    """Provides a string of valid CSV data."""
+    return (
+        "id,name,value\n"
+        "1,alpha,10\n"
+        "2,beta,25\n"
+        "3,gamma,99\n"
+    )
+
+def test_valid_data_passes_all_checks(valid_data):
+    """A baseline test for valid data."""
+    validator = DataValidator(valid_data)
+    assert validator.check_row_length()
+    assert validator.check_unique_id(column_name="id")
+    assert validator.check_value_range(column_name="value", min_val=0, max_val=100)
+
+def test_incorrect_row_length_fails(valid_data):
+    """Tests that a row with a missing column raises an error."""
+    invalid_data = valid_data.replace("25", "25,extra_col")
+    validator = DataValidator(invalid_data)
+    with pytest.raises(DataValidationError, match="incorrect length"):
+        validator.check_row_length()
+
+def test_duplicate_id_fails():
+    """Tests that duplicate IDs are caught."""
+    # This test creates its own data to be independent
+    data = "id,name\n1,alpha\n1,beta"
+    validator = DataValidator(data)
+    with pytest.raises(DataValidationError, match="Duplicate ID '1'"):
+        validator.check_unique_id(column_name="id")
+
+def test_value_out_of_range_fails(valid_data):
+    """Tests that a value outside the specified range fails."""
+    invalid_data = valid_data.replace("99", "101")
+    validator = DataValidator(invalid_data)
+    with pytest.raises(DataValidationError, match="out of range"):
+        validator.check_value_range(column_name="value", min_val=0, max_val=100)
+```
+
+Let's run this suite and see the standard pytest output.
 
 ```bash
-pip install pytest-html
+$ pytest
+============================= test session starts ==============================
+platform linux -- Python 3.10.12, pytest-7.4.0, pluggy-1.2.0
+rootdir: /path/to/project
+collected 4 items
+
+tests/test_validator.py ....                                             [100%]
+
+============================== 4 passed in 1.51s ===============================
 ```
 
-Now, run pytest with a new command-line flag, `--html`, specifying the output file.
+Our test suite works, but it has three problems that plugins can solve:
+1.  **Readability**: The output is functional, but for larger suites, the simple dots (`....`) aren't very engaging or informative.
+2.  **Reporting**: If we need to share these results, terminal output isn't a professional or persistent format.
+3.  **Speed**: The suite took over 1.5 seconds for just four simple tests. As we add hundreds more, this will become a major bottleneck.
 
-```bash
-pytest --html=report.html
-```
+Let's tackle these one by one using popular plugins.
 
-This command runs your tests as usual, but it also creates a `report.html` file in your project root. Open this file in a web browser, and you'll see a detailed, interactive report with sortable columns, collapsible sections for error details, and a summary of the environment. This is a game-changer for communication and documentation.
+### Iteration 1: Improving Readability with `pytest-sugar`
 
-### `pytest-xdist`: Parallelizing Test Execution
+**Current Limitation**: The default pytest output is minimal. It doesn't show test names as they run, and the progress indicator is just a series of dots.
 
-**The Problem:** As your test suite grows, it gets slower. A suite that takes 10 minutes to run is a suite that developers run less frequently, which defeats the purpose of rapid feedback.
+`pytest-sugar` is a plugin that provides a much nicer user interface in the terminal, including a progress bar and instant feedback on failing tests.
 
-**The Solution:** `pytest-xdist` runs your tests in parallel across multiple CPU cores, dramatically reducing execution time.
-
-Let's use our previous example, which includes a slow test. First, let's time a normal run.
-
-```bash
-# The --durations=0 flag shows the execution time of all tests
-pytest --durations=0
-```
-
-The output will show that the total time is a little over 1 second, dominated by `test_slow_passing`.
-
-```text
-=========================== slowest 1 durations ============================
-1.01s call     tests/test_reporting.py::test_slow_passing
-================= 2 passed, 1 failed, 1 skipped in 1.05s ==================
-```
-
-Now, let's install `pytest-xdist`.
-
-```bash
-pip install pytest-xdist
-```
-
-To use it, add the `-n` (or `--numprocesses`) flag. A common choice is `auto`, which tells `pytest-xdist` to use the number of available CPU cores.
-
-```bash
-pytest -n auto
-```
-
-The output will look slightly different, showing workers being scheduled. The key takeaway is the final execution time. It will be significantly less than 1 second because `pytest-xdist` ran the fast tests on one core while the slow test ran on another. For large test suites, the speedup can be monumental, turning a 20-minute wait into a 5-minute one.
-
-**Important Note:** For `pytest-xdist` to work effectively, your tests must be independent of each other. Tests that rely on global state or a specific execution order will fail unpredictably when run in parallel. This is another reason why writing clean, isolated tests is so important.
-
-### `pytest-sugar`: A Sweeter Testing Experience
-
-**The Problem:** The default pytest output is functional but can be dense. When you have many tests, it's hard to get an at-a-glance feel for the progress.
-
-**The Solution:** `pytest-sugar` changes the default output to be more visually appealing and easier to read, with a progress bar, instant feedback on failing tests, and cleaner formatting.
-
-Let's install it.
+First, let's install it.
 
 ```bash
 pip install pytest-sugar
 ```
 
-That's it! There are no flags to add. `pytest-sugar` automatically activates itself upon installation. Now, just run `pytest`.
+Now, let's run our tests again with no other changes. `pytest-sugar` automatically activates itself upon installation.
 
 ```bash
-pytest
+$ pytest
+
+―――――――――――――――――――――――――――――― test session starts ―――――――――――――――――――――――――――――――
+platform linux -- Python 3.10.12, pytest-7.4.0, pluggy-1.2.0
+rootdir: /path/to/project
+plugins: sugar-1.0.0
+collected 4 items
+
+ tests/test_validator.py ✓✓✓✓                                           100% ██████████
+
+――――――――――――――――――――――――――――――――――― summary ――――――――――――――――――――――――――――――――――――
+✅ 4 passed in 1.52s
 ```
 
-Instead of the standard dots and `F`s, you'll see a beautiful progress bar. Passing tests get a checkmark, and failing tests are reported instantly with a clear diff.
+**Expected vs. Actual Improvement**: The output is immediately clearer. We get a progress bar, and the checkmarks (`✓`) give a more positive sense of progress than the dots. If a test were to fail, `pytest-sugar` would print the failure immediately instead of waiting for the entire run to finish, providing faster feedback. This simple plugin enhances the developer experience with zero configuration.
 
-```text
-――――――――――――――――――――――――――――――――――――― test_failing ―――――――――――――――――――――――――――――――――――――
+### Iteration 2: Generating Reports with `pytest-html`
 
-    def test_failing():
-        """A simple test that fails."""
->       assert "hello" == "world"
-E       assert 'hello' == 'world'
-E         - hello
-E         + world
+**Current Limitation**: Our test results vanish as soon as we close the terminal. We have no artifact to archive, email, or post on a dashboard.
 
-tests/test_reporting.py:11: AssertionError
-================================================================================
-Failing Tests (1)
-================================================================================
-tests/test_reporting.py:9 test_failing
+`pytest-html` solves this by generating a self-contained HTML report with the results of the test run.
 
-Results (0.03s):
-       2 passed
-       1 failed
-       1 skipped
+First, install it.
+
+```bash
+pip install pytest-html
 ```
 
-This immediate, clear feedback makes the development cycle faster and more pleasant. It's a small change that has a big impact on daily workflow.
+To use it, we run pytest with an extra command-line option, `--html`, specifying the output file.
+
+```bash
+pytest --html=report.html --self-contained-html
+```
+
+The run looks the same in the terminal (you'll still see the `pytest-sugar` output), but now you'll have a new file, `report.html`, in your directory. Opening it in a browser shows a detailed, professional report with information about your environment, a summary of results, and a detailed breakdown of each test, including its duration.
+
+This artifact is invaluable for continuous integration (CI) systems, quality assurance teams, and project managers.
+
+### Iteration 3: Speeding Up the Suite with `pytest-xdist`
+
+**Current Limitation**: Our tests run sequentially, one after another. The total time is the sum of all individual test times. Our four tests took ~1.5 seconds. A suite with 400 such tests would take over 2 minutes.
+
+`pytest-xdist` allows you to run tests in parallel, distributing them across multiple CPU cores. Since our tests are independent of each other, they are perfect candidates for parallelization.
+
+First, install it.
+
+```bash
+pip install pytest-xdist
+```
+
+To activate it, we use the `-n` flag to specify the number of parallel processes. A common choice is `auto`, which tells `pytest-xdist` to use the number of available CPU cores.
+
+```bash
+# First, let's get a baseline time without xdist
+$ time pytest -q
+....
+4 passed in 1.51s
+
+real    0m1.623s
+user    0m0.315s
+sys     0m0.048s
+
+# Now, let's run with xdist
+$ time pytest -q -n auto
+....
+4 passed in 0.55s
+
+real    0m0.897s
+user    0m0.641s
+sys     0m0.102s
+```
+
+**Expected vs. Actual Improvement**: The results are dramatic. The test session duration reported by pytest dropped from **1.51s** to **0.55s**—nearly a 3x speedup on a machine with 4 cores. The `real` time reported by the `time` command shows a similar improvement.
+
+`pytest-xdist` intelligently sends each test file to a different worker process. Because our tests are I/O-bound (due to `time.sleep`), parallelization allows the CPU to switch between them effectively, finishing the entire suite much faster than a sequential run. For large, slow test suites (e.g., those involving database access or network requests), `pytest-xdist` is an essential tool.
 
 ## Installing and Configuring Plugins
 
-## How Pytest Manages Plugins
+## Managing Your Plugins
 
-Pytest's plugin system is designed to be "zero-configuration" for the most part. Once a plugin is installed in your Python environment, pytest automatically discovers and activates it.
+As we saw in the previous section, using a plugin is typically a two-step process:
+1.  Install the package using `pip`.
+2.  Activate its functionality, either automatically or via a command-line flag.
 
-### The Discovery Mechanism
+### Installation
 
-How does this "magic" work? It relies on a standard Python packaging feature called **entry points**. When you `pip install` a package like `pytest-html`, the package's setup instructions tell `pip` to register it as a pytest plugin. When pytest starts, it queries the environment for all registered plugins and loads them.
-
-This is a powerful concept: you don't need to modify a central list or configuration file to add new functionality. Your project's dependencies, listed in `requirements.txt` or `pyproject.toml`, define the testing capabilities of your environment.
-
-### Installing a Plugin
-
-As we saw in the previous section, installation is as simple as using `pip`.
+Plugins are standard Python packages, so they are installed with `pip`:
 
 ```bash
-# Install a specific plugin
-pip install pytest-cov
-
-# Install multiple plugins from a requirements file
-pip install -r requirements-dev.txt
+pip install pytest-xdist
 ```
 
-To see which plugins are active in your environment, you can run `pytest --version`. It will list the installed plugins at the end of its output.
+It's crucial to manage these dependencies just like any other project dependency. You should add them to your `requirements.txt` or `pyproject.toml` file to ensure that your test environment is reproducible.
 
-### Configuring Plugin Behavior
+```text
+# requirements.txt
+pytest
+pytest-sugar
+pytest-html
+pytest-xdist
+```
 
-While plugins are auto-discovered, you often need to configure their behavior. For example, you might want to set a default number of parallel workers for `pytest-xdist` or always generate an HTML report.
+### Discovering Installed Plugins
 
-This is done in your pytest configuration file (`pytest.ini`, `pyproject.toml`, or `setup.cfg`). Configuration options are typically added under the `[pytest]` section.
+Pytest automatically discovers any installed packages that register as plugins. You can see which plugins are active in your environment by looking at the header of any pytest run:
 
-Let's create a `pytest.ini` file to configure the plugins we've discussed.
+```bash
+$ pytest --version
+pytest 7.4.0, pluggy 1.2.0
+plugins: sugar-1.0.0, html-4.0.1, xdist-3.3.1
+```
+
+For even more detail, you can use the `--trace-config` flag, which shows where each plugin was loaded from. This is extremely useful for debugging issues with plugin loading.
+
+```bash
+$ pytest --trace-config
+============================= test session starts ==============================
+# ... (lots of output)
+PLUGIN registered: <module 'sugar.plugin' from '/.../lib/python3.10/site-packages/sugar/plugin.py'>
+PLUGIN registered: <module 'pytest_html.plugin' from '/.../lib/python3.10/site-packages/pytest_html/plugin.py'>
+PLUGIN registered: <module 'pytest_xdist.plugin' from '/.../lib/python3.10/site-packages/pytest_xdist/plugin.py'>
+# ... (more output)
+```
+
+### Configuration
+
+Many plugins offer configuration options to customize their behavior. These are typically managed in your `pytest.ini`, `pyproject.toml`, or `setup.cfg` file, under a section named `[pytest]`.
+
+For example, you can set command-line options by default using `addopts`. Instead of typing `pytest -n auto --html=report.html` every time, you can configure it like this:
+
+**`pytest.ini`**
 
 ```ini
-# pytest.ini
-
 [pytest]
-# Add default command-line options here.
-# This avoids having to type them every time.
-addopts = -n auto --html=test-report/report.html --self-contained-html
-
-# Custom configuration for pytest-cov (Chapter 13)
-[coverage:run]
-source = my_project
+addopts = -n auto --html=report.html --self-contained-html
 ```
 
-Let's break down the `addopts` line:
+Now, simply running `pytest` will execute with those options automatically.
 
--   `-n auto`: This tells `pytest-xdist` to always use the maximum number of available processes. You no longer need to type it on the command line.
--   `--html=test-report/report.html`: This tells `pytest-html` to always generate a report at this path.
--   `--self-contained-html`: This is a specific option for `pytest-html` that embeds all CSS and JS into the HTML file, making it a single, easily shareable artifact.
+Plugins may also define their own custom configuration keys. For example, `pytest-html` allows you to customize the report title.
 
-Now, you can simply run `pytest` with no arguments, and it will behave as if you had typed all those options on the command line.
+**`pytest.ini`**
 
-```bash
-# This command will now run in parallel and generate a self-contained HTML report
-pytest
+```ini
+[pytest]
+addopts = -n auto --html=report.html --self-contained-html
+
+[pytest-html]
+report_title = My Project Test Report
 ```
 
-Each plugin documents its own available configuration options. Always check the plugin's official documentation to see what you can customize. Using a configuration file is a best practice for creating a consistent and reproducible testing environment for your entire team.
+Always consult the documentation for the specific plugin you are using to see the available configuration options.
 
 ## Creating Custom Plugins
 
-## From User to Creator: Your First Plugin
+## Extending Pytest Yourself
 
-Using third-party plugins is great, but the real power comes when you realize you can write your own. You don't need to publish a package to PyPI to create a plugin; you can start by adding custom hooks and fixtures directly inside your project.
+Using third-party plugins is powerful, but the real magic happens when you realize you can write your own. This allows you to create project-specific helpers, enforce custom conventions, or integrate with internal tools.
 
-The easiest place to do this is in a special file called `conftest.py`. Pytest automatically discovers any `conftest.py` file in your test directories and treats its contents as a **local plugin**, making its fixtures and hooks available to all tests at or below that directory level.
+The simplest way to create a plugin is to place code in a `conftest.py` file at your project's root. Pytest automatically discovers and loads this file, making any hooks or fixtures defined within it available to your entire test suite.
 
-### The Problem: Adding a Custom Command-Line Option
+### Iteration 4: Creating a Custom Test Timer Plugin
 
-Let's imagine we're testing a web application that can be deployed to different environments (e.g., `dev`, `staging`, `prod`). We want our tests to be able to target a specific environment. A great way to do this is with a custom command-line option, like `--env=staging`.
+**Current Limitation**: We know the total test suite duration, but we don't have an easy way to see the duration of each individual test or to flag tests that are unusually slow. While `pytest --durations` exists, building our own simple version is the best way to learn the plugin mechanism.
 
-### Step 1: Define the Option with a Hook
+**Goal**: We want to create a plugin that:
+1.  Times each test individually.
+2.  At the end of the run, prints a report of the 5 slowest tests.
 
-We can add a new option to the pytest command line by implementing the `pytest_addoption` hook in our `conftest.py` file.
+To do this, we need to tap into pytest's execution process. We'll use **hooks**, which are special functions that pytest calls at specific points during its lifecycle. We'll place our hook implementations in `conftest.py`.
 
-```python
-# tests/conftest.py
-
-def pytest_addoption(parser):
-    """Adds a custom command-line option to pytest."""
-    parser.addoption(
-        "--env", 
-        action="store", 
-        default="dev", 
-        help="Specify the test environment: dev, staging, or prod"
-    )
-```
-
-Let's break this down:
--   `pytest_addoption` is a special function name (a hook) that pytest calls during its startup phase.
--   `parser` is an object, similar to Python's `argparse`, that lets us define new options.
--   `parser.addoption()` registers our new `--env` flag.
-    -   `action="store"` means it will store the provided value.
-    -   `default="dev"` sets a default value if the flag isn't used.
-    -   `help` provides a description that will appear when you run `pytest --help`.
-
-Now, if you run `pytest --help`, you'll see your custom option listed!
-
-```bash
-$ pytest --help
-...
-custom options:
-  --env=ENV             Specify the test environment: dev, staging, or prod
-...
-```
-
-### Step 2: Make the Option Value Available to Tests
-
-Defining the option is only half the battle. We need a way for our tests to access the value that was passed on the command line. The best way to do this is with a fixture.
-
-Fixtures can access pytest's internal configuration using a special fixture named `request`.
+Here is the implementation for our simple timing plugin:
 
 ```python
 # tests/conftest.py
-import pytest
+import time
 
-def pytest_addoption(parser):
-    """Adds a custom command-line option to pytest."""
-    parser.addoption(
-        "--env", 
-        action="store", 
-        default="dev", 
-        help="Specify the test environment: dev, staging, or prod"
-    )
+def pytest_runtest_setup(item):
+    """Hook called before a test item is run."""
+    item.start_time = time.time()
 
-@pytest.fixture(scope="session")
-def test_env(request):
-    """A fixture to retrieve the value of the --env command-line option."""
-    return request.config.getoption("--env")
+def pytest_runtest_teardown(item, nextitem):
+    """Hook called after a test item is run."""
+    item.end_time = time.time()
+    item.duration = item.end_time - item.start_time
+
+def pytest_sessionfinish(session):
+    """Hook called after the entire test session finishes."""
+    reporter = session.config.pluginmanager.get_plugin('terminalreporter')
+    reporter.write_sep("=", "CUSTOM TEST DURATIONS REPORT")
+    
+    # Collect all items and their durations
+    all_items = [item for item in session.items if hasattr(item, 'duration')]
+    
+    # Sort by duration, descending
+    slowest_tests = sorted(all_items, key=lambda x: x.duration, reverse=True)
+    
+    # Report the top 5 slowest
+    reporter.write_line("\nTop 5 slowest tests:")
+    for item in slowest_tests[:5]:
+        reporter.write_line(f"{item.nodeid}: {item.duration:.4f}s")
 ```
 
-Here's the flow:
-1.  We define a new fixture called `test_env`. We give it `session` scope because the environment won't change during the test run.
-2.  This fixture takes the built-in `request` fixture as an argument.
-3.  `request.config` gives us access to pytest's configuration object.
-4.  `request.config.getoption("--env")` retrieves the value passed to our custom command-line flag.
-5.  The fixture returns this value.
+### Banish Magic with Mechanics: How This Works
 
-### Step 3: Use the Fixture in a Test
+Let's break down what's happening here. We've defined three functions with special names that pytest recognizes as hooks:
 
-Now, any test can simply request the `test_env` fixture to get the current environment.
+1.  **`pytest_runtest_setup(item)`**: Pytest calls this hook just before it executes a test function. The `item` object represents the test being run (e.g., `test_valid_data_passes_all_checks`). We attach a `start_time` attribute directly to this object to store the current time.
 
-```python
-# tests/test_environment.py
+2.  **`pytest_runtest_teardown(item, nextitem)`**: This hook is called after the test has finished (and after any teardown fixtures). We record the `end_time` and calculate the `duration`, again storing it on the `item` object.
 
-def test_api_endpoint(test_env):
-    """Tests that the correct API endpoint is constructed."""
-    base_urls = {
-        "dev": "http://localhost:8000/api",
-        "staging": "https://staging.myapp.com/api",
-        "prod": "https://api.myapp.com/api",
-    }
-    
-    # The test_env fixture provides the value from the command line
-    expected_url = base_urls[test_env]
-    
-    print(f"Testing against environment: {test_env}")
-    print(f"Expected URL: {expected_url}")
-    
-    # In a real test, you would use this URL to make API calls
-    assert test_env in base_urls
-```
+3.  **`pytest_sessionfinish(session)`**: Pytest calls this hook once at the very end of the entire test session. This is the perfect place to generate our summary report.
+    - We get the `terminalreporter` object from the session, which allows us to print nicely formatted output to the console.
+    - We collect all test items from the session.
+    - We sort them by the `duration` attribute we added.
+    - We print the top 5 slowest tests.
 
-Let's run this with different options.
-
-**Run with the default:**
+Now, let's run pytest. We don't need any special flags; the plugin in `conftest.py` is loaded automatically.
 
 ```bash
-# -s shows the output from print() statements
-pytest -s tests/test_environment.py
+$ pytest
+# ... (normal test output from pytest-sugar) ...
+
+――――――――――――――――――――――――――――――――――― summary ――――――――――――――――――――――――――――――――――――
+✅ 4 passed in 1.53s
+
+======================= CUSTOM TEST DURATIONS REPORT =======================
+
+Top 5 slowest tests:
+tests/test_validator.py::test_valid_data_passes_all_checks: 0.3789s
+tests/test_validator.py::test_duplicate_id_fails: 0.1534s
+tests/test_validator.py::test_value_out_of_range_fails: 0.1227s
+tests/test_validator.py::test_incorrect_row_length_fails: 0.1019s
 ```
 
-```text
-...
-PASSED                           [100%]
-Testing against environment: dev
-Expected URL: http://localhost:8000/api
-...
-```
-
-**Run against staging:**
-
-```bash
-pytest -s tests/test_environment.py --env=staging
-```
-
-```text
-...
-PASSED                           [100%]
-Testing against environment: staging
-Expected URL: https://staging.myapp.com/api
-...
-```
-
-You've just created your first local plugin! You defined a custom command-line interface, exposed it to your tests via a clean fixture-based API, and used it to control test behavior. This pattern is incredibly powerful for building flexible and maintainable test suites.
+**Expected vs. Actual Improvement**: It worked perfectly! After the standard summary, our custom report is printed, showing the exact duration of each test, sorted from slowest to fastest. We have successfully extended pytest's functionality to meet our specific needs. This demonstrates the core principle of plugins: you can attach your own logic to almost any part of the testing process.
 
 ## Hooks: How Pytest Plugins Work Under the Hood
 
-## Banish Magic: The Pytest Hook System
+## The Pytest Hook System
 
-We've used a hook, `pytest_addoption`, to create a plugin. But what exactly *are* hooks?
+The functions we wrote in `conftest.py` (`pytest_runtest_setup`, etc.) are the heart of the plugin system. Pytest defines hundreds of these **hook specifications** that act as well-defined entry points for plugins to inject custom logic.
 
-Hooks are the fundamental mechanism behind pytest's extensibility. They are well-defined points in the test execution lifecycle where plugins can insert custom logic. Pytest's execution is not a monolithic black box; it's a series of stages, and at the transition between each stage, it makes a "hook call."
+When pytest is about to perform an action (like collecting tests, running a test, or finishing the session), it checks if any loaded plugins (including `conftest.py`) have implemented the corresponding hook function. If so, it calls that function, passing in relevant context as arguments (like the `item` or `session` object).
 
-Think of it like a rocket launch sequence:
--   T-10: `pytest_sessionstart` (Ignition sequence start)
--   T-5: `pytest_collect_file` (Main engine start)
--   T-1: `pytest_runtest_setup` (Liftoff)
--   T+0: `pytest_runtest_call` (In flight)
--   T+5: `pytest_sessionfinish` (Mission complete)
+This is a powerful design because it allows plugins to be modular and self-contained. A plugin only needs to implement the hooks it cares about.
 
-A plugin is simply a collection of functions whose names match these hook specifications. Pytest discovers these functions and calls them at the appropriate time.
+### Key Hook Categories and Examples
 
-### Visualizing the Hook Lifecycle
+While there are many hooks, they generally fall into a few main categories. Understanding these categories helps you know where to look when you want to build a plugin.
 
-The best way to understand the hook system is to see it in action. Let's use a `conftest.py` file to implement several key hooks and have them print a message when they are called. This will give us a trace of the pytest run.
+#### 1. Initialization and Configuration Hooks
+These hooks run at the very beginning of a pytest session and are used for adding command-line options or modifying configuration.
 
-```python
-# tests/conftest.py
+-   **`pytest_addoption(parser)`**: Allows you to add custom command-line options. The `parser` object is used to define the option, its help text, and default value.
+-   **`pytest_configure(config)`**: Called after command-line options have been parsed. This is where you can read your custom options and set up any global state for your plugin.
 
-import pytest
+#### 2. Collection Hooks
+These hooks are called when pytest is discovering test files and functions. They allow you to customize the collection process.
 
-# Clear any previous hooks for this demonstration
-def pytest_addoption(parser):
-    pass
+-   **`pytest_collection_modifyitems(session, config, items)`**: One of the most powerful hooks. It's called after all test items have been collected. The `items` argument is a list of all test functions pytest is about to run. You can reorder this list, remove items (deselect tests), or add custom markers. For example, you could write a plugin to automatically add a `@pytest.mark.slow` marker to any test whose name contains `_integration_`.
 
-# --- Hook implementations ---
+#### 3. Test Execution (Runtest) Hooks
+This is the family of hooks we used for our timer plugin. They wrap the actual execution of a single test item.
 
-def pytest_sessionstart(session):
-    """Called after the Session object has been created and before performing
-    collection and entering the run test loop."""
-    print("\nHOOK: pytest_sessionstart")
+-   **`pytest_runtest_protocol(item, nextitem)`**: This is the main hook that manages the execution of a single test. It's responsible for calling the setup, the test function itself, and the teardown.
+-   **`pytest_runtest_setup(item)`**: Called before the test and its fixtures are set up.
+-   **`pytest_runtest_call(item)`**: Called to execute the test function itself.
+-   **`pytest_runtest_teardown(item, nextitem)`**: Called after the test has run and fixtures have been torn down.
+-   **`pytest_runtest_makereport(item, call)`**: A crucial hook called to create the test report object. The `call` object contains information about whether the setup, call, or teardown phase failed. You can inspect the outcome (passed, failed, skipped) and add extra information to the report, which can then be used by other hooks or plugins (like `pytest-html`).
 
-def pytest_collection_modifyitems(session, config, items):
-    """Called after collection has been performed, may filter or re-order
-    the items in-place."""
-    print("\nHOOK: pytest_collection_modifyitems")
-    print("  > Number of items collected:", len(items))
+#### 4. Reporting Hooks
+These hooks are used to customize the output of the test run.
 
-@pytest.hookimpl(hookwrapper=True)
-def pytest_runtest_protocol(item, nextitem):
-    """Wraps the entire test execution protocol for a single item."""
-    print(f"\nHOOK: pytest_runtest_protocol (setup) for {item.nodeid}")
-    yield
-    print(f"HOOK: pytest_runtest_protocol (teardown) for {item.nodeid}")
+-   **`pytest_report_header(config)`**: Allows you to add extra lines to the header of the test report.
+-   **`pytest_terminal_summary(terminalreporter, exitstatus, config)`**: Called just before pytest exits. This is an alternative to `pytest_sessionfinish` that is specifically for adding content to the terminal report. We could have used this for our timer plugin.
 
-def pytest_runtest_setup(item):
-    """Called to perform the setup phase for a test item."""
-    print(f"  > HOOK: pytest_runtest_setup for {item.nodeid}")
-
-def pytest_runtest_call(item):
-    """Called to run the test for a test item."""
-    print(f"  > HOOK: pytest_runtest_call for {item.nodeid}")
-
-def pytest_runtest_teardown(item, nextitem):
-    """Called to perform the teardown phase for a test item."""
-    print(f"  > HOOK: pytest_runtest_teardown for {item.nodeid}")
-
-def pytest_sessionfinish(session, exitstatus):
-    """Called after whole test run finished, right before returning the
-    exit status to the system."""
-    print("\nHOOK: pytest_sessionfinish")
-```
-
-We'll also need a simple test file for pytest to run.
-
-```python
-# tests/test_hooks_demo.py
-
-def test_one():
-    print("    -> INSIDE test_one()")
-    assert True
-
-def test_two():
-    print("    -> INSIDE test_two()")
-    assert True
-```
-
-Now, run pytest with the `-s` flag to ensure our `print` statements are displayed.
-
-```bash
-pytest -v -s tests/test_hooks_demo.py
-```
-
-The output provides a perfect trace of the execution flow:
-
-```text
-============================= test session starts ==============================
-...
-HOOK: pytest_sessionstart
-
-...
-collected 2 items
-
-HOOK: pytest_collection_modifyitems
-  > Number of items collected: 2
-
-tests/test_hooks_demo.py::test_one 
-HOOK: pytest_runtest_protocol (setup) for tests/test_hooks_demo.py::test_one
-  > HOOK: pytest_runtest_setup for tests/test_hooks_demo.py::test_one
-PASSED                           [ 50%]
-  > HOOK: pytest_runtest_call for tests/test_hooks_demo.py::test_one
-    -> INSIDE test_one()
-  > HOOK: pytest_runtest_teardown for tests/test_hooks_demo.py::test_one
-HOOK: pytest_runtest_protocol (teardown) for tests/test_hooks_demo.py::test_one
-
-tests/test_hooks_demo.py::test_two 
-HOOK: pytest_runtest_protocol (setup) for tests/test_hooks_demo.py::test_two
-  > HOOK: pytest_runtest_setup for tests/test_hooks_demo.py::test_two
-PASSED                           [100%]
-  > HOOK: pytest_runtest_call for tests/test_hooks_demo.py::test_two
-    -> INSIDE test_two()
-  > HOOK: pytest_runtest_teardown for tests/test_hooks_demo.py::test_two
-HOOK: pytest_runtest_protocol (teardown) for tests/test_hooks_demo.py::test_two
-
-HOOK: pytest_sessionfinish
-============================== 2 passed in 0.02s ===============================
-```
-
-### Key Observations
-
-1.  **Session Hooks:** `pytest_sessionstart` and `pytest_sessionfinish` wrap the entire run.
-2.  **Collection Hook:** `pytest_collection_modifyitems` runs after all tests have been found but before any have been executed. This is where you can re-order or filter tests.
-3.  **Test Item Hooks:** For *each test*, pytest runs a setup, call, and teardown phase, wrapped by the `pytest_runtest_protocol`. This is the heart of the test execution.
-4.  **Hookwrapper:** The `@pytest.hookimpl(hookwrapper=True)` decorator on `pytest_runtest_protocol` creates a "wrapper" hook. The code before the `yield` runs before other plugins' implementations of the same hook, and the code after `yield` runs after. This is an advanced feature for controlling execution order.
-
-By understanding this lifecycle, you can now see how plugins like `pytest-xdist` or `pytest-html` work. `pytest-xdist` might override `pytest_runtest_protocol` to send the test `item` to a worker process instead of running it locally. `pytest-html` uses the `pytest_runtest_makereport` hook (not shown here) to capture the result of each test and add it to its report.
-
-The hook system is the machinery beneath the magic.
+By combining these hooks, you can create incredibly sophisticated plugins that integrate deeply with pytest's lifecycle. The official pytest documentation contains a complete reference of all available hooks. When building a plugin, your first step should be to browse this list to find the correct entry points for the logic you want to implement.
 
 ## Common Plugin Use Cases
 
-## From Theory to Practice: Solving Problems with Hooks
+## What Can You Build with Plugins?
 
-Understanding the hook system is one thing; applying it to solve real-world problems is another. Let's explore some practical use cases for custom plugins.
+Now that we understand the mechanics of hooks, let's explore some common and powerful use cases for custom plugins.
 
-### Use Case 1: Conditionally Skipping Tests
+### Adding Custom Command-Line Options
 
-**The Problem:** You have a set of tests that should only run when a specific condition is met—for example, tests that require a network connection or a specific service to be running. You want to skip them automatically if the condition isn't met.
+Imagine our data validator needs to run against different environments (e.g., `staging`, `production`), and the data source changes for each. We can add a custom `--env` option to control this.
 
-**The Solution:** We can use the `pytest_collection_modifyitems` hook to inspect all collected tests and apply a `skip` marker to them dynamically.
-
-Let's create a custom marker `@pytest.mark.network` and a command-line option `--no-network` to disable these tests.
+**`tests/conftest.py`**
 
 ```python
 # tests/conftest.py
-import pytest
 
 def pytest_addoption(parser):
+    """Adds a custom --env command-line option."""
     parser.addoption(
-        "--no-network", action="store_true", default=False, help="disable network tests"
+        "--env", action="store", default="staging", help="environment to run tests against"
     )
 
-def pytest_configure(config):
-    config.addinivalue_line("markers", "network: marks tests as requiring network access")
+@pytest.fixture
+def api_endpoint(request):
+    """A fixture that provides the correct API endpoint based on --env."""
+    env = request.config.getoption("--env")
+    if env == "staging":
+        return "https://staging-api.example.com"
+    elif env == "production":
+        return "https://api.example.com"
+    return "https://dev-api.example.com"
 
-def pytest_collection_modifyitems(config, items):
-    if not config.getoption("--no-network"):
-        # --no-network option not given, so don't skip anything
-        return
-
-    # --no-network option was given, find and skip network tests
-    skip_network = pytest.mark.skip(reason="need --no-network option to be disabled to run")
-    for item in items:
-        if "network" in item.keywords:
-            item.add_marker(skip_network)
+# In a test:
+# def test_api_connection(api_endpoint):
+#     assert requests.get(api_endpoint).status_code == 200
 ```
 
-Here's the logic:
-1.  `pytest_addoption`: We add a `--no-network` flag. `action="store_true"` means it's a boolean flag.
-2.  `pytest_configure`: This hook is a good place to register our custom marker to avoid warnings from pytest.
-3.  `pytest_collection_modifyitems`:
-    -   We check if the `--no-network` flag was provided.
-    -   If it was, we iterate through all collected test `items`.
-    -   `item.keywords` is a dictionary-like object containing all markers applied to the test.
-    -   If we find our `network` marker, we use `item.add_marker()` to dynamically add a `skip` marker to that test.
+Now you can run `pytest --env=production` to target the production API. This pattern is fundamental for building flexible test suites.
 
-Now, let's write a test that uses this marker.
+### Dynamically Selecting or Reordering Tests
 
-```python
-# tests/test_network_calls.py
-import pytest
+The `pytest_collection_modifyitems` hook gives you ultimate control over which tests run and in what order.
 
-@pytest.mark.network
-def test_api_call():
-    # In a real test, this would make an HTTP request
-    print("\nMaking a network call...")
-    assert True
+**Use Case**: You want to run all tests marked as `slow` at the very end of the test suite to get faster feedback on quick unit tests.
 
-def test_local_calculation():
-    assert 1 + 1 == 2
-```
-
-**Running normally:**
-
-```bash
-pytest -v
-# Both tests will run
-```
-
-**Running with our custom flag:**
-
-```bash
-pytest -v --no-network
-```
-
-The output will show that `test_api_call` was skipped, while `test_local_calculation` ran as usual.
-
-```text
-...
-tests/test_network_calls.py::test_api_call SKIPPED (need --no-network option to be disabled to run) [ 50%]
-tests/test_network_calls.py::test_local_calculation PASSED [100%]
-...
-```
-
-### Use Case 2: Adding Metadata to HTML Reports
-
-**The Problem:** Your `pytest-html` report is useful, but you want to add custom columns—for example, a test's unique ID from a test case management system like Jira or TestRail.
-
-**The Solution:** We can use markers to attach metadata to tests and then use hooks provided by `pytest-html` itself to modify the report. This demonstrates how plugins can be built on top of other plugins.
-
-First, let's modify `conftest.py` to add a `test_id` marker and hooks to modify the HTML report.
+**`tests/conftest.py`**
 
 ```python
 # tests/conftest.py
-import pytest
 
-# (Keep the network-related hooks from the previous example if you wish)
-
-def pytest_configure(config):
-    config.addinivalue_line("markers", "test_id(id): assign a test case ID to a test")
-
-# Hook provided by pytest-html to add extra columns to the report
-def pytest_html_results_table_header(cells):
-    cells.insert(2, "<th>Test ID</th>")
-
-# Hook provided by pytest-html to add data to the new column for each test
-def pytest_html_results_table_row(report, cells):
-    # Find our marker on the test item
-    item = report.user_properties.get("item")
-    if item:
-        test_id_marker = item.get_closest_marker("test_id")
-        if test_id_marker:
-            test_id = test_id_marker.args[0]
-            cells.insert(2, f"<td>{test_id}</td>")
-            return
-    cells.insert(2, "<td>-</td>")
-
-# Hook to attach the test item to the report object
-@pytest.hookimpl(hookwrapper=True)
-def pytest_runtest_makereport(item, call):
-    outcome = yield
-    report = outcome.get_result()
-    report.user_properties.append(("item", item))
+def pytest_collection_modifyitems(config, items):
+    """Reorders tests to run @pytest.mark.slow tests last."""
+    slow_tests = []
+    other_tests = []
+    for item in items:
+        if item.get_closest_marker("slow"):
+            slow_tests.append(item)
+        else:
+            other_tests.append(item)
+    
+    # Put the other tests first, then the slow ones
+    items[:] = other_tests + slow_tests
 ```
 
-Now, let's add our new marker to a test.
+This simple plugin automatically prioritizes your faster tests, improving the developer feedback loop without any manual intervention.
+
+### Integrating with External Systems
+
+Plugins are the perfect way to integrate your test suite with external tools like test case management systems (e.g., TestRail, Zephyr) or notification services (e.g., Slack).
+
+**Use Case**: Post a summary of test failures to a Slack channel after a CI run.
+
+**`tests/conftest.py` (conceptual)**
 
 ```python
-# tests/test_with_ids.py
-import pytest
+# tests/conftest.py
+import os
+import requests
 
-@pytest.mark.test_id("PROJ-123")
-def test_user_login():
-    assert True
+def pytest_sessionfinish(session):
+    """Posts a summary to Slack on failure."""
+    if session.testsfailed > 0 and os.getenv("CI"):
+        slack_webhook_url = os.getenv("SLACK_WEBHOOK_URL")
+        if not slack_webhook_url:
+            return
 
-def test_guest_access():
-    assert True
+        summary = f"Test run finished with {session.testsfailed} failures."
+        # In a real implementation, you would list the failed tests.
+        
+        payload = {"text": summary}
+        try:
+            requests.post(slack_webhook_url, json=payload)
+        except requests.RequestException as e:
+            print(f"Failed to send Slack notification: {e}")
 ```
 
-Run pytest and generate the HTML report:
-
-```bash
-pytest --html=report.html
-```
-
-When you open `report.html`, you will see a new "Test ID" column. The row for `test_user_login` will contain "PROJ-123", and the row for `test_guest_access` will be empty. This powerful pattern allows you to fully customize reporting to fit your team's workflow.
+This hook runs at the end of the session, checks for failures, and (if running in a CI environment) sends a notification. This kind of automation is a hallmark of a mature testing setup.
 
 ## Distributing Your Own Plugin
 
-## From Local Plugin to Sharable Package
+## From `conftest.py` to Installable Package
 
-We've seen how to create powerful local plugins in `conftest.py`. But what if you develop a set of hooks and fixtures that would be useful across multiple projects, or that you want to share with the community? You need to package it as an installable plugin.
+Our custom timer plugin is useful, and we might want to use it in other projects. Copying the `conftest.py` file everywhere is not a scalable or maintainable solution. The professional approach is to package it as a proper, installable Python package.
 
-The process involves moving your code from `conftest.py` into a proper Python package and adding a special entry point to your configuration so pytest can discover it.
+### Iteration 5: Packaging the Custom Timer Plugin
 
-### Step 1: Create the Package Structure
+**Current Limitation**: The plugin code lives inside our project's `tests/conftest.py`, making it impossible to share with other projects without copy-pasting.
 
-Let's convert our command-line option plugin from Section 19.3 into a distributable package.
+**Goal**: Create a new, separate Python package for our `pytest-timer` plugin that can be installed with `pip`.
 
-Create the following file structure:
+#### Step 1: Create the Package Structure
+
+First, we'll create a new directory for our plugin project.
+
 ```
-pytest-env-plugin/
+pytest-timer/
 ├── pyproject.toml
 └── src/
-    └── pytest_env_plugin/
+    └── pytest_timer/
         ├── __init__.py
         └── plugin.py
 ```
 
--   `pytest-env-plugin/`: The root directory for our project.
--   `pyproject.toml`: The modern standard for Python package configuration.
--   `src/pytest_env_plugin/`: The source directory for our package.
--   `plugin.py`: The file where our plugin code will live.
+-   `pyproject.toml`: The modern standard for defining Python package metadata and dependencies.
+-   `src/pytest_timer/plugin.py`: We will move our plugin code here from `conftest.py`.
 
-### Step 2: Move the Plugin Code
+#### Step 2: Move the Plugin Code
 
-Move the hook and fixture definitions from `conftest.py` into `src/pytest_env_plugin/plugin.py`.
+Copy the hook implementations from `conftest.py` into `src/pytest_timer/plugin.py`. The code remains identical.
+
+**`src/pytest_timer/plugin.py`**
 
 ```python
-# src/pytest_env_plugin/plugin.py
-import pytest
+import time
 
-def pytest_addoption(parser):
-    """Adds the --env command-line option."""
-    parser.addoption(
-        "--env",
-        action="store",
-        default="dev",
-        help="Specify the test environment: dev, staging, or prod"
-    )
+def pytest_runtest_setup(item):
+    """Hook called before a test item is run."""
+    item.start_time = time.time()
 
-@pytest.fixture(scope="session")
-def test_env(request):
-    """A fixture for the --env command-line option."""
-    return request.config.getoption("--env")
+def pytest_runtest_teardown(item, nextitem):
+    """Hook called after a test item is run."""
+    item.end_time = time.time()
+    item.duration = item.end_time - item.start_time
+
+def pytest_sessionfinish(session):
+    """Hook called after the entire test session finishes."""
+    reporter = session.config.pluginmanager.get_plugin('terminalreporter')
+    reporter.write_sep("=", "CUSTOM TEST DURATIONS REPORT")
+    
+    all_items = [item for item in session.items if hasattr(item, 'duration')]
+    slowest_tests = sorted(all_items, key=lambda x: x.duration, reverse=True)
+    
+    reporter.write_line("\nTop 5 slowest tests:")
+    for item in slowest_tests[:5]:
+        reporter.write_line(f"{item.nodeid}: {item.duration:.4f}s")
 ```
 
-### Step 3: Configure the Package and Entry Point
+#### Step 3: Define the Package Metadata and Entry Point
 
-This is the most critical step. We need to tell Python's packaging tools that this project contains a pytest plugin. This is done via the `pytest11` entry point in `pyproject.toml`.
+This is the most critical step. We need to tell the Python packaging tools about our project and, most importantly, tell pytest that this package contains a plugin. This is done using an **entry point**.
+
+The entry point is a special piece of metadata that tells a host application (like pytest) where to find plugins. For pytest, the entry point group is called `pytest11`.
+
+**`pyproject.toml`**
 
 ```toml
-# pyproject.toml
-
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pytest-env-plugin"
+name = "pytest-timer"
 version = "0.1.0"
 authors = [
   { name="Your Name", email="you@example.com" },
 ]
-description = "A pytest plugin to manage test environments."
-readme = "README.md"
-requires-python = ">=3.7"
+description = "A simple pytest plugin to report slow tests"
+requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
@@ -696,35 +622,59 @@ classifiers = [
     "Framework :: Pytest",
 ]
 dependencies = [
-    "pytest>=6.0",
+    "pytest",
 ]
 
-[project.entry-points.pytest11]
-# The name on the left is what you might use to disable the plugin (-p no:env_plugin)
-# The path on the right points to the module containing the plugin code
-env_plugin = "pytest_env_plugin.plugin"
+[project.entry-points."pytest11"]
+timer = "pytest_timer.plugin"
 ```
 
-The `[project.entry-points.pytest11]` section is the "magic". When this package is installed, `setuptools` registers `pytest_env_plugin.plugin` as a module for pytest to load at startup. Pytest will then scan this module for any functions named like `pytest_*` (hooks) or decorated with `@pytest.fixture`.
+Let's break down the `[project.entry-points."pytest11"]` section:
+-   `"pytest11"`: This is the specific entry point group that pytest looks for. The name is historical.
+-   `timer`: This is a name we give our plugin. It's not strictly required but is good practice.
+-   `"pytest_timer.plugin"`: This is the crucial part. It tells pytest to load the module `pytest_timer.plugin` as a plugin. Pytest will then inspect this module for any functions named like `pytest_*` and register them as hooks.
 
-### Step 4: Install and Verify
+#### Step 4: Install and Verify
 
-Now, navigate to the root of your plugin project (`pytest-env-plugin/`) and install it in "editable" mode. This creates a link to your source code, so any changes you make are immediately reflected in your environment.
+Now, we can install our plugin in editable mode from the root of the `pytest-timer` directory. This links the package into our Python environment so we can use it immediately.
 
 ```bash
-# From inside the pytest-env-plugin/ directory
+# From within the pytest-timer/ directory
 pip install -e .
 ```
 
-To verify, go back to your original test project. **Crucially, remove or rename your `tests/conftest.py` file** that contains the old local plugin code.
+Go back to our original data validator project. **Crucially, remove the plugin code from `tests/conftest.py`** so we can be sure the packaged version is being used.
 
-Now, run the test that depends on the `test_env` fixture.
+Now, run pytest.
 
 ```bash
-# From your original project directory
-pytest tests/test_environment.py --env=staging
+# In the original project directory
+$ pytest
+# ... (normal test output) ...
+
+――――――――――――――――――――――――――――――――――― summary ――――――――――――――――――――――――――――――――――――
+✅ 4 passed in 1.55s
+
+======================= CUSTOM TEST DURATIONS REPORT =======================
+
+Top 5 slowest tests:
+tests/test_validator.py::test_valid_data_passes_all_checks: 0.3812s
+tests/test_validator.py::test_duplicate_id_fails: 0.1540s
+tests/test_validator.py::test_value_out_of_range_fails: 0.1233s
+tests/test_validator.py::test_incorrect_row_length_fails: 0.1025s
 ```
 
-It works! Even though the code is no longer in `conftest.py`, pytest finds it because your plugin is now an installed package in the environment.
+It works! Pytest discovered our installed `pytest-timer` package via the entry point, loaded `pytest_timer.plugin`, and registered our hooks. Our project's test suite is now clean, and our plugin is a reusable, distributable tool that can be shared, versioned, and even published to the Python Package Index (PyPI) for anyone to use.
 
-You have successfully packaged a pytest plugin. The final step to share it with the world would be to build it and upload it to the Python Package Index (PyPI). This process transforms a local convenience into a reusable, professional tool that contributes to the rich pytest ecosystem.
+### The Journey: From Problem to Solution
+
+| Iteration | Failure Mode / Problem                | Technique Applied                               | Result                                         |
+| --------- | ------------------------------------- | ----------------------------------------------- | ---------------------------------------------- |
+| 0         | Default output is verbose and slow    | None                                            | Baseline performance and readability           |
+| 1         | Output is hard to scan quickly        | `pytest-sugar` plugin                           | Improved terminal UI with progress bar         |
+| 2         | No shareable report for stakeholders  | `pytest-html` plugin                            | Generated self-contained HTML report           |
+| 3         | Test suite execution is slow          | `pytest-xdist` plugin                           | Parallel execution, significantly faster suite |
+| 4         | Need custom per-test timing data      | Local plugin in `conftest.py` using hooks       | Custom summary report with slow test warnings  |
+| 5         | Custom plugin is not reusable         | Packaging plugin as an installable distribution | Plugin can be installed and used in any project|
+
+This journey encapsulates the power of the pytest ecosystem. You can start by leveraging the work of others to quickly solve common problems. As your needs become more specific, you can tap into the same hook system the community uses to build your own powerful, project-specific tooling. And finally, you can contribute back to that ecosystem by packaging and sharing your solutions.

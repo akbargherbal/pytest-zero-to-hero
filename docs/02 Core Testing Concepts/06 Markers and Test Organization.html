@@ -360,405 +360,746 @@
             <h1 id="chapter-6-markers-and-test-organization">Chapter 6: Markers and Test Organization</h1>
 <h2 id="what-are-markers">What Are Markers?</h2>
 <h2 id="what-are-markers_1">What Are Markers?</h2>
-<p>As your test suite grows, you'll find that not all tests are created equal. Some are fast unit tests, others are slow integration tests. Some require a database connection, while others should only run on a specific operating system. How do you manage this complexity?</p>
-<p>This is the problem that markers solve. <strong>Markers are metadata you can apply to your test functions.</strong> Think of them as tags or labels. You can "tag" a test as <code>slow</code>, <code>database</code>, or <code>smoke_test</code>, and then instruct pytest to run—or not run—tests based on these tags.</p>
-<p>Markers are implemented as Python decorators, and their syntax is simple and readable:</p>
-<div class="codehilite"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<p>As a test suite grows, you'll inevitably face an organization problem. You'll have fast unit tests, slower integration tests, and perhaps even end-to-end tests that take minutes to run. During development, you might want to run only the fast unit tests. Before a release, you might want to run everything <em>except</em> tests for features that are currently disabled.</p>
+<p>How can you manage this complexity?</p>
+<p>Pytest's solution is <strong>markers</strong>. A marker is a metadata tag you can apply to a test function or class. It doesn't change what the test does, but it gives you powerful ways to group, filter, and manage your tests from the command line.</p>
+<p>Think of markers like labels in your email inbox (<code>work</code>, <code>urgent</code>, <code>personal</code>) or tags on a blog post (<code>python</code>, <code>testing</code>, <code>pytest</code>). The content remains the same, but the tags allow you to find and act on specific items easily.</p>
+<h3 id="phase-1-establish-the-reference-implementation">Phase 1: Establish the Reference Implementation</h3>
+<p>Let's build our anchor example for this chapter. We'll model a simple e-commerce order processing system. The system has different components, and we'll write different kinds of tests for them.</p>
+<p>First, the application code we'll be testing.</p>
+<p><strong>The Anchor Example: <code>commerce_system.py</code></strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># commerce_system.py</span>
 
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">slow</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_very_long_computation</span><span class="p">():</span>
-    <span class="c1"># ... code that takes a long time</span>
-    <span class="k">pass</span>
-</code></pre></div>
-
-<p>In this example, we've marked <code>test_very_long_computation</code> with the label <code>slow</code>. This marker doesn't change how the test runs on its own, but it gives us a powerful handle to control it from the command line.</p>
-<p>Markers are the primary tool in pytest for categorizing, filtering, and organizing your tests beyond the simple structure of files and directories. They allow you to create logical groupings that are essential for managing a large, real-world test suite.</p>
-<h2 id="built-in-markers-skip-xfail-filterwarnings">Built-in Markers (skip, xfail, filterwarnings)</h2>
-<h2 id="built-in-markers-skip-xfail-filterwarnings_1">Built-in Markers (skip, xfail, filterwarnings)</h2>
-<p>Pytest comes with several useful markers out of the box. Let's explore the most common ones by first seeing the problems they solve.</p>
-<h3 id="skip-skipping-a-test-conditionally"><code>skip</code>: Skipping a Test Conditionally</h3>
-<p>Imagine you're developing a new feature. You've written a test for it, but the feature's code isn't complete yet. If you run your test suite, this test will fail, creating noise and potentially breaking your continuous integration (CI) build.</p>
-<p><strong>The Wrong Way: Commenting Out the Test</strong></p>
-<p>You might be tempted to just comment out the test.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_feature.py</span>
-
-<span class="c1"># def test_new_feature():</span>
-<span class="c1">#     assert new_feature_function() == &quot;expected result&quot;</span>
-<span class="c1">#     # This test will be forgotten!</span>
-</code></pre></div>
-
-<p>The danger here is that commented-out code is easily forgotten. Months later, you might not remember why it's there or if it's still relevant.</p>
-<p><strong>The Right Way: Using <code>@pytest.mark.skip</code></strong></p>
-<p>A much better approach is to explicitly mark the test to be skipped. This documents the intent and keeps the test visible in your test reports.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_skipping.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_always_passes</span><span class="p">():</span>
-    <span class="k">assert</span> <span class="kc">True</span>
-
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">skip</span><span class="p">(</span><span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Feature not yet implemented.&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_new_feature</span><span class="p">():</span>
-    <span class="c1"># This code will not be executed</span>
-    <span class="k">assert</span> <span class="kc">False</span>
-
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">skipif</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">version_info</span> <span class="o">&lt;</span> <span class="p">(</span><span class="mi">3</span><span class="p">,</span> <span class="mi">10</span><span class="p">),</span> <span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Requires Python 3.10 or higher&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_python_310_feature</span><span class="p">():</span>
-    <span class="c1"># This test will only run on Python 3.10+</span>
-    <span class="c1"># For example, using the &#39;match&#39; statement</span>
-    <span class="n">value</span> <span class="o">=</span> <span class="mi">42</span>
-    <span class="k">match</span> <span class="n">value</span><span class="p">:</span>
-        <span class="k">case</span> <span class="mi">42</span><span class="p">:</span>
-            <span class="n">result</span> <span class="o">=</span> <span class="kc">True</span>
-        <span class="k">case</span><span class="w"> </span><span class="k">_</span><span class="p">:</span>
-            <span class="n">result</span> <span class="o">=</span> <span class="kc">False</span>
-    <span class="k">assert</span> <span class="n">result</span>
-</code></pre></div>
-
-<p>Let's run this and see the output.</p>
-<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>tests/test_skipping.py
-<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
-...
-collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items
-
-tests/test_skipping.py::test_always_passes<span class="w"> </span>PASSED<span class="w">                      </span><span class="o">[</span><span class="w"> </span><span class="m">33</span>%<span class="o">]</span>
-tests/test_skipping.py::test_new_feature<span class="w"> </span>SKIPPED<span class="w"> </span><span class="o">(</span>Feature<span class="w"> </span>not<span class="w"> </span>yet<span class="w"> </span>implemented.<span class="o">)</span><span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">66</span>%<span class="o">]</span>
-tests/test_skipping.py::test_python_310_feature<span class="w"> </span>SKIPPED<span class="w"> </span><span class="o">(</span>Requires<span class="w"> </span>Python<span class="w"> </span><span class="m">3</span>.10<span class="w"> </span>or<span class="w"> </span>higher<span class="o">)</span><span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
-<span class="c1"># Note: The second SKIPPED message will vary based on your Python version.</span>
-
-<span class="o">======================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">2</span><span class="w"> </span>skipped<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.01s<span class="w"> </span><span class="o">======================</span>
-</code></pre></div>
-
-<p>Notice the output:
-- <code>PASSED</code>: The test ran and succeeded.
-- <code>SKIPPED</code>: Pytest recognized the marker and did not execute the test function.
-- The <code>reason</code> string is printed in the test summary, which is crucial for understanding why a test was skipped.</p>
-<p>There are two variants:
-1.  <code>@pytest.mark.skip(reason="...")</code>: Always skips the test.
-2.  <code>@pytest.mark.skipif(condition, reason="...")</code>: Skips the test only if the <code>condition</code> evaluates to <code>True</code>. This is perfect for tests that are platform-specific or depend on a certain library version.</p>
-<h3 id="xfail-marking-a-test-as-an-expected-failure"><code>xfail</code>: Marking a Test as an Expected Failure</h3>
-<p>Now consider a different scenario: you've found a bug in your code. You write a test that reproduces the bug. This test is valuable! It proves the bug exists and will signal when it's fixed. However, until the bug is fixed, this test will fail your test suite.</p>
-<p>You don't want to <code>skip</code> it, because you <em>want</em> it to run. You just want to tell pytest, "I know this is broken, and that's okay for now." This is the job of <code>xfail</code> (expected failure).</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_xfail.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-
-<span class="c1"># A buggy function we need to fix</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">buggy_function</span><span class="p">():</span>
-    <span class="k">return</span> <span class="kc">False</span>
-
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">xfail</span><span class="p">(</span><span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Bug #123: buggy_function returns False&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_known_bug</span><span class="p">():</span>
-    <span class="k">assert</span> <span class="n">buggy_function</span><span class="p">()</span> <span class="ow">is</span> <span class="kc">True</span>
-
-<span class="k">def</span><span class="w"> </span><span class="nf">test_another_feature</span><span class="p">():</span>
-    <span class="k">assert</span> <span class="kc">True</span>
-</code></pre></div>
-
-<p>When we run this, pytest executes <code>test_known_bug</code>, sees that it fails as expected, and marks it accordingly.</p>
-<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>tests/test_xfail.py
-<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
-...
-collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
-
-tests/test_xfail.py::test_known_bug<span class="w"> </span>XFAIL<span class="w"> </span><span class="o">(</span>Bug<span class="w"> </span><span class="c1">#123: buggy_function returns False) [ 50%]</span>
-tests/test_xfail.py::test_another_feature<span class="w"> </span>PASSED<span class="w">                       </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
-
-<span class="o">======================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>xfailed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.01s<span class="w"> </span><span class="o">======================</span>
-</code></pre></div>
-
-<p>The test suite passes, but the report clearly shows one test is an <code>XFAIL</code>. This is the ideal way to manage tests for known bugs.</p>
-<p>What happens if we fix the bug? Let's see.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_xpass.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-
-<span class="c1"># The function is now fixed!</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">formerly_buggy_function</span><span class="p">():</span>
-    <span class="k">return</span> <span class="kc">True</span>
-
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">xfail</span><span class="p">(</span><span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Bug #123: This should be fixed now&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_unexpected_pass</span><span class="p">():</span>
-    <span class="k">assert</span> <span class="n">formerly_buggy_function</span><span class="p">()</span> <span class="ow">is</span> <span class="kc">True</span>
-</code></pre></div>
-
-<p>Now, when we run the test, something interesting happens. The test runs, it passes, but pytest knows we <em>expected</em> it to fail. This is called an <code>XPASS</code> (expected failure, but it passed).</p>
-<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>tests/test_xpass.py
-<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
-...
-collected<span class="w"> </span><span class="m">1</span><span class="w"> </span>item
-
-tests/test_xpass.py::test_unexpected_pass<span class="w"> </span>XPASS<span class="w"> </span><span class="o">(</span>Bug<span class="w"> </span><span class="c1">#123: This should be fixed now) [100%]</span>
-
-<span class="o">======================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>xpassed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.02s<span class="w"> </span><span class="o">======================</span>
-</code></pre></div>
-
-<p>By default, an <code>XPASS</code> does not fail the test suite. However, it's a strong signal that the underlying bug has been fixed and you should remove the <code>@pytest.mark.xfail</code> marker. This prevents you from having outdated markers in your code.</p>
-<h3 id="filterwarnings-suppressing-known-warnings"><code>filterwarnings</code>: Suppressing Known Warnings</h3>
-<p>Sometimes, your code or its dependencies will issue warnings (e.g., <code>DeprecationWarning</code>). While these don't cause tests to fail, they can clutter your test output and hide important information.</p>
-<p>Let's imagine a function that uses a deprecated feature.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_warnings.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">warnings</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">function_with_deprecation</span><span class="p">():</span>
-    <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s2">&quot;This function is deprecated&quot;</span><span class="p">,</span> <span class="ne">DeprecationWarning</span><span class="p">)</span>
-    <span class="k">return</span> <span class="mi">42</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Product</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">price</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">name</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">price</span> <span class="o">=</span> <span class="n">price</span>
 
-<span class="k">def</span><span class="w"> </span><span class="nf">test_deprecation_normally</span><span class="p">():</span>
-    <span class="k">assert</span> <span class="n">function_with_deprecation</span><span class="p">()</span> <span class="o">==</span> <span class="mi">42</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Order</span><span class="p">:</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">products</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Product</span><span class="p">]):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">products</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Cannot create an order with no products.&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">products</span> <span class="o">=</span> <span class="n">products</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_discount_applied</span> <span class="o">=</span> <span class="kc">False</span>
 
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">filterwarnings</span><span class="p">(</span><span class="s2">&quot;ignore:This function is deprecated&quot;</span><span class="p">)</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_deprecation_with_filter</span><span class="p">():</span>
-    <span class="k">assert</span> <span class="n">function_with_deprecation</span><span class="p">()</span> <span class="o">==</span> <span class="mi">42</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">total</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Calculates the total price of products in the order.&quot;&quot;&quot;</span>
+        <span class="n">base_total</span> <span class="o">=</span> <span class="nb">sum</span><span class="p">(</span><span class="n">p</span><span class="o">.</span><span class="n">price</span> <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">products</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">base_total</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">apply_discount</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">percentage</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Applies a percentage discount to the order total.&quot;&quot;&quot;</span>
+        <span class="c1"># Known bug: This logic is incorrect, it should modify the total.</span>
+        <span class="c1"># We will use this to demonstrate xfail later.</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="mi">0</span> <span class="o">&lt;</span> <span class="n">percentage</span> <span class="o">&lt;=</span> <span class="mi">100</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Discount must be between 1 and 100.&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">_discount_applied</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;Discount has already been applied.&quot;</span><span class="p">)</span>
+
+        <span class="c1"># Buggy implementation for demonstration purposes</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">total</span><span class="p">()</span> <span class="o">*</span> <span class="p">((</span><span class="mi">100</span> <span class="o">-</span> <span class="n">percentage</span><span class="p">)</span> <span class="o">/</span> <span class="mi">100</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">_discount_applied</span> <span class="o">=</span> <span class="kc">True</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">connect_to_db</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Simulates a slow database connection.&quot;&quot;&quot;</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">(Connecting to database...)&quot;</span><span class="p">)</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;(Connection successful.)&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;connected&quot;</span><span class="p">}</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">process_payment_via_api</span><span class="p">(</span><span class="n">total</span><span class="p">:</span> <span class="nb">float</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Simulates a very slow external API call.&quot;&quot;&quot;</span>
+    <span class="n">warnings</span><span class="o">.</span><span class="n">warn</span><span class="p">(</span><span class="s2">&quot;This payment gateway is deprecated.&quot;</span><span class="p">,</span> <span class="ne">DeprecationWarning</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">(Calling external payment API for $</span><span class="si">{</span><span class="n">total</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">...)&quot;</span><span class="p">)</span>
+    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;(API call successful.)&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">{</span><span class="s2">&quot;status&quot;</span><span class="p">:</span> <span class="s2">&quot;paid&quot;</span><span class="p">,</span> <span class="s2">&quot;amount&quot;</span><span class="p">:</span> <span class="n">total</span><span class="p">}</span>
 </code></pre></div>
 
-<p>Running this file shows the difference clearly.</p>
-<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>tests/test_warnings.py
+<p>Now, let's write a test file with a mix of tests for this system.</p>
+<p><strong>The Initial Test Suite: <code>test_commerce_initial.py</code></strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_commerce_initial.py</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">commerce_system</span><span class="w"> </span><span class="kn">import</span> <span class="n">Order</span><span class="p">,</span> <span class="n">Product</span><span class="p">,</span> <span class="n">connect_to_db</span><span class="p">,</span> <span class="n">process_payment_via_api</span>
+
+<span class="c1"># A fast, simple unit test</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_order_total</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests the total calculation for a simple order.&quot;&quot;&quot;</span>
+    <span class="n">products</span> <span class="o">=</span> <span class="p">[</span><span class="n">Product</span><span class="p">(</span><span class="s2">&quot;Laptop&quot;</span><span class="p">,</span> <span class="mf">1200.00</span><span class="p">),</span> <span class="n">Product</span><span class="p">(</span><span class="s2">&quot;Mouse&quot;</span><span class="p">,</span> <span class="mf">25.00</span><span class="p">)]</span>
+    <span class="n">order</span> <span class="o">=</span> <span class="n">Order</span><span class="p">(</span><span class="n">products</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">order</span><span class="o">.</span><span class="n">total</span><span class="p">()</span> <span class="o">==</span> <span class="mf">1225.00</span>
+
+<span class="c1"># A test for a known bug</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_order_discount_logic</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests the discount application logic, which is known to be buggy.&quot;&quot;&quot;</span>
+    <span class="n">products</span> <span class="o">=</span> <span class="p">[</span><span class="n">Product</span><span class="p">(</span><span class="s2">&quot;Keyboard&quot;</span><span class="p">,</span> <span class="mf">100.00</span><span class="p">),</span> <span class="n">Product</span><span class="p">(</span><span class="s2">&quot;Mouse&quot;</span><span class="p">,</span> <span class="mf">25.00</span><span class="p">)]</span>
+    <span class="n">order</span> <span class="o">=</span> <span class="n">Order</span><span class="p">(</span><span class="n">products</span><span class="p">)</span>
+    <span class="n">order</span><span class="o">.</span><span class="n">apply_discount</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+    <span class="c1"># This will fail because the discount logic is flawed</span>
+    <span class="k">assert</span> <span class="n">order</span><span class="o">.</span><span class="n">total</span><span class="p">()</span> <span class="o">==</span> <span class="mf">112.50</span>
+
+<span class="c1"># A slower integration test</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_database_connection</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests the function that connects to the database.&quot;&quot;&quot;</span>
+    <span class="n">conn</span> <span class="o">=</span> <span class="n">connect_to_db</span><span class="p">()</span>
+    <span class="k">assert</span> <span class="n">conn</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;connected&quot;</span>
+
+<span class="c1"># A very slow API test</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_payment_api_call</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests the external payment API call.&quot;&quot;&quot;</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">process_payment_via_api</span><span class="p">(</span><span class="n">total</span><span class="o">=</span><span class="mf">150.00</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">result</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;paid&quot;</span>
+    <span class="k">assert</span> <span class="n">result</span><span class="p">[</span><span class="s2">&quot;amount&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="mf">150.00</span>
+</code></pre></div>
+
+<h3 id="the-problem-an-unorganized-suite">The Problem: An Unorganized Suite</h3>
+<p>Let's run this suite.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>test_commerce_initial.py
 <span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
 ...
-collected<span class="w"> </span><span class="m">2</span><span class="w"> </span>items
+collected<span class="w"> </span><span class="m">4</span><span class="w"> </span>items
 
-tests/test_warnings.py::test_deprecation_normally<span class="w"> </span>PASSED<span class="w">               </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
-tests/test_warnings.py::test_deprecation_with_filter<span class="w"> </span>PASSED<span class="w">            </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+test_commerce_initial.py::test_order_total<span class="w"> </span>PASSED<span class="w">                     </span><span class="o">[</span><span class="w"> </span><span class="m">25</span>%<span class="o">]</span>
+test_commerce_initial.py::test_order_discount_logic<span class="w"> </span>FAILED<span class="w">            </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+test_commerce_initial.py::test_database_connection<span class="w"> </span>
+<span class="o">(</span>Connecting<span class="w"> </span>to<span class="w"> </span>database...<span class="o">)</span>
+<span class="o">(</span>Connection<span class="w"> </span>successful.<span class="o">)</span>
+PASSED<span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">75</span>%<span class="o">]</span>
+test_commerce_initial.py::test_payment_api_call<span class="w"> </span>
+<span class="o">(</span>Calling<span class="w"> </span>external<span class="w"> </span>payment<span class="w"> </span>API<span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="nv">$150</span>.00...<span class="o">)</span>
+.../test_commerce_initial.py:31:<span class="w"> </span>DeprecationWarning:<span class="w"> </span>This<span class="w"> </span>payment<span class="w"> </span>gateway<span class="w"> </span>is<span class="w"> </span>deprecated.
+<span class="w">  </span><span class="nv">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>process_payment_via_api<span class="o">(</span><span class="nv">total</span><span class="o">=</span><span class="m">150</span>.00<span class="o">)</span>
+<span class="o">(</span>API<span class="w"> </span>call<span class="w"> </span>successful.<span class="o">)</span>
+PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
 
-<span class="o">==============================</span><span class="w"> </span><span class="nv">Warnings</span><span class="w"> </span><span class="o">==================================</span>
-tests/test_warnings.py::test_deprecation_normally
-<span class="w">  </span>/path/to/tests/test_warnings.py:6:<span class="w"> </span>DeprecationWarning:<span class="w"> </span>This<span class="w"> </span><span class="k">function</span><span class="w"> </span>is<span class="w"> </span>deprecated
-<span class="w">    </span>warnings.warn<span class="o">(</span><span class="s2">&quot;This function is deprecated&quot;</span>,<span class="w"> </span>DeprecationWarning<span class="o">)</span>
+<span class="o">=================================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">=================================</span>
+________________________<span class="w"> </span>test_order_discount_logic<span class="w"> </span>_________________________
 
---<span class="w"> </span>Docs:<span class="w"> </span>https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-<span class="o">======================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>warning<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.02s<span class="w"> </span><span class="o">======================</span>
+<span class="w">    </span>def<span class="w"> </span>test_order_discount_logic<span class="o">()</span>:
+<span class="w">        </span><span class="s2">&quot;&quot;&quot;Tests the discount application logic, which is known to be buggy.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="nv">products</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">[</span>Product<span class="o">(</span><span class="s2">&quot;Keyboard&quot;</span>,<span class="w"> </span><span class="m">100</span>.00<span class="o">)</span>,<span class="w"> </span>Product<span class="o">(</span><span class="s2">&quot;Mouse&quot;</span>,<span class="w"> </span><span class="m">25</span>.00<span class="o">)]</span>
+<span class="w">        </span><span class="nv">order</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>Order<span class="o">(</span>products<span class="o">)</span>
+<span class="w">        </span>order.apply_discount<span class="o">(</span><span class="m">10</span><span class="o">)</span>
+<span class="w">        </span><span class="c1"># This will fail because the discount logic is flawed</span>
+&gt;<span class="w">       </span>assert<span class="w"> </span>order.total<span class="o">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">112</span>.50
+E<span class="w">       </span>assert<span class="w"> </span><span class="m">125</span>.0<span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">112</span>.5
+E<span class="w">        </span>+<span class="w">  </span>where<span class="w"> </span><span class="m">125</span>.0<span class="w"> </span><span class="o">=</span><span class="w"> </span>&lt;bound<span class="w"> </span>method<span class="w"> </span>Order.total<span class="w"> </span>of<span class="w"> </span>&lt;commerce_system.Order<span class="w"> </span>object<span class="w"> </span>at<span class="w"> </span>0x...&gt;&gt;<span class="o">()</span>
+E<span class="w">        </span>+<span class="w">    </span>where<span class="w"> </span>&lt;bound<span class="w"> </span>method<span class="w"> </span>Order.total<span class="w"> </span>of<span class="w"> </span>&lt;commerce_system.Order<span class="w"> </span>object<span class="w"> </span>at<span class="w"> </span>0x...&gt;&gt;<span class="w"> </span><span class="o">=</span><span class="w"> </span>&lt;commerce_system.Order<span class="w"> </span>object<span class="w"> </span>at<span class="w"> </span>0x...&gt;.total
+
+test_commerce_initial.py:18:<span class="w"> </span><span class="nv">AssertionError</span>
+<span class="o">=========================</span><span class="w"> </span>short<span class="w"> </span><span class="nb">test</span><span class="w"> </span>summary<span class="w"> </span><span class="nv">info</span><span class="w"> </span><span class="o">==========================</span>
+FAILED<span class="w"> </span>test_commerce_initial.py::test_order_discount_logic<span class="w"> </span>-<span class="w"> </span>assert<span class="w"> </span><span class="m">125</span>.0<span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">112</span>.5
+<span class="o">==================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>failed,<span class="w"> </span><span class="m">3</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">3</span>.05s<span class="w"> </span><span class="o">===================</span>
 </code></pre></div>
 
-<p>As you can see, the first test ran successfully but generated a warning in the final report. The second test, decorated with <code>filterwarnings</code>, ran without producing any warning output. This is useful for temporarily silencing warnings from third-party libraries or legacy code that you don't intend to fix immediately.</p>
+<p>We have several problems here:</p>
+<ol>
+<li><strong>One Failure Halts the Build:</strong> The <code>test_order_discount_logic</code> is failing due to a known bug. This marks the entire test run as a failure, which might block a CI/CD pipeline.</li>
+<li><strong>Everything Runs:</strong> The entire suite took over 3 seconds to run. The database and API tests are slow. During rapid development, we don't want to wait for these every single time.</li>
+<li><strong>Noisy Warnings:</strong> The <code>DeprecationWarning</code> clutters the output. In a large suite, this noise can hide important information.</li>
+</ol>
+<p>We have no way to tell pytest, "Run the fast tests," or "Ignore the known failure for now." This is the problem that markers are designed to solve.</p>
+<h2 id="built-in-markers-skip-xfail-filterwarnings">Built-in Markers (skip, xfail, filterwarnings)</h2>
+<h2 id="built-in-markers">Built-in Markers</h2>
+<p>Pytest provides several useful markers out of the box to handle common testing scenarios like known bugs, temporarily disabled tests, and unwanted warnings. Let's apply them to our commerce test suite to solve the problems we just identified.</p>
+<h3 id="iteration-1-handling-a-known-bug-with-pytestmarkxfail">Iteration 1: Handling a Known Bug with <code>@pytest.mark.xfail</code></h3>
+<p>Our current test suite fails because of a known bug in the <code>apply_discount</code> method. We don't want to delete the test—it's valuable documentation of the bug—but we also don't want it to fail our build.</p>
+<p><strong>Current Limitation:</strong> A legitimate test is failing due to a bug in the application code, causing the entire test suite to be marked as <code>FAILED</code>.</p>
+<p><strong>New Scenario:</strong> We need to inform pytest that we <em>expect</em> this test to fail.</p>
+<p><strong>Failure Demonstration:</strong> As we saw above, running <code>pytest</code> results in a clear <code>FAILED</code> status.</p>
+<h3 id="diagnostic-analysis-reading-the-failure">Diagnostic Analysis: Reading the Failure</h3>
+<p><strong>The complete output</strong>:</p>
+<div class="codehilite"><pre><span></span><code><span class="o">=================================</span><span class="w"> </span><span class="nv">FAILURES</span><span class="w"> </span><span class="o">=================================</span>
+________________________<span class="w"> </span>test_order_discount_logic<span class="w"> </span>_________________________
+
+<span class="w">    </span>def<span class="w"> </span>test_order_discount_logic<span class="o">()</span>:
+<span class="w">        </span><span class="s2">&quot;&quot;&quot;Tests the discount application logic, which is known to be buggy.&quot;&quot;&quot;</span>
+<span class="w">        </span><span class="nv">products</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">[</span>Product<span class="o">(</span><span class="s2">&quot;Keyboard&quot;</span>,<span class="w"> </span><span class="m">100</span>.00<span class="o">)</span>,<span class="w"> </span>Product<span class="o">(</span><span class="s2">&quot;Mouse&quot;</span>,<span class="w"> </span><span class="m">25</span>.00<span class="o">)]</span>
+<span class="w">        </span><span class="nv">order</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>Order<span class="o">(</span>products<span class="o">)</span>
+<span class="w">        </span>order.apply_discount<span class="o">(</span><span class="m">10</span><span class="o">)</span>
+<span class="w">        </span><span class="c1"># This will fail because the discount logic is flawed</span>
+&gt;<span class="w">       </span>assert<span class="w"> </span>order.total<span class="o">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">112</span>.50
+E<span class="w">       </span>assert<span class="w"> </span><span class="m">125</span>.0<span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">112</span>.5
+
+test_commerce_initial.py:18:<span class="w"> </span><span class="nv">AssertionError</span>
+<span class="o">=========================</span><span class="w"> </span>short<span class="w"> </span><span class="nb">test</span><span class="w"> </span>summary<span class="w"> </span><span class="nv">info</span><span class="w"> </span><span class="o">==========================</span>
+FAILED<span class="w"> </span>test_commerce_initial.py::test_order_discount_logic<span class="w"> </span>-<span class="w"> </span>assert<span class="w"> </span><span class="m">125</span>.0<span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="m">112</span>.5
+</code></pre></div>
+
+<p><strong>Let's parse this section by section</strong>:</p>
+<ol>
+<li>
+<p><strong>The summary line</strong>: <code>FAILED test_commerce_initial.py::test_order_discount_logic - assert 125.0 == 112.5</code></p>
+<ul>
+<li>What this tells us: The test failed because of a direct <code>AssertionError</code>. The values did not match.</li>
+</ul>
+</li>
+<li>
+<p><strong>The traceback</strong>: The traceback points directly to the line <code>assert order.total() == 112.50</code>.</p>
+<ul>
+<li>What this tells us: The failure is in the test's final check.</li>
+</ul>
+</li>
+<li>
+<p><strong>The assertion introspection</strong>: <code>E assert 125.0 == 112.5</code></p>
+<ul>
+<li>What this tells us: Pytest shows us the exact values being compared. The <code>order.total()</code> method returned <code>125.0</code>, but we expected <code>112.5</code>.</li>
+</ul>
+</li>
+</ol>
+<p><strong>Root cause identified</strong>: The <code>apply_discount</code> method does not actually change the value returned by <code>order.total()</code>.
+<strong>Why the current approach can't solve this</strong>: We can't fix the test without fixing the application code. But if the bug fix is scheduled for a later time, the test will continue to fail the build.
+<strong>What we need</strong>: A way to tell pytest: "Run this test, but I expect it to fail. Don't count this failure against me."</p>
+<h3 id="technique-introduced-pytestmarkxfail">Technique Introduced: <code>@pytest.mark.xfail</code></h3>
+<p>The <code>@pytest.mark.xfail</code> (expected failure) marker does exactly this. It tells pytest to run the test, but if it fails in a way we expect (like an <code>AssertionError</code>), the test run as a whole will still pass.</p>
+<p>Let's apply it. We'll rename our file to <code>test_commerce_marked.py</code> to track our progress.</p>
+<h3 id="solution-implementation">Solution Implementation</h3>
+<p><strong>Before (<code>test_commerce_initial.py</code>):</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">test_order_discount_logic</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests the discount application logic, which is known to be buggy.&quot;&quot;&quot;</span>
+    <span class="n">products</span> <span class="o">=</span> <span class="p">[</span><span class="n">Product</span><span class="p">(</span><span class="s2">&quot;Keyboard&quot;</span><span class="p">,</span> <span class="mf">100.00</span><span class="p">),</span> <span class="n">Product</span><span class="p">(</span><span class="s2">&quot;Mouse&quot;</span><span class="p">,</span> <span class="mf">25.00</span><span class="p">)]</span>
+    <span class="n">order</span> <span class="o">=</span> <span class="n">Order</span><span class="p">(</span><span class="n">products</span><span class="p">)</span>
+    <span class="n">order</span><span class="o">.</span><span class="n">apply_discount</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+    <span class="c1"># This will fail because the discount logic is flawed</span>
+    <span class="k">assert</span> <span class="n">order</span><span class="o">.</span><span class="n">total</span><span class="p">()</span> <span class="o">==</span> <span class="mf">112.50</span>
+</code></pre></div>
+
+<p><strong>After (<code>test_commerce_marked.py</code>):</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">commerce_system</span><span class="w"> </span><span class="kn">import</span> <span class="n">Order</span><span class="p">,</span> <span class="n">Product</span><span class="p">,</span> <span class="n">connect_to_db</span><span class="p">,</span> <span class="n">process_payment_via_api</span>
+
+<span class="c1"># ... other tests ...</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">xfail</span><span class="p">(</span><span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Discount logic is buggy, see TICKET-123&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_order_discount_logic</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests the discount application logic, which is known to be buggy.&quot;&quot;&quot;</span>
+    <span class="n">products</span> <span class="o">=</span> <span class="p">[</span><span class="n">Product</span><span class="p">(</span><span class="s2">&quot;Keyboard&quot;</span><span class="p">,</span> <span class="mf">100.00</span><span class="p">),</span> <span class="n">Product</span><span class="p">(</span><span class="s2">&quot;Mouse&quot;</span><span class="p">,</span> <span class="mf">25.00</span><span class="p">)]</span>
+    <span class="n">order</span> <span class="o">=</span> <span class="n">Order</span><span class="p">(</span><span class="n">products</span><span class="p">)</span>
+    <span class="n">order</span><span class="o">.</span><span class="n">apply_discount</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+    <span class="c1"># This will fail because the discount logic is flawed</span>
+    <span class="k">assert</span> <span class="n">order</span><span class="o">.</span><span class="n">total</span><span class="p">()</span> <span class="o">==</span> <span class="mf">112.50</span>
+
+<span class="c1"># ... other tests ...</span>
+</code></pre></div>
+
+<p>Note that we added a <code>reason</code> argument. This is excellent practice for documenting <em>why</em> the test is expected to fail.</p>
+<h3 id="verification">Verification</h3>
+<p>Let's run the new file.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>test_commerce_marked.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">4</span><span class="w"> </span>items
+
+test_commerce_marked.py::test_order_total<span class="w"> </span>PASSED<span class="w">                      </span><span class="o">[</span><span class="w"> </span><span class="m">25</span>%<span class="o">]</span>
+test_commerce_marked.py::test_order_discount_logic<span class="w"> </span>XFAIL<span class="w">              </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+test_commerce_marked.py::test_database_connection<span class="w"> </span>
+<span class="o">(</span>Connecting<span class="w"> </span>to<span class="w"> </span>database...<span class="o">)</span>
+<span class="o">(</span>Connection<span class="w"> </span>successful.<span class="o">)</span>
+PASSED<span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">75</span>%<span class="o">]</span>
+test_commerce_marked.py::test_payment_api_call<span class="w"> </span>
+<span class="o">(</span>Calling<span class="w"> </span>external<span class="w"> </span>payment<span class="w"> </span>API<span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="nv">$150</span>.00...<span class="o">)</span>
+.../test_commerce_marked.py:32:<span class="w"> </span>DeprecationWarning:<span class="w"> </span>This<span class="w"> </span>payment<span class="w"> </span>gateway<span class="w"> </span>is<span class="w"> </span>deprecated.
+<span class="w">  </span><span class="nv">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>process_payment_via_api<span class="o">(</span><span class="nv">total</span><span class="o">=</span><span class="m">150</span>.00<span class="o">)</span>
+<span class="o">(</span>API<span class="w"> </span>call<span class="w"> </span>successful.<span class="o">)</span>
+PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">====================</span><span class="w"> </span><span class="m">3</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>xfailed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">3</span>.06s<span class="w"> </span><span class="o">====================</span>
+</code></pre></div>
+
+<p><strong>Expected vs. Actual Improvement:</strong> The test suite now passes! The summary shows <code>3 passed, 1 xfailed</code>. The known failure is acknowledged but no longer breaks the build. This is a huge win for CI/CD stability.</p>
+<p>A fascinating side effect of <code>xfail</code> is that if the test <em>unexpectedly passes</em> (e.g., someone fixes the bug), pytest will report it as <code>XPASS</code>. This is a signal that your test and code are out of sync and the <code>xfail</code> marker should be removed.</p>
+<h3 id="iteration-2-temporarily-disabling-a-test-with-pytestmarkskip">Iteration 2: Temporarily Disabling a Test with <code>@pytest.mark.skip</code></h3>
+<p>Now, imagine the database team is refactoring the schema, and <code>connect_to_db()</code> is temporarily broken. The <code>test_database_connection</code> is guaranteed to fail, and running it just wastes time.</p>
+<p><strong>Current Limitation:</strong> We have a test for a feature that is temporarily unavailable. Running it is pointless and slows down the test suite.</p>
+<p><strong>What we need:</strong> A way to tell pytest: "Don't even bother running this test for now."</p>
+<h3 id="technique-introduced-pytestmarkskip">Technique Introduced: <code>@pytest.mark.skip</code></h3>
+<p>The <code>@pytest.mark.skip</code> marker tells pytest to not execute a test function at all. Like <code>xfail</code>, it's best practice to provide a <code>reason</code>.</p>
+<h3 id="solution-implementation_1">Solution Implementation</h3>
+<p>Let's add it to <code>test_database_connection</code>.</p>
+<p><strong>Before:</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># A slower integration test</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_database_connection</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests the function that connects to the database.&quot;&quot;&quot;</span>
+    <span class="n">conn</span> <span class="o">=</span> <span class="n">connect_to_db</span><span class="p">()</span>
+    <span class="k">assert</span> <span class="n">conn</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;connected&quot;</span>
+</code></pre></div>
+
+<p><strong>After (<code>test_commerce_marked.py</code>):</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># ... other tests ...</span>
+
+<span class="c1"># A slower integration test</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">skip</span><span class="p">(</span><span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Database schema is being refactored.&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_database_connection</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests the function that connects to the database.&quot;&quot;&quot;</span>
+    <span class="n">conn</span> <span class="o">=</span> <span class="n">connect_to_db</span><span class="p">()</span>
+    <span class="k">assert</span> <span class="n">conn</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;connected&quot;</span>
+
+<span class="c1"># ... other tests ...</span>
+</code></pre></div>
+
+<h3 id="verification_1">Verification</h3>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>test_commerce_marked.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">4</span><span class="w"> </span>items
+
+test_commerce_marked.py::test_order_total<span class="w"> </span>PASSED<span class="w">                      </span><span class="o">[</span><span class="w"> </span><span class="m">25</span>%<span class="o">]</span>
+test_commerce_marked.py::test_order_discount_logic<span class="w"> </span>XFAIL<span class="w">              </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+test_commerce_marked.py::test_database_connection<span class="w"> </span>SKIPPED<span class="w"> </span><span class="o">(</span>Database<span class="w"> </span>schema<span class="w"> </span>is<span class="w"> </span>being<span class="w"> </span>refactored.<span class="o">)</span><span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">75</span>%<span class="o">]</span>
+test_commerce_marked.py::test_payment_api_call<span class="w"> </span>
+<span class="o">(</span>Calling<span class="w"> </span>external<span class="w"> </span>payment<span class="w"> </span>API<span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="nv">$150</span>.00...<span class="o">)</span>
+.../test_commerce_marked.py:32:<span class="w"> </span>DeprecationWarning:<span class="w"> </span>This<span class="w"> </span>payment<span class="w"> </span>gateway<span class="w"> </span>is<span class="w"> </span>deprecated.
+<span class="w">  </span><span class="nv">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span>process_payment_via_api<span class="o">(</span><span class="nv">total</span><span class="o">=</span><span class="m">150</span>.00<span class="o">)</span>
+<span class="o">(</span>API<span class="w"> </span>call<span class="w"> </span>successful.<span class="o">)</span>
+PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">==================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>skipped,<span class="w"> </span><span class="m">1</span><span class="w"> </span>xfailed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">2</span>.04s<span class="w"> </span><span class="o">=================</span>
+</code></pre></div>
+
+<p><strong>Expected vs. Actual Improvement:</strong> The test is now marked as <code>SKIPPED</code>, and the reason is displayed. Notice the total test time dropped by about one second—the time it took to <code>connect_to_db()</code>. We've made our test run faster by not executing irrelevant tests.</p>
+<h3 id="iteration-3-suppressing-warnings-with-pytestmarkfilterwarnings">Iteration 3: Suppressing Warnings with <code>@pytest.mark.filterwarnings</code></h3>
+<p>Our final problem is the <code>DeprecationWarning</code> from the payment API call. While it's good to be aware of these, sometimes they are out of our control and just add noise.</p>
+<p><strong>Current Limitation:</strong> A test triggers a warning that we can't fix immediately, cluttering the test output.</p>
+<p><strong>What we need:</strong> A way to tell pytest: "For this specific test, I know about this specific warning, and I want you to ignore it."</p>
+<h3 id="technique-introduced-pytestmarkfilterwarnings">Technique Introduced: <code>@pytest.mark.filterwarnings</code></h3>
+<p>This marker allows you to add a warning filter for a specific test, using the same syntax as Python's own warning filters.</p>
+<h3 id="solution-implementation_2">Solution Implementation</h3>
+<p>Let's suppress the <code>DeprecationWarning</code> in <code>test_payment_api_call</code>.</p>
+<p><strong>Before:</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># A very slow API test</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_payment_api_call</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests the external payment API call.&quot;&quot;&quot;</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">process_payment_via_api</span><span class="p">(</span><span class="n">total</span><span class="o">=</span><span class="mf">150.00</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">result</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;paid&quot;</span>
+    <span class="k">assert</span> <span class="n">result</span><span class="p">[</span><span class="s2">&quot;amount&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="mf">150.00</span>
+</code></pre></div>
+
+<p><strong>After (<code>test_commerce_marked.py</code>):</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># ... other tests ...</span>
+
+<span class="c1"># A very slow API test</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">filterwarnings</span><span class="p">(</span><span class="s2">&quot;ignore:This payment gateway is deprecated.&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_payment_api_call</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests the external payment API call.&quot;&quot;&quot;</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">process_payment_via_api</span><span class="p">(</span><span class="n">total</span><span class="o">=</span><span class="mf">150.00</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">result</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;paid&quot;</span>
+    <span class="k">assert</span> <span class="n">result</span><span class="p">[</span><span class="s2">&quot;amount&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="mf">150.00</span>
+</code></pre></div>
+
+<h3 id="verification_2">Verification</h3>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>test_commerce_marked.py
+<span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
+...
+collected<span class="w"> </span><span class="m">4</span><span class="w"> </span>items
+
+test_commerce_marked.py::test_order_total<span class="w"> </span>PASSED<span class="w">                      </span><span class="o">[</span><span class="w"> </span><span class="m">25</span>%<span class="o">]</span>
+test_commerce_marked.py::test_order_discount_logic<span class="w"> </span>XFAIL<span class="w">              </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+test_commerce_marked.py::test_database_connection<span class="w"> </span>SKIPPED<span class="w"> </span><span class="o">(</span>Database<span class="w"> </span>schema<span class="w"> </span>is<span class="w"> </span>being<span class="w"> </span>refactored.<span class="o">)</span><span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">75</span>%<span class="o">]</span>
+test_commerce_marked.py::test_payment_api_call<span class="w"> </span>
+<span class="o">(</span>Calling<span class="w"> </span>external<span class="w"> </span>payment<span class="w"> </span>API<span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="nv">$150</span>.00...<span class="o">)</span>
+<span class="o">(</span>API<span class="w"> </span>call<span class="w"> </span>successful.<span class="o">)</span>
+PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">==================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>skipped,<span class="w"> </span><span class="m">1</span><span class="w"> </span>xfailed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">2</span>.04s<span class="w"> </span><span class="o">=================</span>
+</code></pre></div>
+
+<p><strong>Expected vs. Actual Improvement:</strong> The test output is now clean. The <code>DeprecationWarning</code> is no longer displayed in the summary, making the output easier to read. We've successfully managed all the initial problems using built-in markers.</p>
+<p><strong>Limitation Preview:</strong> This is great, but we still haven't solved our biggest organizational problem: we can't selectively run tests based on their <em>type</em> (e.g., fast unit tests vs. slow API tests). For that, we need to create our own markers.</p>
 <h2 id="creating-custom-markers">Creating Custom Markers</h2>
 <h2 id="creating-custom-markers_1">Creating Custom Markers</h2>
-<p>While the built-in markers are useful, the real power comes from creating your own. This allows you to categorize your tests according to the logic of your own application.</p>
-<p>Let's use a common scenario. In a typical project, you might have:
--   <strong>Unit tests</strong>: Fast, isolated, test a single piece of logic.
--   <strong>Integration tests</strong>: Slower, test how multiple components work together.
--   <strong>API tests</strong>: Even slower, make real network requests to an external service.</p>
-<p>Creating custom markers is as simple as using them. You don't need to declare them anywhere first (though we'll see why you <em>should</em> in the next section).</p>
-<p>Let's write a test file that uses these categories.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_categories.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<p>The true power of markers comes from creating your own. You can define any marker you want to categorize your tests by functionality, speed, or any other criteria relevant to your project.</p>
+<h3 id="iteration-4-categorizing-tests-with-custom-markers">Iteration 4: Categorizing Tests with Custom Markers</h3>
+<p>Our test suite has different kinds of tests:
+- <code>test_order_total</code>: A fast unit test.
+- <code>test_order_discount_logic</code>: Another fast unit test.
+- <code>test_database_connection</code>: A slower integration test.
+- <code>test_payment_api_call</code>: A very slow test that depends on an external API.</p>
+<p><strong>Current Limitation:</strong> We have no way to distinguish between these types of tests. <code>pytest</code> treats them all the same, forcing us to run them all, every time.</p>
+<p><strong>New Scenario:</strong> As a developer, I want to run only the fast <code>unit</code> tests while I'm actively coding to get quick feedback.</p>
+<h3 id="technique-introduced-custom-marker-naming">Technique Introduced: Custom Marker Naming</h3>
+<p>Creating a custom marker is as simple as adding a decorator with a name you choose. The syntax is <code>@pytest.mark.your_marker_name</code>.</p>
+<p>Let's categorize our tests using the markers <code>unit</code>, <code>integration</code>, and <code>api</code>.</p>
+<h3 id="solution-implementation_3">Solution Implementation</h3>
+<p>We will apply these new markers to our <code>test_commerce_marked.py</code> file.</p>
+<p><strong>Before:</strong>
+The tests had only built-in markers (<code>xfail</code>, <code>skip</code>, etc.) or no markers at all.</p>
+<p><strong>After (<code>test_commerce_marked.py</code>):</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">commerce_system</span><span class="w"> </span><span class="kn">import</span> <span class="n">Order</span><span class="p">,</span> <span class="n">Product</span><span class="p">,</span> <span class="n">connect_to_db</span><span class="p">,</span> <span class="n">process_payment_via_api</span>
 
+<span class="c1"># A fast, simple unit test</span>
 <span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">unit</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_sum_numbers</span><span class="p">():</span>
-    <span class="k">assert</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">==</span> <span class="mi">4</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_order_total</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests the total calculation for a simple order.&quot;&quot;&quot;</span>
+    <span class="n">products</span> <span class="o">=</span> <span class="p">[</span><span class="n">Product</span><span class="p">(</span><span class="s2">&quot;Laptop&quot;</span><span class="p">,</span> <span class="mf">1200.00</span><span class="p">),</span> <span class="n">Product</span><span class="p">(</span><span class="s2">&quot;Mouse&quot;</span><span class="p">,</span> <span class="mf">25.00</span><span class="p">)]</span>
+    <span class="n">order</span> <span class="o">=</span> <span class="n">Order</span><span class="p">(</span><span class="n">products</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">order</span><span class="o">.</span><span class="n">total</span><span class="p">()</span> <span class="o">==</span> <span class="mf">1225.00</span>
 
+<span class="c1"># A test for a known bug</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">unit</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">xfail</span><span class="p">(</span><span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Discount logic is buggy, see TICKET-123&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_order_discount_logic</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests the discount application logic, which is known to be buggy.&quot;&quot;&quot;</span>
+    <span class="n">products</span> <span class="o">=</span> <span class="p">[</span><span class="n">Product</span><span class="p">(</span><span class="s2">&quot;Keyboard&quot;</span><span class="p">,</span> <span class="mf">100.00</span><span class="p">),</span> <span class="n">Product</span><span class="p">(</span><span class="s2">&quot;Mouse&quot;</span><span class="p">,</span> <span class="mf">25.00</span><span class="p">)]</span>
+    <span class="n">order</span> <span class="o">=</span> <span class="n">Order</span><span class="p">(</span><span class="n">products</span><span class="p">)</span>
+    <span class="n">order</span><span class="o">.</span><span class="n">apply_discount</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">order</span><span class="o">.</span><span class="n">total</span><span class="p">()</span> <span class="o">==</span> <span class="mf">112.50</span>
+
+<span class="c1"># A slower integration test</span>
 <span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">integration</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_db_connection</span><span class="p">():</span>
-    <span class="c1"># Pretend this connects to a database</span>
-    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.5</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="kc">True</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">skip</span><span class="p">(</span><span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Database schema is being refactored.&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_database_connection</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests the function that connects to the database.&quot;&quot;&quot;</span>
+    <span class="n">conn</span> <span class="o">=</span> <span class="n">connect_to_db</span><span class="p">()</span>
+    <span class="k">assert</span> <span class="n">conn</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;connected&quot;</span>
 
+<span class="c1"># A very slow API test</span>
 <span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">api</span>
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">slow</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_api_call</span><span class="p">():</span>
-    <span class="c1"># Pretend this makes a network call</span>
-    <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
-    <span class="k">assert</span> <span class="kc">True</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">filterwarnings</span><span class="p">(</span><span class="s2">&quot;ignore:This payment gateway is deprecated.&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_payment_api_call</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests the external payment API call.&quot;&quot;&quot;</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">process_payment_via_api</span><span class="p">(</span><span class="n">total</span><span class="o">=</span><span class="mf">150.00</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">result</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;paid&quot;</span>
+    <span class="k">assert</span> <span class="n">result</span><span class="p">[</span><span class="s2">&quot;amount&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="mf">150.00</span>
 </code></pre></div>
 
-<p>That's it! We've just "created" three new markers: <code>unit</code>, <code>integration</code>, and <code>api</code>. We also added the <code>slow</code> marker to the API test, demonstrating that you can apply multiple markers to a single test.</p>
-<p>Right now, these markers don't do anything by themselves. They are just metadata waiting to be used. Their power is unlocked when we use them for filtering, which we'll cover in section 6.5. But first, let's address a small problem this code creates.</p>
-<h2 id="registering-markers-in-configuration">Registering Markers in Configuration</h2>
-<h2 id="registering-markers-in-configuration_1">Registering Markers in Configuration</h2>
-<p>If you run the test file from the previous section, you'll notice something new in the output.</p>
-<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>tests/test_categories.py
+<p>Notice that you can stack markers. <code>test_order_discount_logic</code> is now marked as both <code>unit</code> and <code>xfail</code>.</p>
+<h3 id="verification_3">Verification</h3>
+<p>Let's run pytest and see what happens.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>test_commerce_marked.py
 <span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
 ...
-collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items
+collected<span class="w"> </span><span class="m">4</span><span class="w"> </span>items
 
-tests/test_categories.py<span class="w"> </span>...<span class="w">                                         </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
-
-<span class="o">==============================</span><span class="w"> </span><span class="nv">Warnings</span><span class="w"> </span><span class="o">==================================</span>
-.../tests/test_categories.py:5
-<span class="w">  </span>PytestUnknownMarkWarning:<span class="w"> </span>Unknown<span class="w"> </span>pytest.mark.unit<span class="w"> </span>-<span class="w"> </span>is<span class="w"> </span>this<span class="w"> </span>a<span class="w"> </span>typo?
+test_commerce_marked.py::test_order_total<span class="w"> </span>PASSED<span class="w">                      </span><span class="o">[</span><span class="w"> </span><span class="m">25</span>%<span class="o">]</span>
+test_commerce_marked.py::test_order_discount_logic<span class="w"> </span>XFAIL<span class="w">              </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+test_commerce_marked.py::test_database_connection<span class="w"> </span>SKIPPED<span class="w"> </span><span class="o">(</span>Database<span class="w"> </span>schema<span class="w"> </span>is<span class="w"> </span>being<span class="w"> </span>refactored.<span class="o">)</span><span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">75</span>%<span class="o">]</span>
+test_commerce_marked.py::test_payment_api_call<span class="w"> </span>PASSED<span class="w">                 </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+<span class="o">===========================</span><span class="w"> </span>warnings<span class="w"> </span><span class="nv">summary</span><span class="w"> </span><span class="o">===============================</span>
+.../test_commerce_marked.py:7
+<span class="w">  </span>.../test_commerce_marked.py:7:<span class="w"> </span>PytestUnknownMarkWarning:<span class="w"> </span>Unknown<span class="w"> </span>pytest.mark.unit<span class="w"> </span>-<span class="w"> </span>is<span class="w"> </span>this<span class="w"> </span>a<span class="w"> </span>typo?<span class="w">  </span>You<span class="w"> </span>can<span class="w"> </span>register<span class="w"> </span>custom<span class="w"> </span>marks<span class="w"> </span>to<span class="w"> </span>avoid<span class="w"> </span>this<span class="w"> </span>warning.
 <span class="w">    </span>@pytest.mark.unit
 
-.../tests/test_categories.py:9
-<span class="w">  </span>PytestUnknownMarkWarning:<span class="w"> </span>Unknown<span class="w"> </span>pytest.mark.integration<span class="w"> </span>-<span class="w"> </span>is<span class="w"> </span>this<span class="w"> </span>a<span class="w"> </span>typo?
+.../test_commerce_marked.py:22
+<span class="w">  </span>.../test_commerce_marked.py:22:<span class="w"> </span>PytestUnknownMarkWarning:<span class="w"> </span>Unknown<span class="w"> </span>pytest.mark.integration<span class="w"> </span>-<span class="w"> </span>is<span class="w"> </span>this<span class="w"> </span>a<span class="w"> </span>typo?<span class="w">  </span>You<span class="w"> </span>can<span class="w"> </span>register<span class="w"> </span>custom<span class="w"> </span>marks<span class="w"> </span>to<span class="w"> </span>avoid<span class="w"> </span>this<span class="w"> </span>warning.
 <span class="w">    </span>@pytest.mark.integration
 
-.../tests/test_categories.py:14
-<span class="w">  </span>PytestUnknownMarkWarning:<span class="w"> </span>Unknown<span class="w"> </span>pytest.mark.api<span class="w"> </span>-<span class="w"> </span>is<span class="w"> </span>this<span class="w"> </span>a<span class="w"> </span>typo?
+.../test_commerce_marked.py:30
+<span class="w">  </span>.../test_commerce_marked.py:30:<span class="w"> </span>PytestUnknownMarkWarning:<span class="w"> </span>Unknown<span class="w"> </span>pytest.mark.api<span class="w"> </span>-<span class="w"> </span>is<span class="w"> </span>this<span class="w"> </span>a<span class="w"> </span>typo?<span class="w">  </span>You<span class="w"> </span>can<span class="w"> </span>register<span class="w"> </span>custom<span class="w"> </span>marks<span class="w"> </span>to<span class="w"> </span>avoid<span class="w"> </span>this<span class="w"> </span>warning.
 <span class="w">    </span>@pytest.mark.api
 
---<span class="w"> </span>Docs:<span class="w"> </span>https://docs.pytest.org/en/stable/how-to/mark.html
-<span class="o">======================</span><span class="w"> </span><span class="m">3</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">3</span><span class="w"> </span>warnings<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">1</span>.52s<span class="w"> </span><span class="o">=====================</span>
+--<span class="w"> </span>Docs:<span class="w"> </span>https://docs.pytest.org/en/stable/how-to/mark.html#registering-marks
+<span class="o">==================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>skipped,<span class="w"> </span><span class="m">1</span><span class="w"> </span>xfailed,<span class="w"> </span><span class="m">3</span><span class="w"> </span>warnings<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">2</span>.05s<span class="w"> </span><span class="o">=================</span>
 </code></pre></div>
 
-<p>Pytest runs the tests, but it issues a <code>PytestUnknownMarkWarning</code> for each of our custom markers. Why?</p>
-<p>This is a safety feature. Pytest warns you about unrecognized markers to help you catch typos. If you accidentally typed <code>@pytest.mark.integraton</code> instead of <code>@pytest.mark.integration</code>, you would want pytest to tell you! Without this warning, your misspelled marker would be silently ignored, and the test wouldn't be included in the <code>integration</code> group.</p>
-<p>To make pytest recognize our markers—and to document them for other developers—we should register them in a configuration file. The most common place for this is <code>pytest.ini</code> in the root of your project.</p>
-<p>Let's create that file.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># pytest.ini</span>
-<span class="k">[pytest]</span>
+<p>The tests ran as before, but now we have a new problem: <code>PytestUnknownMarkWarning</code>.</p>
+<h2 id="registering-markers-in-configuration">Registering Markers in Configuration</h2>
+<h2 id="registering-markers-in-configuration_1">Registering Markers in Configuration</h2>
+<p>We've successfully added custom markers, but pytest is helpfully warning us that it doesn't recognize them. This is a safety feature to prevent typos (e.g., <code>@pytest.mark.integraton</code> instead of <code>@pytest.mark.integration</code>). To make our markers "official," we need to register them.</p>
+<h3 id="iteration-5-eliminating-unknown-marker-warnings">Iteration 5: Eliminating "Unknown Marker" Warnings</h3>
+<p><strong>Current Limitation:</strong> Our test suite runs but produces <code>PytestUnknownMarkWarning</code> for each of our custom markers, cluttering the output and indicating poor practice.</p>
+<h3 id="diagnostic-analysis-reading-the-warning">Diagnostic Analysis: Reading the Warning</h3>
+<p><strong>The complete output</strong>:</p>
+<div class="codehilite"><pre><span></span><code><span class="o">===========================</span><span class="w"> </span>warnings<span class="w"> </span><span class="nv">summary</span><span class="w"> </span><span class="o">===============================</span>
+.../test_commerce_marked.py:7
+<span class="w">  </span>.../test_commerce_marked.py:7:<span class="w"> </span>PytestUnknownMarkWarning:<span class="w"> </span>Unknown<span class="w"> </span>pytest.mark.unit<span class="w"> </span>-<span class="w"> </span>is<span class="w"> </span>this<span class="w"> </span>a<span class="w"> </span>typo?<span class="w">  </span>You<span class="w"> </span>can<span class="w"> </span>register<span class="w"> </span>custom<span class="w"> </span>marks<span class="w"> </span>to<span class="w"> </span>avoid<span class="w"> </span>this<span class="w"> </span>warning.
+<span class="w">    </span>@pytest.mark.unit
+...
+</code></pre></div>
+
+<p><strong>Let's parse this section by section</strong>:</p>
+<ol>
+<li>
+<p><strong>The warning type</strong>: <code>PytestUnknownMarkWarning</code>.</p>
+<ul>
+<li>What this tells us: This is a specific warning from pytest itself about the usage of markers.</li>
+</ul>
+</li>
+<li>
+<p><strong>The message</strong>: <code>Unknown pytest.mark.unit - is this a typo?</code></p>
+<ul>
+<li>What this tells us: Pytest is explicitly asking if we made a mistake. It doesn't know if <code>unit</code> is a valid category we intended to create or a typo of a built-in marker.</li>
+</ul>
+</li>
+<li>
+<p><strong>The suggestion</strong>: <code>You can register custom marks to avoid this warning.</code></p>
+<ul>
+<li>What this tells us: Pytest is guiding us directly to the solution.</li>
+</ul>
+</li>
+</ol>
+<p><strong>Root cause identified</strong>: We have defined custom markers in our test code, but we haven't declared them in our project's configuration.
+<strong>What we need</strong>: A configuration file (<code>pytest.ini</code>, <code>pyproject.toml</code>, or <code>tox.ini</code>) where we can list our custom markers.</p>
+<h3 id="technique-introduced-the-markers-configuration-key">Technique Introduced: The <code>markers</code> Configuration Key</h3>
+<p>You can register markers by creating a <code>pytest.ini</code> file in the root of your project and adding a <code>[pytest]</code> section with a <code>markers</code> key.</p>
+<h3 id="solution-implementation_4">Solution Implementation</h3>
+<p>Let's create a <code>pytest.ini</code> file.</p>
+<p><strong><code>pytest.ini</code>:</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="k">[pytest]</span>
 <span class="na">markers</span><span class="w"> </span><span class="o">=</span>
-<span class="w">    </span><span class="na">unit</span><span class="o">:</span><span class="w"> </span><span class="s">marks tests as unit tests (fast, isolated)</span>
-<span class="w">    </span><span class="na">integration</span><span class="o">:</span><span class="w"> </span><span class="s">marks tests as integration tests (slower, may require services)</span>
-<span class="w">    </span><span class="na">api</span><span class="o">:</span><span class="w"> </span><span class="s">marks tests as API tests (slowest, requires network access)</span>
-<span class="w">    </span><span class="na">slow</span><span class="o">:</span><span class="w"> </span><span class="s">marks tests as slow to run</span>
+<span class="w">    </span><span class="na">unit</span><span class="o">:</span><span class="w"> </span><span class="s">marks tests as unit tests (fast, no dependencies)</span>
+<span class="w">    </span><span class="na">integration</span><span class="o">:</span><span class="w"> </span><span class="s">marks tests as integration tests (slower, may require services like a DB)</span>
+<span class="w">    </span><span class="na">api</span><span class="o">:</span><span class="w"> </span><span class="s">marks tests as API tests (very slow, requires network access)</span>
 </code></pre></div>
 
-<p>The format is simple: under the <code>[pytest]</code> section, add a <code>markers</code> key. Each line that follows is a marker name, a colon, and a description. The description is excellent documentation for your team.</p>
-<p>Now, with <code>pytest.ini</code> in our project root, let's run the tests again.</p>
-<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>tests/test_categories.py
+<p>This format is simple: each line under <code>markers</code> is <code>marker_name: description</code>. The description is important, as it will appear in pytest's help text.</p>
+<h3 id="verification_4">Verification</h3>
+<p>First, let's see if pytest recognizes our markers now by running <code>pytest --markers</code>.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>--markers
+
+@pytest.mark.unit:<span class="w"> </span>marks<span class="w"> </span>tests<span class="w"> </span>as<span class="w"> </span>unit<span class="w"> </span>tests<span class="w"> </span><span class="o">(</span>fast,<span class="w"> </span>no<span class="w"> </span>dependencies<span class="o">)</span>
+@pytest.mark.integration:<span class="w"> </span>marks<span class="w"> </span>tests<span class="w"> </span>as<span class="w"> </span>integration<span class="w"> </span>tests<span class="w"> </span><span class="o">(</span>slower,<span class="w"> </span>may<span class="w"> </span>require<span class="w"> </span>services<span class="w"> </span>like<span class="w"> </span>a<span class="w"> </span>DB<span class="o">)</span>
+@pytest.mark.api:<span class="w"> </span>marks<span class="w"> </span>tests<span class="w"> </span>as<span class="w"> </span>API<span class="w"> </span>tests<span class="w"> </span><span class="o">(</span>very<span class="w"> </span>slow,<span class="w"> </span>requires<span class="w"> </span>network<span class="w"> </span>access<span class="o">)</span>
+
+@pytest.mark.filterwarnings<span class="o">(</span>warning<span class="o">)</span>:<span class="w"> </span>add<span class="w"> </span>a<span class="w"> </span>warning<span class="w"> </span>filter<span class="w"> </span>to<span class="w"> </span>the<span class="w"> </span>given<span class="w"> </span>test.
+@pytest.mark.skip<span class="o">(</span><span class="nv">reason</span><span class="o">=</span>None<span class="o">)</span>:<span class="w"> </span>skip<span class="w"> </span>the<span class="w"> </span>given<span class="w"> </span><span class="nb">test</span><span class="w"> </span><span class="k">function</span><span class="w"> </span>with<span class="w"> </span>an<span class="w"> </span>optional<span class="w"> </span>reason.
+@pytest.mark.skipif<span class="o">(</span>condition,<span class="w"> </span>...,<span class="w"> </span><span class="nv">reason</span><span class="o">=</span>None<span class="o">)</span>:<span class="w"> </span>skip<span class="w"> </span>the<span class="w"> </span>given<span class="w"> </span><span class="nb">test</span><span class="w"> </span><span class="k">function</span><span class="w"> </span><span class="k">if</span><span class="w"> </span>any<span class="w"> </span>of<span class="w"> </span>the<span class="w"> </span>conditions<span class="w"> </span>evaluate<span class="w"> </span>to<span class="w"> </span>true.
+@pytest.mark.xfail<span class="o">(</span>condition,<span class="w"> </span>...,<span class="w"> </span><span class="nv">reason</span><span class="o">=</span>None,<span class="w"> </span><span class="nv">run</span><span class="o">=</span>True,<span class="w"> </span><span class="nv">raises</span><span class="o">=</span>None,<span class="w"> </span><span class="nv">strict</span><span class="o">=</span>False<span class="o">)</span>:<span class="w"> </span>mark<span class="w"> </span>the<span class="w"> </span><span class="nb">test</span><span class="w"> </span><span class="k">function</span><span class="w"> </span>as<span class="w"> </span>an<span class="w"> </span>expected<span class="w"> </span>failure<span class="w"> </span><span class="k">if</span><span class="w"> </span>any<span class="w"> </span>of<span class="w"> </span>the<span class="w"> </span>conditions<span class="w"> </span>are<span class="w"> </span>true.
+@pytest.mark.parametrize<span class="o">(</span>argnames,<span class="w"> </span>argvalues,<span class="w"> </span>...<span class="o">)</span>:<span class="w"> </span>call<span class="w"> </span>a<span class="w"> </span><span class="nb">test</span><span class="w"> </span><span class="k">function</span><span class="w"> </span>multiple<span class="w"> </span><span class="nb">times</span><span class="w"> </span>with<span class="w"> </span>different<span class="w"> </span>arguments.
+</code></pre></div>
+
+<p>Success! Our custom markers <code>unit</code>, <code>integration</code>, and <code>api</code> are listed alongside the built-in ones, complete with our descriptions.</p>
+<p>Now, let's re-run our test suite and check for warnings.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>test_commerce_marked.py
 <span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
 ...
-collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items
+collected<span class="w"> </span><span class="m">4</span><span class="w"> </span>items
 
-tests/test_categories.py<span class="w"> </span>...<span class="w">                                         </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+test_commerce_marked.py::test_order_total<span class="w"> </span>PASSED<span class="w">                      </span><span class="o">[</span><span class="w"> </span><span class="m">25</span>%<span class="o">]</span>
+test_commerce_marked.py::test_order_discount_logic<span class="w"> </span>XFAIL<span class="w">              </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+test_commerce_marked.py::test_database_connection<span class="w"> </span>SKIPPED<span class="w"> </span><span class="o">(</span>Database<span class="w"> </span>schema<span class="w"> </span>is<span class="w"> </span>being<span class="w"> </span>refactored.<span class="o">)</span><span class="w"> </span><span class="o">[</span><span class="w"> </span><span class="m">75</span>%<span class="o">]</span>
+test_commerce_marked.py::test_payment_api_call<span class="w"> </span>PASSED<span class="w">                 </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
 
-<span class="o">=========================</span><span class="w"> </span><span class="m">3</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">1</span>.52s<span class="w"> </span><span class="o">==========================</span>
+<span class="o">==================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>skipped,<span class="w"> </span><span class="m">1</span><span class="w"> </span>xfailed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">2</span>.06s<span class="w"> </span><span class="o">=================</span>
 </code></pre></div>
 
-<p>The warnings are gone! We have officially told pytest about our custom markers. This is a critical best practice for any project that uses custom markers. You can also see a list of all available markers (including built-in ones) by running <code>pytest --markers</code>.</p>
+<p><strong>Expected vs. Actual Improvement:</strong> The output is perfectly clean. The <code>PytestUnknownMarkWarning</code> messages are gone. Our test suite is now well-organized <em>and</em> correctly configured.</p>
+<p><strong>Limitation Preview:</strong> We've done all the setup. We've categorized and registered our markers. But we still haven't actually <em>used</em> them to change which tests are run. That's the final, crucial step.</p>
 <h2 id="filtering-tests-by-markers">Filtering Tests by Markers</h2>
 <h2 id="filtering-tests-by-markers_1">Filtering Tests by Markers</h2>
-<p>Now we get to the payoff. We've tagged our tests with metadata; it's time to use that metadata to control which tests are run. This is done with the <code>-m</code> command-line option.</p>
-<p>Let's use our <code>tests/test_categories.py</code> file from before.</p>
-<h3 id="running-a-single-group-of-tests">Running a Single Group of Tests</h3>
-<p>To run only the unit tests, we use <code>-m unit</code>.</p>
+<p>This is where all our organizational work pays off. With markers in place, we can use the <code>-m</code> command-line option to run specific subsets of our tests.</p>
+<h3 id="iteration-6-selectively-running-tests-with-m">Iteration 6: Selectively Running Tests with <code>-m</code></h3>
+<p><strong>Current Limitation:</strong> We have markers, but <code>pytest</code> still runs everything it finds (respecting <code>skip</code> and <code>xfail</code>, of course). We cannot yet run <em>only</em> the unit tests.</p>
+<h3 id="technique-introduced-the-m-command-line-option">Technique Introduced: The <code>-m</code> Command-Line Option</h3>
+<p>The <code>-m</code> flag allows you to specify a "marker expression" to select tests.</p>
+<h3 id="solution-implementation-verification">Solution Implementation &amp; Verification</h3>
+<p>Let's try out some common filtering scenarios.</p>
+<p><strong>1. Run only the unit tests:</strong>
+This is our primary goal: get fast feedback during development.</p>
 <div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>-m<span class="w"> </span><span class="nv">unit</span>
 <span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
 ...
-collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items<span class="w"> </span>/<span class="w"> </span><span class="m">2</span><span class="w"> </span>deselected<span class="w"> </span>/<span class="w"> </span><span class="m">1</span><span class="w"> </span>selected
+collected<span class="w"> </span><span class="m">4</span><span class="w"> </span>items<span class="w"> </span>/<span class="w"> </span><span class="m">2</span><span class="w"> </span>deselected<span class="w"> </span>/<span class="w"> </span><span class="m">2</span><span class="w"> </span>selected
 
-tests/test_categories.py::test_sum_numbers<span class="w"> </span>PASSED<span class="w">                      </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+test_commerce_marked.py::test_order_total<span class="w"> </span>PASSED<span class="w">                      </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
+test_commerce_marked.py::test_order_discount_logic<span class="w"> </span>XFAIL<span class="w">              </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
 
-<span class="o">===================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">2</span><span class="w"> </span>deselected<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.01s<span class="w"> </span><span class="o">====================</span>
+<span class="o">====================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>xfailed,<span class="w"> </span><span class="m">2</span><span class="w"> </span>deselected<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.02s<span class="w"> </span><span class="o">====================</span>
 </code></pre></div>
 
-<p>Pytest reports that it collected 3 tests but deselected 2, running only the 1 test marked with <code>unit</code>.</p>
-<h3 id="excluding-a-group-of-tests">Excluding a Group of Tests</h3>
-<p>Perhaps more commonly, you'll want to run your fast tests and exclude the slow ones. You can do this with <code>not</code>.</p>
-<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not slow&quot;</span>
+<p>Look at that! Pytest selected only the two tests marked <code>unit</code>. The integration and API tests were <code>deselected</code>. The total run time was a fraction of a second. This is the rapid feedback loop we wanted.</p>
+<p><strong>2. Run only the integration tests:</strong></p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>-m<span class="w"> </span><span class="nv">integration</span>
 <span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
 ...
-collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items<span class="w"> </span>/<span class="w"> </span><span class="m">1</span><span class="w"> </span>deselected<span class="w"> </span>/<span class="w"> </span><span class="m">2</span><span class="w"> </span>selected
+collected<span class="w"> </span><span class="m">4</span><span class="w"> </span>items<span class="w"> </span>/<span class="w"> </span><span class="m">3</span><span class="w"> </span>deselected<span class="w"> </span>/<span class="w"> </span><span class="m">1</span><span class="w"> </span>selected
 
-tests/test_categories.py::test_sum_numbers<span class="w"> </span>PASSED<span class="w">                      </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
-tests/test_categories.py::test_db_connection<span class="w"> </span>PASSED<span class="w">                    </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+test_commerce_marked.py::test_database_connection<span class="w"> </span>SKIPPED<span class="w"> </span><span class="o">(</span>Database<span class="w"> </span>schema<span class="w"> </span>is<span class="w"> </span>being<span class="w"> </span>refactored.<span class="o">)</span><span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
 
-<span class="o">===================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>deselected<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.51s<span class="w"> </span><span class="o">====================</span>
+<span class="o">===================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>skipped,<span class="w"> </span><span class="m">3</span><span class="w"> </span>deselected<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.01s<span class="w"> </span><span class="o">===================</span>
 </code></pre></div>
 
-<p>Notice the quotes around <code>"not slow"</code>. They are often necessary because command-line shells can interpret characters like <code>(</code> or <code>)</code> as special commands. It's a good habit to always quote your <code>-m</code> expression.</p>
-<h3 id="combining-markers-with-and-and-or">Combining Markers with <code>and</code> and <code>or</code></h3>
-<p>You can build more complex queries using boolean logic.</p>
-<ul>
-<li><strong><code>and</code></strong>: Run tests that have <em>all</em> the specified markers.</li>
-<li><strong><code>or</code></strong>: Run tests that have <em>any</em> of the specified markers.</li>
-</ul>
-<p>Let's run tests that are marked as both <code>api</code> AND <code>slow</code>.</p>
-<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;api and slow&quot;</span>
+<p>As expected, it selected our single integration test, which is currently skipped.</p>
+<p><strong>3. Run everything <em>except</em> the slow API tests:</strong>
+You can use boolean logic. <code>not</code> is very useful for excluding slow or disruptive tests.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;not api&quot;</span>
 <span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
 ...
-collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items<span class="w"> </span>/<span class="w"> </span><span class="m">2</span><span class="w"> </span>deselected<span class="w"> </span>/<span class="w"> </span><span class="m">1</span><span class="w"> </span>selected
+collected<span class="w"> </span><span class="m">4</span><span class="w"> </span>items<span class="w"> </span>/<span class="w"> </span><span class="m">1</span><span class="w"> </span>deselected<span class="w"> </span>/<span class="w"> </span><span class="m">3</span><span class="w"> </span>selected
 
-tests/test_categories.py::test_api_call<span class="w"> </span>PASSED<span class="w">                         </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+test_commerce_marked.py::test_order_total<span class="w"> </span>PASSED<span class="w">                      </span><span class="o">[</span><span class="w"> </span><span class="m">33</span>%<span class="o">]</span>
+test_commerce_marked.py::test_order_discount_logic<span class="w"> </span>XFAIL<span class="w">              </span><span class="o">[</span><span class="w"> </span><span class="m">66</span>%<span class="o">]</span>
+test_commerce_marked.py::test_database_connection<span class="w"> </span>SKIPPED<span class="w"> </span><span class="o">(</span>Database<span class="w"> </span>schema<span class="w"> </span>is<span class="w"> </span>being<span class="w"> </span>refactored.<span class="o">)</span><span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
 
-<span class="o">===================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">2</span><span class="w"> </span>deselected<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">1</span>.01s<span class="w"> </span><span class="o">====================</span>
+<span class="o">================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>skipped,<span class="w"> </span><span class="m">1</span><span class="w"> </span>xfailed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>deselected<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.02s<span class="w"> </span><span class="o">================</span>
 </code></pre></div>
 
-<p>Only <code>test_api_call</code> matched because it's the only one with both markers.</p>
-<p>Now, let's run tests that are marked as either <code>unit</code> OR <code>api</code>.</p>
-<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;unit or api&quot;</span>
+<p>This ran the <code>unit</code> and <code>integration</code> tests but skipped the <code>api</code> test. This is perfect for a pre-commit hook or a quick CI check.</p>
+<p><strong>4. Run unit tests OR integration tests:</strong></p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest<span class="w"> </span>-v<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;unit or integration&quot;</span>
 <span class="o">===========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">============================</span>
 ...
-collected<span class="w"> </span><span class="m">3</span><span class="w"> </span>items<span class="w"> </span>/<span class="w"> </span><span class="m">1</span><span class="w"> </span>deselected<span class="w"> </span>/<span class="w"> </span><span class="m">2</span><span class="w"> </span>selected
+collected<span class="w"> </span><span class="m">4</span><span class="w"> </span>items<span class="w"> </span>/<span class="w"> </span><span class="m">1</span><span class="w"> </span>deselected<span class="w"> </span>/<span class="w"> </span><span class="m">3</span><span class="w"> </span>selected
 
-tests/test_categories.py::test_sum_numbers<span class="w"> </span>PASSED<span class="w">                      </span><span class="o">[</span><span class="w"> </span><span class="m">50</span>%<span class="o">]</span>
-tests/test_categories.py::test_api_call<span class="w"> </span>PASSED<span class="w">                         </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+test_commerce_marked.py::test_order_total<span class="w"> </span>PASSED<span class="w">                      </span><span class="o">[</span><span class="w"> </span><span class="m">33</span>%<span class="o">]</span>
+test_commerce_marked.py::test_order_discount_logic<span class="w"> </span>XFAIL<span class="w">              </span><span class="o">[</span><span class="w"> </span><span class="m">66</span>%<span class="o">]</span>
+test_commerce_marked.py::test_database_connection<span class="w"> </span>SKIPPED<span class="w"> </span><span class="o">(</span>Database<span class="w"> </span>schema<span class="w"> </span>is<span class="w"> </span>being<span class="w"> </span>refactored.<span class="o">)</span><span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
 
-<span class="o">===================</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>deselected<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">1</span>.02s<span class="w"> </span><span class="o">====================</span>
+<span class="o">================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>passed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>skipped,<span class="w"> </span><span class="m">1</span><span class="w"> </span>xfailed,<span class="w"> </span><span class="m">1</span><span class="w"> </span>deselected<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.02s<span class="w"> </span><span class="o">================</span>
 </code></pre></div>
 
-<p>This powerful filtering is the primary reason for using markers. It allows you to slice and dice your test suite to fit any situation, from a developer's quick check to a full pre-release validation run.</p>
+<p>The expression <code>unit or integration</code> selects any test that has at least one of those markers. You can also use <code>and</code> to select tests that must have <em>all</em> specified markers. For example, <code>pytest -m "slow and database"</code> would run tests marked with both <code>@pytest.mark.slow</code> and <code>@pytest.mark.database</code>.</p>
+<p>We have now achieved full control over which tests we run and when.</p>
 <h2 id="organizing-tests-by-category">Organizing Tests by Category</h2>
 <h2 id="organizing-tests-by-category_1">Organizing Tests by Category</h2>
-<p>Markers provide a layer of logical organization that complements the physical organization of your test files and directories. While you should still group related tests in the same file (e.g., <code>tests/test_user_model.py</code>), markers allow you to create cross-cutting categories that span your entire project.</p>
-<p>Think of your test suite as a database. File paths are one way to query it (<code>pytest tests/models/</code>), but markers are like adding powerful, custom indexes.</p>
-<h3 id="a-strategic-approach-to-markers">A Strategic Approach to Markers</h3>
-<p>Here are some common and effective categories for markers in a real-world project:</p>
-<ul>
-<li>
-<p><strong>By Speed</strong>: <code>@pytest.mark.slow</code>, <code>@pytest.mark.fast</code></p>
-<ul>
-<li>This is one of the most useful distinctions. It allows developers to run <code>pytest -m "not slow"</code> for a fast feedback loop.</li>
-</ul>
-</li>
-<li>
-<p><strong>By Type/Layer</strong>: <code>@pytest.mark.unit</code>, <code>@pytest.mark.integration</code>, <code>@pytest.mark.e2e</code> (end-to-end)</p>
-<ul>
-<li>This follows the classic testing pyramid and helps in understanding the scope of a test.</li>
-</ul>
-</li>
-<li>
-<p><strong>By Subsystem/Feature</strong>: <code>@pytest.mark.auth</code>, <code>@pytest.mark.payment</code>, <code>@pytest.mark.api_v2</code></p>
-<ul>
-<li>This is invaluable for teams where different developers work on different parts of the application. A developer working on the payment system can run <code>pytest -m payment</code> to get focused results.</li>
-</ul>
-</li>
-<li>
-<p><strong>By Execution Environment</strong>: <code>@pytest.mark.database</code>, <code>@pytest.mark.network</code>, <code>@pytest.mark.filesystem</code></p>
-<ul>
-<li>This helps identify tests that have external dependencies, which might not be available in all testing environments.</li>
-</ul>
-</li>
-<li>
-<p><strong>By Purpose</strong>: <code>@pytest.mark.smoke</code>, <code>@pytest.mark.regression</code></p>
-<ul>
-<li>A <code>smoke</code> test suite is a small, critical subset of tests that can be run very quickly to see if the application is "on fire" after a deployment. <code>pytest -m smoke</code> is a perfect command for a post-deployment check.</li>
-</ul>
-</li>
-</ul>
-<h3 id="example-of-a-well-organized-test-file">Example of a Well-Organized Test File</h3>
-<p>Let's see how these strategies can be combined in a single file.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># tests/test_payments.py</span>
-<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
-
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">unit</span>
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">payment</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_credit_card_validation_format</span><span class="p">():</span>
-    <span class="c1"># Fast, isolated check of a credit card number format</span>
-    <span class="k">assert</span> <span class="kc">True</span>
-
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">integration</span>
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">payment</span>
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">database</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_charge_user_updates_db</span><span class="p">():</span>
-    <span class="c1"># Slower test that requires a database connection</span>
-    <span class="c1"># to verify a user&#39;s balance is updated.</span>
-    <span class="k">assert</span> <span class="kc">True</span>
-
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">e2e</span>
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">payment</span>
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">api</span>
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">slow</span>
-<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">smoke</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">test_full_payment_flow</span><span class="p">():</span>
-    <span class="c1"># Very slow test that simulates a full user journey,</span>
-    <span class="c1"># hitting a real (or staging) payment gateway API.</span>
-    <span class="c1"># This is also a critical &quot;smoke&quot; test.</span>
-    <span class="k">assert</span> <span class="kc">True</span>
+<p>We've completed the journey from a disorganized, all-or-nothing test suite to a flexible, well-managed collection of tests that can be run selectively based on our needs.</p>
+<h3 id="the-journey-from-problem-to-solution">The Journey: From Problem to Solution</h3>
+<table>
+<thead>
+<tr>
+<th>Iteration</th>
+<th>Failure Mode / Problem</th>
+<th>Technique Applied</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>One failing test breaks the build.</td>
+<td>None</td>
+<td>Initial state: <code>1 failed, 3 passed</code>.</td>
+</tr>
+<tr>
+<td>1</td>
+<td>Known bug causes CI failure.</td>
+<td><code>@pytest.mark.xfail</code></td>
+<td>Test is run but its failure is expected; build passes.</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Test for unavailable feature slows down suite.</td>
+<td><code>@pytest.mark.skip</code></td>
+<td>Test is not executed at all, speeding up the run.</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Unactionable warnings clutter output.</td>
+<td><code>@pytest.mark.filterwarnings</code></td>
+<td>Specific warnings are suppressed for a clean test report.</td>
+</tr>
+<tr>
+<td>4</td>
+<td>No way to differentiate test types.</td>
+<td>Custom markers (<code>@pytest.mark.unit</code>)</td>
+<td>Tests are categorized with metadata.</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Custom markers produce <code>PytestUnknownMarkWarning</code>.</td>
+<td>Registering markers in <code>pytest.ini</code></td>
+<td>Warnings are eliminated; markers are officially part of the project.</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Still running all tests by default.</td>
+<td>Command-line flag <code>-m</code></td>
+<td>Full control to run specific subsets of tests (e.g., <code>pytest -m unit</code>).</td>
+</tr>
+</tbody>
+</table>
+<h3 id="final-implementation">Final Implementation</h3>
+<p>Here is the complete, production-ready version of our test file and configuration.</p>
+<p><strong><code>pytest.ini</code></strong></p>
+<div class="codehilite"><pre><span></span><code><span class="k">[pytest]</span>
+<span class="na">markers</span><span class="w"> </span><span class="o">=</span>
+<span class="w">    </span><span class="na">unit</span><span class="o">:</span><span class="w"> </span><span class="s">marks tests as unit tests (fast, no dependencies)</span>
+<span class="w">    </span><span class="na">integration</span><span class="o">:</span><span class="w"> </span><span class="s">marks tests as integration tests (slower, may require services like a DB)</span>
+<span class="w">    </span><span class="na">api</span><span class="o">:</span><span class="w"> </span><span class="s">marks tests as API tests (very slow, requires network access)</span>
 </code></pre></div>
 
-<p>With this setup, you can now run your tests in many different ways, each tailored to a specific need:</p>
-<ul>
-<li><strong>A developer working on payments</strong>: <code>pytest -m payment</code></li>
-<li><strong>A quick pre-commit check</strong>: <code>pytest -m "not slow"</code></li>
-<li><strong>CI run on every pull request</strong>: <code>pytest -m "unit or integration"</code></li>
-<li><strong>A post-deployment health check</strong>: <code>pytest -m smoke</code></li>
-<li><strong>Nightly full regression run</strong>: <code>pytest</code> (runs everything)</li>
-</ul>
-<p>By thoughtfully applying markers, you transform your test suite from a monolithic block of code into a flexible, queryable, and highly organized asset that can adapt to the needs of your development lifecycle.</p>
+<p><strong><code>test_commerce_final.py</code></strong></p>
+<div class="codehilite"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">commerce_system</span><span class="w"> </span><span class="kn">import</span> <span class="n">Order</span><span class="p">,</span> <span class="n">Product</span><span class="p">,</span> <span class="n">connect_to_db</span><span class="p">,</span> <span class="n">process_payment_via_api</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">unit</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_order_total</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests the total calculation for a simple order.&quot;&quot;&quot;</span>
+    <span class="n">products</span> <span class="o">=</span> <span class="p">[</span><span class="n">Product</span><span class="p">(</span><span class="s2">&quot;Laptop&quot;</span><span class="p">,</span> <span class="mf">1200.00</span><span class="p">),</span> <span class="n">Product</span><span class="p">(</span><span class="s2">&quot;Mouse&quot;</span><span class="p">,</span> <span class="mf">25.00</span><span class="p">)]</span>
+    <span class="n">order</span> <span class="o">=</span> <span class="n">Order</span><span class="p">(</span><span class="n">products</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">order</span><span class="o">.</span><span class="n">total</span><span class="p">()</span> <span class="o">==</span> <span class="mf">1225.00</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">unit</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">xfail</span><span class="p">(</span><span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Discount logic is buggy, see TICKET-123&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_order_discount_logic</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests the discount application logic, which is known to be buggy.&quot;&quot;&quot;</span>
+    <span class="n">products</span> <span class="o">=</span> <span class="p">[</span><span class="n">Product</span><span class="p">(</span><span class="s2">&quot;Keyboard&quot;</span><span class="p">,</span> <span class="mf">100.00</span><span class="p">),</span> <span class="n">Product</span><span class="p">(</span><span class="s2">&quot;Mouse&quot;</span><span class="p">,</span> <span class="mf">25.00</span><span class="p">)]</span>
+    <span class="n">order</span> <span class="o">=</span> <span class="n">Order</span><span class="p">(</span><span class="n">products</span><span class="p">)</span>
+    <span class="n">order</span><span class="o">.</span><span class="n">apply_discount</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">order</span><span class="o">.</span><span class="n">total</span><span class="p">()</span> <span class="o">==</span> <span class="mf">112.50</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">integration</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">skip</span><span class="p">(</span><span class="n">reason</span><span class="o">=</span><span class="s2">&quot;Database schema is being refactored.&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_database_connection</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests the function that connects to the database.&quot;&quot;&quot;</span>
+    <span class="n">conn</span> <span class="o">=</span> <span class="n">connect_to_db</span><span class="p">()</span>
+    <span class="k">assert</span> <span class="n">conn</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;connected&quot;</span>
+
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">api</span>
+<span class="nd">@pytest</span><span class="o">.</span><span class="n">mark</span><span class="o">.</span><span class="n">filterwarnings</span><span class="p">(</span><span class="s2">&quot;ignore:This payment gateway is deprecated.&quot;</span><span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">test_payment_api_call</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Tests the external payment API call.&quot;&quot;&quot;</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">process_payment_via_api</span><span class="p">(</span><span class="n">total</span><span class="o">=</span><span class="mf">150.00</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">result</span><span class="p">[</span><span class="s2">&quot;status&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;paid&quot;</span>
+    <span class="k">assert</span> <span class="n">result</span><span class="p">[</span><span class="s2">&quot;amount&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="mf">150.00</span>
+</code></pre></div>
+
+<h3 id="decision-framework-which-approach-when">Decision Framework: Which Approach When?</h3>
+<p>Markers are a tool for organization. Here's a guide on when and how to use them effectively.</p>
+<table>
+<thead>
+<tr>
+<th>Use Case</th>
+<th>Recommended Marker Strategy</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Managing known bugs</strong></td>
+<td>Use <code>@pytest.mark.xfail</code> with a clear <code>reason</code>.</td>
+<td><code>@pytest.mark.xfail(reason="Bug #451: rounding error")</code></td>
+</tr>
+<tr>
+<td><strong>Temporarily disabling tests</strong></td>
+<td>Use <code>@pytest.mark.skip</code> for features in flux or broken environments.</td>
+<td><code>@pytest.mark.skip(reason="Feature X under rework")</code></td>
+</tr>
+<tr>
+<td><strong>Categorizing by test scope/speed</strong></td>
+<td>Create custom markers like <code>unit</code>, <code>integration</code>, <code>e2e</code>.</td>
+<td><code>@pytest.mark.unit</code>, <code>@pytest.mark.integration</code></td>
+</tr>
+<tr>
+<td><strong>Categorizing by feature area</strong></td>
+<td>Create custom markers for major parts of your app, like <code>auth</code>, <code>payments</code>, <code>search</code>.</td>
+<td><code>@pytest.mark.payments</code></td>
+</tr>
+<tr>
+<td><strong>Marking tests with special needs</strong></td>
+<td>Create markers for tests that need specific resources, like <code>needs_db</code> or <code>needs_network</code>.</td>
+<td><code>@pytest.mark.needs_db</code></td>
+</tr>
+<tr>
+<td><strong>Running a test with many inputs</strong></td>
+<td><strong>Do not use markers.</strong> Use <code>@pytest.mark.parametrize</code> instead (see Chapter 7).</td>
+<td><code>@pytest.mark.parametrize("input,expected", [...])</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="lessons-learned">Lessons Learned</h3>
+<p>Markers embody the pytest philosophy of <strong>explicit over implicit</strong>. By tagging a test, you are explicitly stating its characteristics and purpose beyond just its name.</p>
+<ol>
+<li><strong>Markers Separate <em>What<em> from </em>When</em></strong>: The test function body defines <em>what</em> is being tested. The markers define <em>when</em> and <em>how</em> that test should be run. This separation of concerns is key to a maintainable test suite.</li>
+<li><strong>Configuration is Code</strong>: Registering your markers in <code>pytest.ini</code> is as important as writing the tests themselves. It makes your test suite self-documenting and prevents errors.</li>
+<li><strong>Empower Your CI/CD</strong>: A well-marked test suite allows you to create sophisticated CI/CD pipelines. You can have a fast pipeline that runs only <code>unit</code> tests on every commit, and a slower, more comprehensive pipeline that runs <code>"not e2e"</code> tests on every pull request, and a full nightly build that runs everything. This granular control is essential for scaling your testing efforts.</li>
+</ol>
         </div>
         <div class="footer">
-            Generated on 2025-11-22 17:25:04 | Made with ❤️ by GitHub Pages Generator
+            Generated on 2025-11-24 14:31:15 | Made with ❤️ by GitHub Pages Generator
         </div>
     </div>
     <script>

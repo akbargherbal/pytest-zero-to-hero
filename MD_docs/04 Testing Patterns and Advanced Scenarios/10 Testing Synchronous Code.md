@@ -2,751 +2,822 @@
 
 ## Testing Functions and Methods
 
-## Testing Functions and Methods
+## The Foundation: Testing Pure Functions
 
-At the heart of any Python application are functions and methods. They are the fundamental units of logic, and learning to test them effectively is the cornerstone of building reliable software. In this section, we'll start with the simplest case—a pure function—and see how the principles extend directly to testing methods on an object.
+At the heart of any application lies logic, encapsulated in functions and methods. The simplest and most reliable code to test is a **pure function**: a function that, for the same input, will always return the same output and has no observable side effects.
 
-### The Anatomy of a Function Test
+We will build our understanding around a common e-commerce scenario: processing a customer's order. This will be our **anchor example** for the entire chapter, evolving from a simple function into a complex class with dependencies.
 
-A test for a function follows a simple, universal pattern:
+### Phase 1: Establish the Reference Implementation
 
-1.  **Arrange**: Set up the necessary preconditions and inputs.
-2.  **Act**: Call the function or method you want to test.
-3.  **Assert**: Verify that the outcome (the return value, a change in state, etc.) is what you expected.
+Let's start with a simple function to calculate the total price of an order.
 
-Let's apply this to a concrete example. Imagine we have a utility function in our application that formats user names for display.
-
-Here's the function we want to test, located in a file named `app/utils.py`:
+First, we need a representation of a product. We'll use a simple data structure.
 
 ```python
-# app/utils.py
+# src/product.py
+from dataclasses import dataclass
 
-def format_user_display_name(first_name: str, last_name: str) -> str:
-    """
-    Formats a user's name for display, handling potential whitespace
-    and capitalizing both names.
-    Example: format_user_display_name("  john ", "DOE") -> "John Doe"
-    """
-    if not first_name or not last_name:
-        return ""
+@dataclass
+class Product:
+    name: str
+    price: float
     
-    # Clean up whitespace and ensure proper capitalization
-    formatted_first = first_name.strip().capitalize()
-    formatted_last = last_name.strip().capitalize()
-    
-    return f"{formatted_first} {formatted_last}"
+    def __post_init__(self):
+        if self.price < 0:
+            raise ValueError("Price cannot be negative.")
 ```
 
-Now, let's write our tests in `tests/test_utils.py`.
-
-### Testing the "Happy Path"
-
-First, we test the most common, expected use case. This is often called the "happy path."
+Now, let's create our core business logic function.
 
 ```python
-# tests/test_utils.py
-from app.utils import format_user_display_name
+# src/order_processing.py
+from .product import Product
 
-def test_format_user_display_name_happy_path():
-    # Arrange: Define the inputs
-    first = "ada"
-    last = "lovelace"
+def calculate_order_total(product: Product, quantity: int) -> float:
+    """Calculates the total price for a given product and quantity."""
+    if quantity < 1:
+        raise ValueError("Quantity must be at least 1.")
     
-    # Act: Call the function
-    result = format_user_display_name(first, last)
-    
-    # Assert: Check the output
-    assert result == "Ada Lovelace"
+    return product.price * quantity
 ```
 
-This test is simple, readable, and directly verifies the function's core purpose.
+This function is a perfect candidate for our first test. It takes inputs, performs a calculation, and returns a value. It doesn't write to a file, access a database, or call an API. It's pure.
 
-### Testing Edge Cases
-
-Good tests don't just check the happy path; they probe the boundaries and handle unexpected inputs gracefully. What happens if the inputs have extra whitespace or inconsistent capitalization? Our function's docstring claims to handle this, so let's verify it.
+Let's write a straightforward pytest test for the "happy path"—a valid product and quantity.
 
 ```python
-# tests/test_utils.py
+# tests/test_order_processing.py
+from src.order_processing import calculate_order_total
+from src.product import Product
 
-# ... (previous test)
-
-def test_format_user_display_name_with_whitespace_and_mixed_case():
+def test_calculate_order_total_success():
     """
-    Verify that the function correctly handles leading/trailing whitespace
-    and different character cases.
+    Tests that the total is calculated correctly for a valid product and quantity.
     """
     # Arrange
-    first = "  GRACE "
-    last = "hopper  "
+    product = Product(name="Laptop", price=1000.0)
+    quantity = 3
     
     # Act
-    result = format_user_display_name(first, last)
+    total = calculate_order_total(product, quantity)
     
     # Assert
-    assert result == "Grace Hopper"
+    assert total == 3000.0
 ```
 
-What about invalid or empty inputs? The function's logic returns an empty string. This is a business rule we must test.
+Running this test is simple and gives us immediate confidence.
 
-```python
-# tests/test_utils.py
-import pytest
-from app.utils import format_user_display_name
-
-# ... (previous tests)
-
-@pytest.mark.parametrize(
-    "first, last, expected",
-    [
-        ("", "Lovelace", ""),
-        ("Ada", "", ""),
-        (None, "Hopper", ""), # Assuming the function should handle None
-        ("Grace", None, ""),
-    ]
-)
-def test_format_user_display_name_empty_or_none_inputs(first, last, expected):
-    """
-    Verify that empty or None inputs result in an empty string.
-    """
-    # The function as written will raise an AttributeError for None.
-    # This test reveals a bug or an unhandled case!
-    # Let's pretend our goal is to fix the function to handle this.
-    # After fixing format_user_display_name to check for None, this test will pass.
-    
-    # For now, let's test only empty strings which the current code handles.
-    if first is None or last is None:
-        pytest.skip("Skipping None test until function is updated")
-
-    assert format_user_display_name(first, last) == expected
-```
-
-Notice how writing the test for `None` immediately revealed a flaw in our function! It would raise an `AttributeError` because you can't call `.strip()` on `None`. This is a perfect example of **Test-Driven Development (TDD)**: writing a test that fails, then writing the code to make it pass.
-
-### From Functions to Methods
-
-Now, let's consider a method. A method is simply a function that is bound to an instance of a class. Testing it is nearly identical, with one extra step in the "Arrange" phase: creating an instance of the object.
-
-Let's create a simple `User` class in `app/models.py`.
-
-```python
-# app/models.py
-
-class User:
-    def __init__(self, first_name: str, last_name: str, email: str):
-        self.first_name = first_name
-        self.last_name = last_name
-        self.email = email
-
-    def get_display_name(self) -> str:
-        """Returns the formatted full name of the user."""
-        if not self.first_name or not self.last_name:
-            return ""
-        
-        return f"{self.first_name.capitalize()} {self.last_name.capitalize()}"
-
-    def get_email_domain(self) -> str:
-        """Returns the domain part of the user's email."""
-        return self.email.split('@')[1]
-```
-
-To test the `get_display_name` method, we follow the same Arrange-Act-Assert pattern.
-
-```python
-# tests/test_models.py
-from app.models import User
-
-def test_user_get_display_name():
-    # Arrange: Create an instance of the User class
-    user = User(first_name="ada", last_name="lovelace", email="ada@example.com")
-    
-    # Act: Call the method on the instance
-    display_name = user.get_display_name()
-    
-    # Assert: Check the result
-    assert display_name == "Ada Lovelace"
-
-def test_user_get_email_domain():
-    # Arrange
-    user = User(first_name="grace", last_name="hopper", email="grace.hopper@navy.mil")
-    
-    # Act
-    domain = user.get_email_domain()
-    
-    # Assert
-    assert domain == "navy.mil"
-```
-
-As you can see, the core logic is the same. Whether it's a standalone function or a method on an object, you set up the context, call the code, and assert the result.
-
-## Testing Classes and Object-Oriented Code
-
-## Testing Classes and Object-Oriented Code
-
-Testing a class is more than just testing its methods in isolation. It's about verifying the object's behavior, state, and interactions over its entire lifecycle. A class is a blueprint for objects that hold state, and our tests must confirm that this state is managed correctly.
-
-To explore this, let's build a `ShoppingCart` class. This is a classic example because it involves adding items, removing them, and calculating totals—all actions that modify the object's internal state.
-
-Here is our class in `app/models.py`:
-
-```python
-# app/models.py
-
-# ... (User class from before)
-
-class ShoppingCart:
-    def __init__(self):
-        self._items = {}  # Using a dict to store item_id -> quantity
-
-    @property
-    def items(self):
-        return self._items.copy() # Return a copy to prevent external modification
-
-    def add_item(self, item_id: str, quantity: int = 1):
-        if quantity <= 0:
-            raise ValueError("Quantity must be positive.")
-        self._items[item_id] = self._items.get(item_id, 0) + quantity
-
-    def remove_item(self, item_id: str, quantity: int = 1):
-        if quantity <= 0:
-            raise ValueError("Quantity must be positive.")
-        if item_id not in self._items or self._items[item_id] < quantity:
-            raise ValueError("Not enough items in the cart to remove.")
-        
-        self._items[item_id] -= quantity
-        if self._items[item_id] == 0:
-            del self._items[item_id]
-
-    def get_total_items(self) -> int:
-        return sum(self._items.values())
-```
-
-### The Wrong Way: Repetitive Setup
-
-You might be tempted to write tests like this, creating a new cart inside every single test function.
-
-```python
-# tests/test_models.py
-
-# ... (User tests)
-from app.models import ShoppingCart
-
-def test_cart_add_item_repetitive():
-    # Arrange
-    cart = ShoppingCart()
-    
-    # Act
-    cart.add_item("apple", 1)
-    
-    # Assert
-    assert cart.items == {"apple": 1}
-    assert cart.get_total_items() == 1
-
-def test_cart_add_multiple_items_repetitive():
-    # Arrange
-    cart = ShoppingCart()
-    
-    # Act
-    cart.add_item("apple", 1)
-    cart.add_item("banana", 2)
-    
-    # Assert
-    assert cart.items == {"apple": 1, "banana": 2}
-    assert cart.get_total_items() == 3
-```
-
-This works, but it violates the **Don't Repeat Yourself (DRY)** principle. The line `cart = ShoppingCart()` will appear in every test. If the `ShoppingCart` constructor ever changes (e.g., to require a user ID), you'd have to update every single test. This is where fixtures, which you learned about in Chapter 4, become essential.
-
-### The Right Way: Using Fixtures for Clean State
-
-A fixture can provide a clean, empty `ShoppingCart` instance to every test that needs one. This isolates tests from each other and centralizes the setup logic.
-
-Let's create a fixture in `tests/test_models.py`.
-
-```python
-# tests/test_models.py
-import pytest
-from app.models import ShoppingCart, User # Assuming all models are in one file
-
-# ... (User tests)
-
-@pytest.fixture
-def empty_cart() -> ShoppingCart:
-    """Provides an empty shopping cart for tests."""
-    return ShoppingCart()
-
-def test_cart_add_item(empty_cart: ShoppingCart):
-    # Arrange: The empty_cart fixture handles this
-    
-    # Act
-    empty_cart.add_item("apple", 1)
-    
-    # Assert
-    assert empty_cart.items == {"apple": 1}
-    assert empty_cart.get_total_items() == 1
-
-def test_cart_add_multiple_of_same_item(empty_cart: ShoppingCart):
-    # Act
-    empty_cart.add_item("apple", 1)
-    empty_cart.add_item("apple", 2) # Add more of the same item
-    
-    # Assert
-    assert empty_cart.items == {"apple": 3}
-    assert empty_cart.get_total_items() == 3
-```
-
-Now our tests are cleaner and focused only on the "Act" and "Assert" steps.
-
-### Testing State Transitions
-
-The most important aspect of testing a class is verifying how its state changes in response to method calls. We need to test sequences of actions.
-
-Let's test adding and then removing an item.
-
-```python
-# tests/test_models.py
-
-# ... (previous cart tests)
-
-def test_cart_remove_item(empty_cart: ShoppingCart):
-    # Arrange: Add items to the cart first
-    empty_cart.add_item("apple", 5)
-    empty_cart.add_item("banana", 2)
-    
-    # Act: Remove some of one item
-    empty_cart.remove_item("apple", 3)
-    
-    # Assert: Check the new state
-    assert empty_cart.items == {"apple": 2, "banana": 2}
-    assert empty_cart.get_total_items() == 4
-
-def test_cart_remove_all_of_one_item(empty_cart: ShoppingCart):
-    # Arrange
-    empty_cart.add_item("apple", 5)
-    empty_cart.add_item("banana", 2)
-    
-    # Act: Remove all of one item
-    empty_cart.remove_item("apple", 5)
-    
-    # Assert: The item should be completely gone from the cart
-    assert "apple" not in empty_cart.items
-    assert empty_cart.items == {"banana": 2}
-    assert empty_cart.get_total_items() == 2
-```
-
-### Testing for Expected Errors
-
-Our `ShoppingCart` class is designed to raise `ValueError` for invalid operations, like removing an item that isn't there. As we saw in Chapter 7, `pytest.raises` is the perfect tool for this.
-
-```python
-# tests/test_models.py
-
-# ... (previous cart tests)
-
-def test_cart_remove_too_many_items_raises_error(empty_cart: ShoppingCart):
-    empty_cart.add_item("apple", 2)
-    
-    with pytest.raises(ValueError) as exc_info:
-        empty_cart.remove_item("apple", 3) # Try to remove more than available
-        
-    assert "Not enough items" in str(exc_info.value)
-
-def test_cart_add_negative_quantity_raises_error(empty_cart: ShoppingCart):
-    with pytest.raises(ValueError, match="Quantity must be positive"):
-        empty_cart.add_item("apple", -1)
-```
-
-By testing the happy paths, state transitions, and error conditions, we build a comprehensive and robust test suite for our class, ensuring it behaves exactly as designed.
-
-## Testing Private Methods (And Why You Might Not Want To)
-
-## Testing Private Methods (And Why You Might Not Want To)
-
-As you build complex classes, you'll often create "helper" methods to break down logic into smaller, manageable pieces. In Python, the convention is to prefix these internal-use-only methods with a single underscore (e.g., `_calculate_tax`). This signals to other developers, "This is an implementation detail, don't rely on it."
-
-A common question then arises: "Should I write tests for my private methods?"
-
-The short answer is: **No, you should test the public interface, not the implementation details.**
-
-Let's explore why this philosophy leads to more robust and maintainable tests.
-
-### The Temptation to Test Everything
-
-Imagine we add a tax calculation feature to our `ShoppingCart`. The implementation uses a private helper method.
-
-```python
-# app/models.py
-
-class ShoppingCart:
-    # ... (previous methods)
-
-    def __init__(self, tax_rate: float = 0.1):
-        self._items = {}
-        self._tax_rate = tax_rate
-
-    def _calculate_subtotal(self, prices: dict) -> float:
-        """Calculates total price before tax."""
-        subtotal = 0.0
-        for item_id, quantity in self._items.items():
-            subtotal += prices.get(item_id, 0.0) * quantity
-        return subtotal
-
-    def get_total_price(self, prices: dict) -> float:
-        """Calculates the total price including tax."""
-        subtotal = self._calculate_subtotal(prices)
-        tax = subtotal * self._tax_rate
-        return subtotal + tax
-```
-
-You might be tempted to write a test directly for `_calculate_subtotal` to ensure it works correctly. You *can* do this, as Python doesn't truly enforce privacy.
-
-```python
-# tests/test_models.py
-
-# ...
-
-def test_cart_private_calculate_subtotal_directly():
-    """
-    This is an example of a BRITTLE test. Avoid this pattern.
-    """
-    # Arrange
-    cart = ShoppingCart()
-    cart.add_item("apple", 2)
-    cart.add_item("banana", 3)
-    prices = {"apple": 1.0, "banana": 0.5}
-    
-    # Act: Call the private method directly
-    subtotal = cart._calculate_subtotal(prices)
-    
-    # Assert
-    assert subtotal == 3.50 # (2 * 1.0) + (3 * 0.5)
-```
-
-This test passes. So what's the problem?
-
-### The Pitfall: Brittle Tests Coupled to Implementation
-
-The problem arises when you refactor your code. Good developers constantly refactor to improve clarity and performance. Let's say you realize the `_calculate_subtotal` logic is simple enough to be inlined directly into `get_total_price`.
-
-```python
-# app/models.py (Refactored)
-
-class ShoppingCart:
-    # ...
-
-    def get_total_price(self, prices: dict) -> float:
-        """Calculates the total price including tax (refactored)."""
-        subtotal = 0.0
-        for item_id, quantity in self._items.items():
-            subtotal += prices.get(item_id, 0.0) * quantity
-        
-        tax = subtotal * self._tax_rate
-        return subtotal + tax
-    
-    # The _calculate_subtotal method has been removed!
-```
-
-The public behavior of `get_total_price` is **exactly the same**. The class works perfectly. But what happens when you run your tests?
 ```bash
-$ pytest tests/test_models.py
+$ pytest
+============================= test session starts ==============================
 ...
-_________________ test_cart_private_calculate_subtotal_directly __________________
+collected 1 item
 
-    def test_cart_private_calculate_subtotal_directly():
-        # ...
-        # Act: Call the private method directly
->       subtotal = cart._calculate_subtotal(prices)
-E       AttributeError: 'ShoppingCart' object has no attribute '_calculate_subtotal'
+tests/test_order_processing.py .                                         [100%]
 
-tests/test_models.py:123: AttributeError
-```
-Your test suite fails! Your test for `_calculate_subtotal` is now broken, even though the class's public functionality is unchanged. This is a **false negative**. The test failed not because of a bug in the application code, but because it was too tightly coupled to a specific implementation detail that was free to change.
-
-### The Solution: Test the Behavior
-
-The correct approach is to test the public method (`get_total_price`) in a way that implicitly covers the logic that *was* in the private method.
-
-```python
-# tests/test_models.py
-
-@pytest.fixture
-def cart_with_items() -> ShoppingCart:
-    """Provides a cart with some items already in it."""
-    cart = ShoppingCart(tax_rate=0.1) # Use a known tax rate
-    cart.add_item("apple", 2) # 2 * $1.00 = $2.00
-    cart.add_item("banana", 3) # 3 * $0.50 = $1.50
-    return cart
-
-def test_get_total_price(cart_with_items: ShoppingCart):
-    # Arrange
-    prices = {"apple": 1.0, "banana": 0.5}
-    # Subtotal should be $3.50
-    # Tax should be $0.35 (10% of 3.50)
-    # Total should be $3.85
-    
-    # Act
-    total = cart_with_items.get_total_price(prices)
-    
-    # Assert
-    assert total == pytest.approx(3.85)
+============================== 1 passed in ...s ===============================
 ```
 
-This test verifies the correct final price. It doesn't care *how* the subtotal was calculated, only that the final result is correct. Now, you are free to refactor the internal implementation of `ShoppingCart` as much as you want. As long as `get_total_price` returns the correct value, this test will pass.
+This is the essence of unit testing: verifying a small, isolated piece of logic.
 
-Your tests now protect the **what** (the object's behavior) and not the **how** (the object's internal implementation), leading to a more resilient and valuable test suite.
+### Iteration 1: From Function to Method
 
-## Testing Code with Side Effects
+As our application grows, standalone functions often become methods of a class to manage related state and behavior. Let's refactor our logic into an `OrderProcessor` class. This is a common evolutionary step in software design.
 
-## Testing Code with Side Effects
-
-A "pure function" is a developer's dream: for a given input, it always returns the same output and has no observable effects on the outside world. The `format_user_display_name` function from earlier is a good example.
-
-However, most real-world code is not pure. It has **side effects**: actions that change state outside the function's scope. Common side effects include:
-
-*   Writing to a file or database.
-*   Making an HTTP request to an external API.
-*   Printing to the console.
-*   Modifying a global variable.
-
-Side effects make testing harder because they introduce dependencies on external systems (like the filesystem or the network) and can make tests slow, unreliable, and difficult to set up. The key to testing code with side effects is to **isolate your code from the side effect itself**.
-
-### The Problem: A Function That Writes to a File
-
-Let's consider a function that logs an event message to a file.
+Here is the new class structure. For now, it's just a container for our calculation method.
 
 ```python
-# app/logging.py
-from datetime import datetime
+# src/order_processor.py (New File)
+from .product import Product
 
-def log_event(message: str, log_file: str):
-    """
-    Writes a timestamped event message to a log file.
-    """
-    timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-    with open(log_file, "a") as f:
-        f.write(f"[{timestamp}] {message}\n")
+class OrderProcessor:
+    def calculate_order_total(self, product: Product, quantity: int) -> float:
+        """Calculates the total price for a given product and quantity."""
+        if quantity < 1:
+            raise ValueError("Quantity must be at least 1.")
+        
+        return product.price * quantity
 ```
 
-How would we test this? We could run the function and then read the file to see if the message was written.
+How does this change our test? The core logic is the same, but the way we call it is different. We now need an *instance* of the `OrderProcessor` class.
+
+Here is the updated test file.
 
 ```python
-# tests/test_logging_bad.py
-import os
-from app.logging import log_event
+# tests/test_order_processor.py (New Test File)
+from src.order_processor import OrderProcessor
+from src.product import Product
 
-def test_log_event_writes_to_file_bad_approach(tmp_path):
+def test_calculate_order_total_success():
     """
-    This test works, but has several problems.
+    Tests that the total is calculated correctly for a valid product and quantity.
     """
     # Arrange
-    log_file = tmp_path / "events.log"
+    processor = OrderProcessor()  # We need an instance now
+    product = Product(name="Laptop", price=1000.0)
+    quantity = 3
     
     # Act
-    log_event("User logged in", str(log_file))
+    total = processor.calculate_order_total(product, quantity)
     
     # Assert
-    with open(log_file, "r") as f:
-        content = f.read()
-    
-    assert "User logged in" in content
-    
-    # Teardown is handled by tmp_path, but in other cases
-    # you might need manual cleanup.
-    # os.remove(log_file)
+    assert total == 3000.0
 ```
 
-While pytest's built-in `tmp_path` fixture helps, this approach has drawbacks:
-1.  **It's slow**: Filesystem I/O is orders of magnitude slower than in-memory operations.
-2.  **It's complex**: The test has to perform file operations just to verify the result.
-3.  **It's not a true unit test**: It depends on the filesystem being available and working correctly.
+The test still passes, and the change seems trivial. However, this shift from a stateless function to a stateful class is the most significant leap in testing complexity. It opens the door to new challenges related to state management, dependencies, and side effects, which we will tackle in the upcoming sections.
 
-### The Solution: Mocking the Side Effect
+## Testing Classes and Object-Oriented Code
 
-The solution is to use a **mock**. As we'll cover in depth in Chapters 8 and 9, a mock is a test double that replaces a real object or function. We can replace the built-in `open` function with a mock object that we control and inspect.
+## The Challenge of State
 
-Pytest integrates seamlessly with Python's standard `unittest.mock` library. The `mocker` fixture, provided by the `pytest-mock` plugin (a common dependency), is the standard way to do this.
+Classes are more than just collections of methods; they encapsulate **state** (data) and **behavior** (methods). While our `OrderProcessor` is currently stateless, any realistic implementation would need to track information, such as a history of processed orders.
+
+Testing stateful objects introduces a critical new requirement: **test isolation**. One test must not be affected by the state changes caused by another.
+
+### Iteration 2: Introducing State and a New Bug
+
+Let's add a feature to our `OrderProcessor`: it will now keep a record of every order ID it processes.
+
+```python
+# src/order_processor.py (Updated)
+import uuid
+from .product import Product
+
+class OrderProcessor:
+    def __init__(self):
+        self.processed_orders = []
+
+    def _generate_order_id(self) -> str:
+        """Generates a unique order ID."""
+        return str(uuid.uuid4())
+
+    def process_order(self, product: Product, quantity: int):
+        """Processes an order and records it."""
+        if quantity < 1:
+            raise ValueError("Quantity must be at least 1.")
+        
+        order_id = self._generate_order_id()
+        # In a real system, this would do more (e.g., charge card, update inventory)
+        self.processed_orders.append(order_id)
+        print(f"Processed order {order_id} for {quantity} of {product.name}.")
+        return order_id
+```
+
+Our old test for `calculate_order_total` is now obsolete. We need new tests for `process_order` that verify two things:
+1.  It returns an order ID (behavior).
+2.  It adds the order ID to `processed_orders` (state change).
+
+Let's write two tests. A common but flawed approach for beginners is to use a single, shared instance of the class for all tests.
+
+```python
+# tests/test_order_processor.py (Problematic Version)
+from src.order_processor import OrderProcessor
+from src.product import Product
+
+# Create a single instance to be shared by all tests in this module
+processor = OrderProcessor()
+product = Product(name="Keyboard", price=75.0)
+
+def test_process_order_adds_to_history():
+    """Verify that a processed order is added to the processor's history."""
+    initial_history_count = len(processor.processed_orders)
+    
+    processor.process_order(product, 2)
+    
+    assert len(processor.processed_orders) == initial_history_count + 1
+
+def test_process_single_item_order():
+    """Verify that processing an order for a single item works."""
+    # This test has a hidden assumption: that processed_orders is empty.
+    assert len(processor.processed_orders) == 0
+    
+    processor.process_order(product, 1)
+    
+    assert len(processor.processed_orders) == 1
+```
+
+Now, let's run pytest. One of our tests is going to fail.
 
 ```bash
-# You'll likely need to install this
-pip install pytest-mock
+$ pytest -v
+============================= test session starts ==============================
+...
+collected 2 items
+
+tests/test_order_processor.py::test_process_order_adds_to_history PASSED [ 50%]
+tests/test_order_processor.py::test_process_single_item_order FAILED   [100%]
+
+=================================== FAILURES ===================================
+_______________________ test_process_single_item_order _______________________
+
+    def test_process_single_item_order():
+        """Verify that processing an order for a single item works."""
+        # This test has a hidden assumption: that processed_orders is empty.
+>       assert len(processor.processed_orders) == 0
+E       assert 1 == 0
+E        +  where 1 = len(['...'])
+
+tests/test_order_processor.py:20: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_order_processor.py::test_process_single_item_order - assert 1 == 0
+========================= 1 failed, 1 passed in ...s =========================
 ```
 
-```python
-# tests/test_logging.py
-from app.logging import log_event
-from unittest.mock import patch, mock_open
+### Diagnostic Analysis: Reading the Failure
 
-def test_log_event_with_mocker(mocker):
-    """
-    Tests the log_event function by mocking the 'open' call.
-    """
-    # Arrange: We want to mock 'open' inside the 'app.logging' module
-    # where it is being called.
-    mock_file = mocker.mock_open()
-    mocker.patch("app.logging.open", mock_file)
+**The complete output**: The summary shows one test passed and one failed. The failure is `test_process_single_item_order`.
+
+**Let's parse this section by section**:
+
+1.  **The summary line**: `FAILED tests/test_order_processor.py::test_process_single_item_order - assert 1 == 0`
+    *   **What this tells us**: The test failed because of an `AssertionError`. The specific assertion that failed was comparing `1` and `0`.
+
+2.  **The traceback**:
+    ```python
+    def test_process_single_item_order():
+        """Verify that processing an order for a single item works."""
+        # This test has a hidden assumption: that processed_orders is empty.
+>       assert len(processor.processed_orders) == 0
+    ```
+    *   **What this tells us**: The failure occurred on line 20 of our test file.
+    *   **Key line**: `assert len(processor.processed_orders) == 0` is the exact point of failure.
+
+3.  **The assertion introspection**:
+    ```
+    E       assert 1 == 0
+    E        +  where 1 = len(['...'])
+    ```
+    *   **What this tells us**: Pytest's powerful introspection shows us the *values* at the time of the assertion. The left side of the `==`, which was `len(processor.processed_orders)`, evaluated to `1`. The right side was `0`. The assertion `1 == 0` is correctly identified as false.
+
+**Root cause identified**: The `test_process_single_item_order` test incorrectly assumed that the `processor.processed_orders` list would be empty at the start of the test. It was not; it contained one item.
+
+**Why the current approach can't solve this**: By creating a single `processor` instance at the module level, we created shared state. The first test to run (`test_process_order_adds_to_history`) modified this shared state by adding an order ID to the list. The second test inherited this modified state, causing its initial assumption to be violated. The order of test execution determined the outcome, a classic sign of a fragile test suite.
+
+**What we need**: A mechanism to ensure that every single test function gets a fresh, clean instance of `OrderProcessor`, guaranteeing test isolation.
+
+### The Solution: Fixtures for Isolation
+
+This is precisely the problem that pytest fixtures are designed to solve. A fixture is a function that provides a resource (like a class instance, a database connection, or a dataset) to your tests. Pytest ensures that fixtures are set up and torn down cleanly for each test that uses them.
+
+Let's refactor our tests to use a fixture. By convention, fixtures are often placed in a `conftest.py` file to be shared across multiple test files, but for a single file, defining it locally is fine.
+
+```python
+# tests/test_order_processor.py (Corrected Version)
+import pytest
+from src.order_processor import OrderProcessor
+from src.product import Product
+
+@pytest.fixture
+def processor():
+    """Returns a fresh OrderProcessor instance for each test."""
+    return OrderProcessor()
+
+@pytest.fixture
+def product():
+    """Returns a sample product for tests."""
+    return Product(name="Keyboard", price=75.0)
+
+def test_process_order_adds_to_history(processor, product):
+    """Verify that a processed order is added to the processor's history."""
+    initial_history_count = len(processor.processed_orders)
+    assert initial_history_count == 0 # We can now safely assume this
     
-    # Act
-    log_event("User logged out", "any/file/path.log")
+    processor.process_order(product, 2)
     
-    # Assert: Check that 'open' was called correctly
-    mock_file.assert_called_once_with("any/file/path.log", "a")
+    assert len(processor.processed_orders) == initial_history_count + 1
+
+def test_process_single_item_order(processor, product):
+    """Verify that processing an order for a single item works."""
+    # This test now gets its own 'processor' instance.
+    assert len(processor.processed_orders) == 0
     
-    # Assert: Check that 'write' was called on the file handle
-    # We can't easily check the timestamp, so we check for the message.
-    # The call is a bit complex: handle.write(string)
-    written_content = mock_file().write.call_args[0][0]
-    assert "User logged out" in written_content
-    assert written_content.endswith("\n")
+    processor.process_order(product, 1)
+    
+    assert len(processor.processed_orders) == 1
 ```
 
-Let's break down what happened:
-1.  `mocker.patch("app.logging.open", ...)`: We told pytest to replace the `open` function *within the `app.logging` namespace* with our mock. This is a critical detail—you must patch the object where it is *looked up*, not where it is defined.
-2.  `mocker.mock_open()`: This is a convenient helper that creates a mock that behaves like a file handle.
-3.  `mock_file.assert_called_once_with(...)`: We assert that the `open` function was called exactly once with the expected filename and mode (`"a"` for append).
-4.  `mock_file().write.call_args`: We inspect the arguments that were passed to the `write` method on the mocked file handle to ensure our message was part of it.
+Let's run the tests again.
 
-This test is fast, runs entirely in memory, and precisely verifies that our function tried to perform the correct side effect without actually doing it. This technique is fundamental for testing code that interacts with databases, APIs, or any other external system.
+```bash
+$ pytest -v
+============================= test session starts ==============================
+...
+collected 2 items
 
-## Integration Testing Within Your Codebase
+tests/test_order_processor.py::test_process_order_adds_to_history PASSED [ 50%]
+tests/test_order_processor.py::test_process_single_item_order PASSED   [100%]
 
-## Integration Testing Within Your Codebase
+============================== 2 passed in ...s ===============================
+```
 
-So far, we've focused on **unit tests**, which test a single component (a function or a class) in isolation. This is the foundation of a solid testing strategy. However, a real application is a collection of many units working together. A bug might not be in any single unit, but in the interaction *between* them.
+**Success!** By declaring `processor` and `product` as arguments in our test functions, we told pytest to execute the corresponding fixture functions and pass their return values to our tests. Because the default **scope** of a fixture is `function`, pytest creates a brand new `OrderProcessor` and `Product` for each test, guaranteeing isolation. The `test_process_single_item_order` now receives an instance whose `processed_orders` list is guaranteed to be empty.
 
-This is where **integration tests** come in. An integration test verifies that two or more components of your application can communicate and work together correctly.
+This solves the state management problem, but our `OrderProcessor` has a hidden implementation detail (`_generate_order_id`) that we might be tempted to test directly.
 
-### From Unit to Integration
+## Testing Private Methods (And Why You Might Not Want To)
 
-Let's evolve our `ShoppingCart` example. In a real e-commerce system, product prices aren't hardcoded in the test; they come from a database or another service. Let's create a `ProductDB` class to represent this.
+## The Temptation of Implementation Details
+
+Our `OrderProcessor` has a "private" method, `_generate_order_id`, indicated by the leading underscore. This is a Python convention signifying that the method is an internal implementation detail and not part of the class's public API.
+
+A common question arises: "Should I write a test specifically for `_generate_order_id`?"
+
+The short answer is usually **no**.
+
+### The Philosophy: Test Behavior, Not Implementation
+
+Your tests should act as the first user of your code. A user of the `OrderProcessor` class doesn't care *how* the order ID is generated; they only care that when they call the public method `process_order`, they get a unique ID back and the order is processed correctly.
+
+-   **Testing Public Behavior**: When you test `process_order`, you are implicitly testing `_generate_order_id`. If the ID generation were to break (e.g., return `None`), your test for `process_order` would fail. This is good! The test tells you that a user-facing behavior is broken.
+-   **Testing Private Implementation**: If you write a separate test for `_generate_order_id`, you are coupling your test suite to the internal structure of your class.
+
+Let's see what happens when we refactor the implementation without changing the behavior.
+
+### Iteration 3: A Refactor that Breaks a Bad Test
+
+Imagine we decide to change the order ID format to be prefixed with `ORD-`. The public behavior is unchanged—it still returns a unique string.
 
 ```python
-# app/db.py
+# src/order_processor.py (Refactored)
+import uuid
+from .product import Product
 
-class ProductDB:
+class OrderProcessor:
+    def __init__(self):
+        self.processed_orders = []
+
+    def _generate_order_id(self) -> str:
+        """Generates a unique order ID with a prefix."""
+        # We changed the implementation detail.
+        return f"ORD-{uuid.uuid4()}"
+
+    def process_order(self, product: Product, quantity: int):
+        """Processes an order and records it."""
+        if quantity < 1:
+            raise ValueError("Quantity must be at least 1.")
+        
+        order_id = self._generate_order_id()
+        self.processed_orders.append(order_id)
+        print(f"Processed order {order_id} for {quantity} of {product.name}.")
+        return order_id
+```
+
+Our existing tests for `process_order` still pass perfectly because they only check that an ID was added to the history. They don't care about the ID's format. This is the hallmark of a robust test suite.
+
+Now, let's demonstrate the **wrong way**. Suppose we had written a test that was tightly coupled to the implementation of `_generate_order_id`.
+
+```python
+# tests/test_order_processor_bad.py (A new file demonstrating a bad practice)
+import uuid
+from src.order_processor import OrderProcessor
+
+def test_generate_order_id_is_valid_uuid():
+    """
+    This is a BRITTLE test. It tests a private implementation detail.
+    """
+    processor = OrderProcessor()
+    # We access the private method directly
+    order_id = processor._generate_order_id()
+    
+    # This assertion is tied to the OLD implementation.
+    # It assumes the ID is a pure UUID string.
+    try:
+        uuid.UUID(order_id)
+    except ValueError:
+        pytest.fail(f"'{order_id}' is not a valid UUID.")
+```
+
+With our refactored `OrderProcessor`, this new "bad" test will now fail.
+
+```bash
+$ pytest tests/test_order_processor_bad.py
+============================= test session starts ==============================
+...
+collected 1 item
+
+tests/test_order_processor_bad.py F                                      [100%]
+
+=================================== FAILURES ===================================
+______________________ test_generate_order_id_is_valid_uuid ______________________
+
+    def test_generate_order_id_is_valid_uuid():
+        """
+        This is a BRITTLE test. It tests a private implementation detail.
+        """
+        processor = OrderProcessor()
+        # We access the private method directly
+        order_id = processor._generate_order_id()
+    
+        # This assertion is tied to the OLD implementation.
+        # It assumes the ID is a pure UUID string.
+        try:
+            uuid.UUID(order_id)
+        except ValueError:
+>           pytest.fail(f"'{order_id}' is not a valid UUID.")
+E           Failed: 'ORD-...' is not a valid UUID.
+
+tests/test_order_processor_bad.py:17: Failed
+=========================== short test summary info ============================
+FAILED tests/test_order_processor_bad.py::test_generate_order_id_is_valid_uuid
+============================== 1 failed in ...s ===============================
+```
+
+### Diagnostic Analysis: The Cost of Brittle Tests
+
+The test failed because the code worked as intended! We changed an internal detail (`_generate_order_id`) without breaking the public contract (`process_order`). The test failed not because of a bug in the application code, but because the test itself was too specific and fragile.
+
+**Root cause identified**: The test was coupled to the implementation, not the behavior.
+
+**Why this is a problem**:
+1.  **Increased Maintenance**: Every time you refactor internal code, you have to fix a series of failing tests, even if the public behavior is unchanged. This slows down development and discourages refactoring.
+2.  **Reduced Clarity**: The test failure doesn't indicate a real bug. It's noise that hides real problems.
+
+### When to Reconsider
+
+There are exceptions. If a private method contains extremely complex, critical logic (e.g., a sophisticated pricing algorithm), you might argue for testing it directly. However, a better approach is often to ask: "If this logic is so important, why is it a private method?"
+
+Often, the need to test a private method is a "code smell" suggesting that the class is doing too much. The complex logic might be better off extracted into its own, separate class or module. That new component would have a public API, which you could then test thoroughly and with confidence.
+
+**Guideline**: Start by testing only public methods. If you feel a strong urge to test a private one, first consider refactoring your code to make that logic part of a public API on another, more focused object.
+
+## Testing Code with Side Effects
+
+## The World Outside Your Function
+
+So far, our `OrderProcessor` has lived in a vacuum. A real-world order processor must interact with other systems: it needs to check inventory, charge a credit card, and maybe send an email. These interactions are called **side effects**.
+
+Side effects make testing dramatically harder. If your test debits a real inventory database or calls a real payment API, it becomes:
+*   **Slow**: Network calls and database queries are orders of magnitude slower than in-memory operations.
+*   **Expensive**: You might be charged for API calls.
+*   **Unreliable**: The test could fail due to network issues or a third-party service being down.
+*   **Destructive**: The test changes the state of an external system, violating test isolation.
+
+The solution is to isolate our code from its dependencies during testing using **Test Doubles**.
+
+### Iteration 4: Introducing Dependencies and Side Effects
+
+Let's make our `OrderProcessor` more realistic. It will now depend on an `InventorySystem` and a `PaymentGateway`. We'll use the principle of **Dependency Injection**: instead of creating its dependencies, the `OrderProcessor` will receive them in its constructor. This is crucial for testability.
+
+```python
+# src/dependencies.py (New File)
+from .product import Product
+
+class InventorySystem:
     def __init__(self):
         # In a real app, this would connect to a database.
-        # Here, it's just an in-memory dictionary.
-        self._prices = {
-            "apple": 1.0,
-            "banana": 0.5,
-            "orange": 0.75,
+        self._stock = {
+            "Laptop": 10,
+            "Keyboard": 25,
         }
 
-    def get_price(self, item_id: str) -> float:
-        """Returns the price of an item."""
-        return self._prices.get(item_id, 0.0)
+    def check_stock(self, product: Product, quantity: int) -> bool:
+        print(f"DATABASE: Checking stock for {product.name}")
+        return self._stock.get(product.name, 0) >= quantity
+
+    def reduce_stock(self, product: Product, quantity: int):
+        print(f"DATABASE: Reducing stock for {product.name} by {quantity}")
+        self._stock[product.name] -= quantity
+
+class PaymentGateway:
+    def charge(self, amount: float, card_details: str) -> bool:
+        print(f"API: Charging card {card_details} for ${amount}")
+        # In a real app, this would call a third-party API like Stripe.
+        if not card_details:
+            return False
+        return True
 ```
 
-Now, we'll refactor `ShoppingCart` to use this `ProductDB`. This is a common pattern called **Dependency Injection**, where a component's dependencies are provided from the outside rather than created internally.
-
 ```python
-# app/models.py (Refactored ShoppingCart)
-from app.db import ProductDB
+# src/order_processor.py (Updated with Dependencies)
+import uuid
+from .product import Product
+from .dependencies import InventorySystem, PaymentGateway
 
-class ShoppingCart:
-    def __init__(self, db: ProductDB, tax_rate: float = 0.1):
-        self._items = {}
-        self._db = db
-        self._tax_rate = tax_rate
+class OrderProcessor:
+    def __init__(self, inventory: InventorySystem, payment: PaymentGateway):
+        self.inventory = inventory
+        self.payment = payment
+        self.processed_orders = []
 
-    # ... add_item, remove_item, etc. remain the same ...
+    def _generate_order_id(self) -> str:
+        return f"ORD-{uuid.uuid4()}"
 
-    def get_total_price(self) -> float:
-        """Calculates the total price using the product database."""
-        subtotal = 0.0
-        for item_id, quantity in self._items.items():
-            price = self._db.get_price(item_id)
-            subtotal += price * quantity
+    def process_order(self, product: Product, quantity: int, card_details: str):
+        if not self.inventory.check_stock(product, quantity):
+            raise ValueError("Not enough stock.")
         
-        tax = subtotal * self._tax_rate
-        return subtotal + tax
+        total_price = product.price * quantity
+        if not self.payment.charge(total_price, card_details):
+            raise ValueError("Payment failed.")
+            
+        self.inventory.reduce_stock(product, quantity)
+        
+        order_id = self._generate_order_id()
+        self.processed_orders.append(order_id)
+        return order_id
 ```
 
-Our `ShoppingCart` now depends on `ProductDB`. We have two units that need to collaborate.
-
-### Path 1: The Unit Test (with Mocks)
-
-We can still write a unit test for `ShoppingCart` in isolation. To do this, we provide a *mock* `ProductDB` instead of a real one. This allows us to test the cart's calculation logic without any dependency on the actual database.
+Now, let's write a test for the happy path. A naive approach would be to use the real dependencies.
 
 ```python
-# tests/test_models_integration.py
-from unittest.mock import Mock
-from app.models import ShoppingCart
-from app.db import ProductDB
+# tests/test_order_processor.py (New test with real dependencies)
+# ... (previous fixtures and tests) ...
 
-def test_cart_total_price_unit_test(mocker):
+from src.dependencies import InventorySystem, PaymentGateway
+
+def test_process_order_with_real_dependencies_fails_on_second_run():
+    # Arrange
+    inventory = InventorySystem() # Real dependency
+    payment = PaymentGateway()    # Real dependency
+    processor = OrderProcessor(inventory, payment)
+    product = Product("Laptop", 1000.0)
+
+    # Act
+    processor.process_order(product, quantity=8, card_details="1234-5678")
+
+    # Assert
+    # We can't easily check the database, but we can check our own state
+    assert len(processor.processed_orders) == 1
+    # Let's try to check the inventory state
+    assert not inventory.check_stock(product, 5) # 10 - 8 = 2 left, so 5 is not available
+```
+
+This test might pass the first time. But what happens if we run it twice? Or what if we run another test that also uses the "Laptop" inventory? Let's run this specific test twice in a row using `pytest -k ... -v --count=2`.
+
+```bash
+$ pytest -k test_process_order_with_real_dependencies -v --count=2
+============================= test session starts ==============================
+...
+collected 1 item / 1 deselected / 1 selected
+
+tests/test_order_processor.py::test_process_order_with_real_dependencies_fails_on_second_run [1/2] PASSED [ 50%]
+tests/test_order_processor.py::test_process_order_with_real_dependencies_fails_on_second_run [2/2] FAILED [100%]
+
+=================================== FAILURES ===================================
+_ test_process_order_with_real_dependencies_fails_on_second_run _
+
+    def test_process_order_with_real_dependencies_fails_on_second_run():
+        # ...
+        processor = OrderProcessor(inventory, payment)
+        product = Product("Laptop", 1000.0)
+    
+        # Act
+>       processor.process_order(product, quantity=8, card_details="1234-5678")
+
+tests/test_order_processor.py:50: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/order_processor.py:19: in process_order
+    raise ValueError("Not enough stock.")
+E   ValueError: Not enough stock.
+=========================== short test summary info ============================
+FAILED tests/test_order_processor.py::test_process_order_with_real_dependencies_fails_on_second_run - ValueError: Not enough stock.
+========================= 1 failed, 1 passed in ...s =========================
+```
+
+### Diagnostic Analysis: Reading the Failure
+
+**The complete output**: The first run passed, but the second run failed with a `ValueError`.
+
+**Let's parse this section by section**:
+
+1.  **The summary line**: `FAILED ... - ValueError: Not enough stock.`
+    *   **What this tells us**: The test failed because our application code raised a `ValueError` with a specific message. This wasn't an `AssertionError`; the test crashed before it could even get to the assertion.
+
+2.  **The traceback**:
+    ```python
+    src/order_processor.py:19: in process_order
+        raise ValueError("Not enough stock.")
+    ```
+    *   **What this tells us**: The crash happened inside our application code, in the `process_order` method, when it tried to raise the "Not enough stock" error. This means the `inventory.check_stock(product, quantity)` call must have returned `False`.
+
+**Root cause identified**: The first test run reduced the stock of "Laptop" from 10 to 2. The second test run tried to order 8 more, but since only 2 were available, `check_stock` returned `False`, and our code correctly raised an exception. The test failed because of a side effect from a previous run.
+
+**What we need**: A way to control the behavior of the dependencies within our test. We need an `InventorySystem` that we can configure with any stock level we want, and that doesn't affect other tests. We need a `PaymentGateway` that doesn't actually make network calls but simply tells us if it was called correctly.
+
+### The Solution: Fakes and Mocks
+
+We will create "Fake" objects—simplified, in-memory implementations of our dependencies that are designed for testing.
+
+```python
+# tests/fakes.py (New File)
+from src.product import Product
+
+class FakeInventory:
+    def __init__(self, stock: dict[str, int]):
+        self._stock = stock
+        self.stock_reduced_for = None
+
+    def check_stock(self, product: Product, quantity: int) -> bool:
+        return self._stock.get(product.name, 0) >= quantity
+
+    def reduce_stock(self, product: Product, quantity: int):
+        self._stock[product.name] -= quantity
+        self.stock_reduced_for = product.name
+
+class FakePaymentGateway:
+    def __init__(self):
+        self.charged_amount = 0
+        self.charged_card = None
+
+    def charge(self, amount: float, card_details: str) -> bool:
+        self.charged_amount = amount
+        self.charged_card = card_details
+        return True
+```
+
+These fakes mimic the interface of the real objects but give us complete control. We can set the initial stock and inspect their state after the test (`charged_amount`, `stock_reduced_for`) to verify interactions.
+
+Now, let's rewrite our test using these fakes.
+
+```python
+# tests/test_order_processor.py (Rewritten with Fakes)
+import pytest
+from src.order_processor import OrderProcessor
+from src.product import Product
+from .fakes import FakeInventory, FakePaymentGateway
+
+@pytest.fixture
+def product():
+    return Product("Laptop", 1000.0)
+
+def test_process_order_successfully(product):
+    # Arrange
+    inventory = FakeInventory(stock={"Laptop": 10})
+    payment = FakePaymentGateway()
+    processor = OrderProcessor(inventory, payment)
+    
+    # Act
+    processor.process_order(product, quantity=8, card_details="1234-5678")
+    
+    # Assert
+    # 1. Check interactions with dependencies
+    assert inventory.stock_reduced_for == "Laptop"
+    assert payment.charged_amount == 8000.0
+    assert payment.charged_card == "1234-5678"
+    
+    # 2. Check internal state of the object under test
+    assert len(processor.processed_orders) == 1
+
+def test_process_order_fails_when_not_enough_stock(product):
+    # Arrange
+    inventory = FakeInventory(stock={"Laptop": 5}) # Not enough stock
+    payment = FakePaymentGateway()
+    processor = OrderProcessor(inventory, payment)
+    
+    # Act & Assert
+    with pytest.raises(ValueError, match="Not enough stock."):
+        processor.process_order(product, quantity=8, card_details="1234-5678")
+```
+
+These tests are now fast, reliable, and isolated. They test the logic of `OrderProcessor` without touching any external systems. We have successfully unit-tested code with side effects.
+
+However, this introduces a new risk: what if our `FakeInventory` behaves differently from the `RealInventory`? Our unit tests would pass, but the application would fail in production. This is where integration testing comes in.
+
+## Integration Testing Within Your Codebase
+
+## Verifying the Contracts Between Components
+
+Unit tests are essential for verifying the logic of a single component in isolation. We've successfully tested our `OrderProcessor` by replacing its dependencies with fakes.
+
+But this creates a blind spot. Our tests prove that `OrderProcessor` works with `FakeInventory`, but they *don't* prove it works with the `RealInventory`. We are trusting that our fake perfectly mimics the real object's contract (method names, arguments, return values, exceptions). If the real `InventorySystem` changes its `reduce_stock` method to `debit_stock`, our unit tests for `OrderProcessor` would still pass, but the application would break.
+
+**Integration tests** fill this gap. They test the interaction *between* two or more real components to ensure they work together as expected.
+
+### Iteration 5: Testing the Collaboration
+
+Let's write an integration test that uses the real `OrderProcessor` and the real `InventorySystem`. We will still fake the `PaymentGateway`, as we want to avoid external network calls, but we will test the direct integration between the order logic and the inventory logic.
+
+```python
+# tests/test_integration.py (New File)
+import pytest
+from src.order_processor import OrderProcessor
+from src.dependencies import InventorySystem
+from src.product import Product
+from .fakes import FakePaymentGateway # We still fake the external service
+
+@pytest.fixture
+def product():
+    return Product("Keyboard", 75.0)
+
+def test_order_processing_updates_real_inventory(product):
     """
-    Unit test for ShoppingCart, mocking the ProductDB dependency.
+    An integration test to verify OrderProcessor and InventorySystem work together.
     """
     # Arrange
-    # Create a mock ProductDB that returns specific prices for our test
-    mock_db = mocker.Mock(spec=ProductDB)
-    mock_db.get_price.side_effect = lambda item_id: {"apple": 1.0, "banana": 0.5}.get(item_id, 0.0)
+    # Use the REAL InventorySystem
+    inventory = InventorySystem() 
+    # Use a FAKE PaymentGateway to avoid external calls
+    payment = FakePaymentGateway()
+    processor = OrderProcessor(inventory, payment)
     
-    cart = ShoppingCart(db=mock_db, tax_rate=0.1)
-    cart.add_item("apple", 2)
-    cart.add_item("banana", 3)
-    
+    # Check initial stock level
+    assert inventory.check_stock(product, 20) == True
+
     # Act
-    total_price = cart.get_total_price()
-    
+    processor.process_order(product, quantity=15, card_details="valid-card")
+
     # Assert
-    # Subtotal = (2 * 1.0) + (3 * 0.5) = 3.5
-    # Total = 3.5 * 1.1 = 3.85
-    assert total_price == pytest.approx(3.85)
-    
-    # We can also assert that the dependency was called correctly
-    assert mock_db.get_price.call_count == 2
-    mock_db.get_price.assert_any_call("apple")
-    mock_db.get_price.assert_any_call("banana")
+    # Verify the side effect on the real inventory object
+    assert inventory.check_stock(product, 11) == False # 25 - 15 = 10 left
+    assert inventory.check_stock(product, 10) == True
 ```
 
-**Advantages of this unit test:**
-*   **Fast**: No real database connection.
-*   **Isolated**: A failure here points directly to a bug in `ShoppingCart`, not `ProductDB`.
-*   **Controllable**: We can easily simulate any scenario, like an item not being in the database, by configuring our mock.
+This test provides a higher level of confidence. It proves that `OrderProcessor` calls the correct methods on `InventorySystem` and that the state of `InventorySystem` is updated as expected.
 
-### Path 2: The Integration Test (with Real Objects)
+### The Test Pyramid: Balancing Unit and Integration Tests
 
-The unit test gives us confidence that `ShoppingCart`'s logic is correct. But does it work with the *real* `ProductDB`? An integration test will answer that.
+This brings us to the concept of the Test Pyramid.
 
-For this test, we instantiate *both* real objects and have them interact.
+-   **Unit Tests (Base)**: You should have many of these. They are fast, stable, and precisely locate failures. Our tests using `FakeInventory` and `FakePaymentGateway` are unit tests.
+-   **Integration Tests (Middle)**: You should have a moderate number of these. They are slower and more brittle than unit tests but verify that components collaborate correctly. Our `test_order_processing_updates_real_inventory` is an integration test.
+-   **End-to-End (E2E) Tests (Top)**: You should have very few of these. They test the entire application stack, often by driving a web browser or a public API. They are very slow, brittle, and expensive to run, but provide the highest confidence that the whole system works.
+
+You should focus most of your effort on unit tests, as they provide the best return on investment for catching bugs quickly. Use integration tests strategically to cover the critical seams between your application's components.
+
+### The Journey: From Problem to Solution
+
+Let's review the path we took to build a robust test suite for our synchronous code.
+
+| Iteration | Problem / Failure Mode                               | Technique Applied                               | Result                                                |
+| :-------- | :--------------------------------------------------- | :---------------------------------------------- | :---------------------------------------------------- |
+| 0         | Testing a simple, pure function.                     | Basic `assert` statement.                       | Confidence in a single algorithm.                     |
+| 1         | Logic moved into a class method.                     | Instantiate the class in the test.              | Test adapted to object-oriented structure.            |
+| 2         | Shared class instance causes test interdependence.   | `pytest.fixture` for test isolation.            | Each test gets a fresh instance; tests are reliable.  |
+| 3         | Temptation to test private methods.                  | Philosophy: Test public behavior, not implementation. | A robust test suite that isn't brittle to refactoring. |
+| 4         | Side effects (database, API) make tests slow/unreliable. | Test Doubles (Fakes) and Dependency Injection.  | Fast, isolated unit tests for complex logic.          |
+| 5         | Unit tests don't verify component contracts.         | Integration tests for key component collaborations. | Confidence that components work together correctly.   |
+
+### Final Implementation
+
+Here is the final state of our `OrderProcessor` and a selection of the tests we built, representing a healthy mix of unit and integration testing.
 
 ```python
-# tests/test_models_integration.py
-import pytest
-from app.models import ShoppingCart
-from app.db import ProductDB
+# src/order_processor.py (Final)
+import uuid
+from .product import Product
+from .dependencies import InventorySystem, PaymentGateway
 
-def test_cart_and_db_integration():
-    """
-    Integration test verifying ShoppingCart and ProductDB work together.
-    """
-    # Arrange: Create real instances of both classes
-    db = ProductDB()
-    cart = ShoppingCart(db=db, tax_rate=0.1)
-    
-    cart.add_item("apple", 2)
-    cart.add_item("orange", 4)
+class OrderProcessor:
+    def __init__(self, inventory: InventorySystem, payment: PaymentGateway):
+        self.inventory = inventory
+        self.payment = payment
+        self.processed_orders = []
+
+    def _generate_order_id(self) -> str:
+        return f"ORD-{uuid.uuid4()}"
+
+    def process_order(self, product: Product, quantity: int, card_details: str):
+        if not self.inventory.check_stock(product, quantity):
+            raise ValueError("Not enough stock.")
+        
+        total_price = product.price * quantity
+        if not self.payment.charge(total_price, card_details):
+            raise ValueError("Payment failed.")
+            
+        self.inventory.reduce_stock(product, quantity)
+        
+        order_id = self._generate_order_id()
+        self.processed_orders.append(order_id)
+        return order_id
+
+# tests/test_order_processor.py (Final Unit Test)
+def test_process_order_successfully(product):
+    # Arrange
+    inventory = FakeInventory(stock={"Laptop": 10})
+    payment = FakePaymentGateway()
+    processor = OrderProcessor(inventory, payment)
     
     # Act
-    total_price = cart.get_total_price()
+    processor.process_order(product, quantity=8, card_details="1234-5678")
     
     # Assert
-    # Subtotal = (2 * 1.0) + (4 * 0.75) = 2.0 + 3.0 = 5.0
-    # Total = 5.0 * 1.1 = 5.5
-    assert total_price == pytest.approx(5.5)
+    assert inventory.stock_reduced_for == "Laptop"
+    assert payment.charged_amount == 8000.0
+    assert len(processor.processed_orders) == 1
+
+# tests/test_integration.py (Final Integration Test)
+def test_order_processing_updates_real_inventory(product):
+    # Arrange
+    inventory = InventorySystem() 
+    payment = FakePaymentGateway()
+    processor = OrderProcessor(inventory, payment)
+    
+    # Act
+    processor.process_order(product, quantity=15, card_details="valid-card")
+
+    # Assert
+    assert inventory.check_stock(product, 10) == True
 ```
 
-**Advantages of this integration test:**
-*   **High Confidence**: It proves the two components are correctly wired together and can communicate. It tests the contract between them.
-*   **Realistic**: It more closely simulates how the application will run in production.
+### Decision Framework: Unit vs. Integration Test
 
-### The Testing Pyramid
+When should you write which type of test?
 
-In a professional project, you need both types of tests. The general guideline is the "Testing Pyramid":
-
-1.  **Lots of fast Unit Tests** at the base, providing detailed coverage of individual components.
-2.  **Fewer, slightly slower Integration Tests** in the middle, ensuring components work together.
-3.  **Very few End-to-End Tests** at the top, which test the entire application through its user interface.
-
-By testing your synchronous code at both the unit and integration levels, you create a safety net that catches bugs in individual components and in the critical connections between them.
+| Characteristic      | Choose a **Unit Test** When...                               | Choose an **Integration Test** When...                        |
+| :------------------ | :----------------------------------------------------------- | :------------------------------------------------------------ |
+| **Goal**            | You want to verify the internal logic of a single component. | You want to verify the contract/collaboration between components. |
+| **Dependencies**    | All external dependencies (DB, API, other classes) are replaced with Test Doubles. | One or more dependencies are real, concrete objects.          |
+| **Speed**           | You need the test to be extremely fast (milliseconds).       | You can tolerate a slower test (tens or hundreds of ms).      |
+| **Scope**           | The test focuses on edge cases, business rules, and algorithms within one class. | The test focuses on data flow and side effects across classes. |
+| **Failure Insight** | A failure precisely pinpoints the bug in a specific class.   | A failure indicates a problem in the interaction, requiring more debugging. |

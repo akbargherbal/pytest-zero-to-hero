@@ -359,286 +359,467 @@
         <div class="content">
             <h1 id="chapter-3-setting-up-your-testing-environment">Chapter 3: Setting Up Your Testing Environment</h1>
 <h2 id="project-structure-best-practices">Project Structure Best Practices</h2>
-<h2 id="the-blueprint-for-a-testable-project">The Blueprint for a Testable Project</h2>
-<p>Before writing a single line of test code, the structure of your project can either set you up for success or for future headaches. A well-organized project is easy to navigate, easy to test, and easy for others to understand. An unorganized one becomes a tangled mess where application code and test code are indistinguishable.</p>
-<p>Let's illuminate this by showing the pits. Imagine a project folder that looks like this:</p>
-<div class="codehilite"><pre><span></span><code>messy_project/
-├── my_app.py
-├── test_my_app.py
-├── utils.py
-├── test_utils.py
-├── data.json
-└── README.md
+<h2 id="the-foundation-of-a-maintainable-project">The Foundation of a Maintainable Project</h2>
+<p>Before writing a single test, the most crucial decision you'll make is how to structure your project. A well-organized project is easy to navigate, test, and package. A disorganized one creates friction at every step, leading to confusing imports, difficulty in separating test code from application code, and deployment headaches.</p>
+<p>This chapter is about building a solid foundation. We will start with a common but problematic structure and iteratively refine it, demonstrating <em>why</em> each improvement is necessary by showing the exact failure it prevents.</p>
+<h3 id="phase-1-establish-the-reference-implementation">Phase 1: Establish the Reference Implementation</h3>
+<p>Let's begin with a simple but realistic example that will be our anchor for this chapter. We'll build a <code>Wallet</code> application.</p>
+<p>Here is the application code:</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># wallet.py</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">InsufficientAmount</span><span class="p">(</span><span class="ne">Exception</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Custom exception for when a wallet doesn&#39;t have enough funds.&quot;&quot;&quot;</span>
+    <span class="k">pass</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">Wallet</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;A simple wallet to hold and manage a balance.&quot;&quot;&quot;</span>
+    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">initial_amount</span><span class="o">=</span><span class="mi">0</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">initial_amount</span> <span class="o">&lt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Initial amount cannot be negative.&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">=</span> <span class="n">initial_amount</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">spend_cash</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">amount</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">&lt;</span> <span class="n">amount</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="n">InsufficientAmount</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;You don&#39;t have </span><span class="si">{</span><span class="n">amount</span><span class="si">}</span><span class="s2"> to spend.&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">-=</span> <span class="n">amount</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">add_cash</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">amount</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">balance</span> <span class="o">+=</span> <span class="n">amount</span>
 </code></pre></div>
 
-<p>While this might work for a tiny script, it quickly becomes unmanageable. Which files are part of the application? Which are tests? Where do new tests go? This flat structure creates confusion.</p>
-<p>Now, let's look at a clean, standard, and scalable structure.</p>
-<h3 id="the-src-layout">The <code>src</code> Layout</h3>
-<p>The most robust and recommended structure for modern Python projects is the "src layout." It creates a clear separation between your actual application code and everything else (like tests, documentation, and configuration).</p>
-<p>Here is the blueprint we will use for our examples:</p>
-<div class="codehilite"><pre><span></span><code>wallet_project/
-├── src/
-│   └── wallet/
-│       ├── __init__.py
-│       ├── wallet.py
-│       └── exceptions.py
-├── tests/
-│   ├── __init__.py
-│   └── test_wallet.py
-├── .gitignore
-├── pyproject.toml
-└── README.md
+<p>And here is a basic test for it:</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># test_wallet.py</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">wallet</span><span class="w"> </span><span class="kn">import</span> <span class="n">Wallet</span><span class="p">,</span> <span class="n">InsufficientAmount</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pytest</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_default_initial_amount</span><span class="p">():</span>
+    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">()</span>
+    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">0</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_setting_initial_amount</span><span class="p">():</span>
+    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">100</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_wallet_add_cash</span><span class="p">():</span>
+    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+    <span class="n">wallet</span><span class="o">.</span><span class="n">add_cash</span><span class="p">(</span><span class="mi">90</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">100</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_wallet_spend_cash</span><span class="p">():</span>
+    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">(</span><span class="mi">20</span><span class="p">)</span>
+    <span class="n">wallet</span><span class="o">.</span><span class="n">spend_cash</span><span class="p">(</span><span class="mi">10</span><span class="p">)</span>
+    <span class="k">assert</span> <span class="n">wallet</span><span class="o">.</span><span class="n">balance</span> <span class="o">==</span> <span class="mi">10</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">test_wallet_spend_cash_raises_exception_on_insufficient_amount</span><span class="p">():</span>
+    <span class="n">wallet</span> <span class="o">=</span> <span class="n">Wallet</span><span class="p">()</span>
+    <span class="k">with</span> <span class="n">pytest</span><span class="o">.</span><span class="n">raises</span><span class="p">(</span><span class="n">InsufficientAmount</span><span class="p">):</span>
+        <span class="n">wallet</span><span class="o">.</span><span class="n">spend_cash</span><span class="p">(</span><span class="mi">100</span><span class="p">)</span>
 </code></pre></div>
 
-<p>Let's break down why this is so effective:</p>
+<h3 id="the-flat-layout-problem">The "Flat Layout" Problem</h3>
+<p>The simplest way to organize these files is to put them all in the root directory. This is often called a "flat layout."</p>
+<div class="codehilite"><pre><span></span><code>wallet-project/
+├──<span class="w"> </span>wallet.py
+└──<span class="w"> </span>test_wallet.py
+</code></pre></div>
+
+<p>Let's run pytest from the <code>wallet-project/</code> directory.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span><span class="nv">pytest</span>
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+platform<span class="w"> </span>linux<span class="w"> </span>--<span class="w"> </span>Python<span class="w"> </span><span class="m">3</span>.11.5,<span class="w"> </span>pytest-8.1.1,<span class="w"> </span>pluggy-1.4.0
+rootdir:<span class="w"> </span>/path/to/wallet-project
+collected<span class="w"> </span><span class="m">5</span><span class="w"> </span>items
+
+test_wallet.py<span class="w"> </span>.....<span class="w">                                             </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">==========================</span><span class="w"> </span><span class="m">5</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.01s<span class="w"> </span><span class="o">===========================</span>
+</code></pre></div>
+
+<p>It works! So, what's the problem? This structure seems simple and effective.</p>
+<p>The "flat layout" is a trap. It works for tiny projects but breaks down quickly, creating subtle and frustrating problems as your project grows:</p>
 <ol>
-<li><strong><code>src/</code> directory</strong>: This contains your <em>installable</em> Python package. Everything inside <code>src</code> is what you would distribute if you were publishing your project. This clear boundary prevents many common packaging and import path issues.</li>
-<li><strong><code>wallet/</code></strong>: This is the actual Python package. The name you choose here is what users will <code>import</code> (e.g., <code>from wallet import Wallet</code>).</li>
-<li><strong><code>tests/</code> directory</strong>: This is the home for all your tests. It lives at the root of the project, parallel to <code>src</code>, making it clear that tests are not part of the installable application code but are a critical part of the development process.</li>
-<li><strong>Configuration Files</strong>: Files like <code>pyproject.toml</code> (which we'll cover shortly) and <code>.gitignore</code> live at the root level.</li>
+<li><strong>Ambiguous Imports:</strong> Is <code>import wallet</code> referring to <code>wallet.py</code> in the current directory or an installed package named <code>wallet</code>? This ambiguity can cause your tests to pass locally but fail in production or CI/CD environments where the code is installed as a package.</li>
+<li><strong>Source vs. Test Confusion:</strong> As the project grows, your root directory becomes a cluttered mix of application code, test files, configuration files, and documentation. It's hard to tell what's part of the deliverable application and what's for testing.</li>
+<li><strong>Packaging Nightmares:</strong> When you try to package your application for distribution (e.g., to PyPI), it's difficult to configure the packaging tools to include <em>only</em> your application code (<code>wallet.py</code>) and exclude your tests (<code>test_wallet.py</code>).</li>
 </ol>
-<p>This structure isn't just a suggestion; it's a convention that solves real-world problems. It ensures your tests are run against the <em>installed</em> version of your code, just as a user would experience it, preventing tests that pass locally but fail in production because of tricky import paths.</p>
+<p>To build a professional, scalable testing setup, we must first fix our project structure.</p>
 <h2 id="creating-a-tests-directory">Creating a tests/ Directory</h2>
-<h2 id="a-dedicated-home-for-your-tests">A Dedicated Home for Your Tests</h2>
-<p>As we saw in the best-practice layout, tests should live in their own top-level directory, almost always named <code>tests/</code>. Why not just put <code>test_wallet.py</code> next to <code>wallet.py</code>?</p>
-<p><strong>The Principle of Separation:</strong> Your tests are for developers, not for end-users. When you package your <code>wallet</code> application for distribution, you don't want to include the hundreds of test files. Placing them in a separate <code>tests/</code> directory makes it trivial to exclude them from the final package, keeping it lean.</p>
-<p>Let's create this structure. Assume you are in your main project directory (<code>wallet_project/</code>).</p>
-<p>First, create the source directory and the package within it. The <code>-p</code> flag creates parent directories as needed.</p>
-<div class="codehilite"><pre><span></span><code>mkdir<span class="w"> </span>-p<span class="w"> </span>src/wallet
+<h2 id="iteration-1-separating-tests-from-source-code">Iteration 1: Separating Tests from Source Code</h2>
+<p>Our first step is to create a clear separation between the code that runs the application and the code that tests it. The standard convention is to place all test files in a dedicated <code>tests/</code> directory.</p>
+<h3 id="current-state-recap">Current State Recap</h3>
+<p>Our project is a flat directory. Tests and source code are mixed together.</p>
+<div class="codehilite"><pre><span></span><code>wallet-project/
+├──<span class="w"> </span>wallet.py
+└──<span class="w"> </span>test_wallet.py
 </code></pre></div>
 
-<p>Next, create the <code>tests/</code> directory at the same level as <code>src/</code>.</p>
-<div class="codehilite"><pre><span></span><code>mkdir<span class="w"> </span>tests
+<h3 id="current-limitation">Current Limitation</h3>
+<p>This structure is messy and makes packaging difficult. We need to isolate the test code.</p>
+<h3 id="new-scenario-moving-the-test-file">New Scenario: Moving the Test File</h3>
+<p>Let's create a <code>tests/</code> directory and move our test file into it.</p>
+<div class="codehilite"><pre><span></span><code>wallet-project/
+├──<span class="w"> </span>wallet.py
+└──<span class="w"> </span>tests/
+<span class="w">    </span>└──<span class="w"> </span>test_wallet.py
 </code></pre></div>
 
-<p>Now, let's create some placeholder files to make our project tangible. We'll use <code>touch</code> to create empty files.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># Create empty __init__.py files to mark them as Python packages</span>
-touch<span class="w"> </span>src/wallet/__init__.py
-touch<span class="w"> </span>tests/__init__.py
-
-<span class="c1"># Create our main application and test files</span>
-touch<span class="w"> </span>src/wallet/wallet.py
-touch<span class="w"> </span>tests/test_wallet.py
+<p>Now, let's try to run pytest again from the root <code>wallet-project/</code> directory.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span>pytest
 </code></pre></div>
 
-<p>Your project structure should now match the blueprint from the previous section.</p>
-<h3 id="how-pytest-finds-the-tests-directory">How Pytest Finds the <code>tests</code> Directory</h3>
-<p>In Chapter 2, we discussed test discovery. By default, pytest looks for tests in the current directory and its subdirectories. When you run <code>pytest</code> from your project root (<code>wallet_project/</code>), it will automatically find and explore the <code>tests/</code> directory, discovering <code>test_wallet.py</code> and any other files that follow the <code>test_*.py</code> or <code>*_test.py</code> naming convention.</p>
-<p>This convention is powerful because it requires zero configuration to get started. Pytest just <em>knows</em> where to look. Later in this chapter, we'll see how to explicitly tell pytest where your tests are, which is a best practice for larger projects.</p>
-<h2 id="using-virtual-environments">Using Virtual Environments</h2>
-<h2 id="isolating-your-projects-world">Isolating Your Project's World</h2>
-<p>Imagine you are working on two projects. Project A needs version 1.0 of a library called <code>requests</code>, while Project B needs the brand-new version 2.0. If you install these libraries globally on your computer, you have a conflict. Upgrading for Project B will break Project A, and downgrading for Project A will break Project B. This is often called "dependency hell."</p>
-<p><strong>A virtual environment is a self-contained directory that holds a specific version of Python and all the specific libraries your project needs.</strong> It's a private workspace for each project, preventing any conflicts.</p>
-<h3 id="the-wrong-way-global-installation">The Wrong Way: Global Installation</h3>
-<p>You might be tempted to just run <code>pip install pytest</code> in your main system terminal. <strong>Don't do this.</strong> This installs pytest globally. While it might seem to work at first, it will inevitably lead to the dependency conflicts described above. It's a classic pitfall that seems easier initially but creates significant problems down the road.</p>
-<h3 id="the-right-way-venv">The Right Way: <code>venv</code></h3>
-<p>Python comes with a built-in module called <code>venv</code> for creating virtual environments. Let's create one for our <code>wallet_project</code>.</p>
-<p>Navigate to your project's root directory (<code>wallet_project/</code>).</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># Create a virtual environment in a directory named .venv</span>
-<span class="c1"># Using .venv is a common convention</span>
-python3<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv
+<h3 id="failure-demonstration">Failure Demonstration</h3>
+<p>This simple change breaks our tests completely.</p>
+<div class="codehilite"><pre><span></span><code><span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+platform<span class="w"> </span>linux<span class="w"> </span>--<span class="w"> </span>Python<span class="w"> </span><span class="m">3</span>.11.5,<span class="w"> </span>pytest-8.1.1,<span class="w"> </span>pluggy-1.4.0
+rootdir:<span class="w"> </span>/path/to/wallet-project
+collected<span class="w"> </span><span class="m">0</span><span class="w"> </span>items<span class="w"> </span>/<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="nv">error</span>
+
+<span class="o">================================</span><span class="w"> </span><span class="nv">ERRORS</span><span class="w"> </span><span class="o">================================</span>
+___________________<span class="w"> </span>ERROR<span class="w"> </span>collecting<span class="w"> </span>tests/test_wallet.py<span class="w"> </span>____________________
+ImportError<span class="w"> </span><span class="k">while</span><span class="w"> </span>importing<span class="w"> </span><span class="nb">test</span><span class="w"> </span>module<span class="w"> </span><span class="s1">&#39;/path/to/wallet-project/tests/test_wallet.py&#39;</span>.
+Hint:<span class="w"> </span>make<span class="w"> </span>sure<span class="w"> </span>your<span class="w"> </span><span class="nb">test</span><span class="w"> </span>modules/packages<span class="w"> </span>have<span class="w"> </span>valid<span class="w"> </span>Python<span class="w"> </span>names.
+Traceback:
+/usr/lib/python3.11/importlib/__init__.py:126:<span class="w"> </span><span class="k">in</span><span class="w"> </span>import_module
+<span class="w">    </span><span class="k">return</span><span class="w"> </span>_bootstrap._gcd_import<span class="o">(</span>name<span class="o">[</span>level:<span class="o">]</span>,<span class="w"> </span>package,<span class="w"> </span>level<span class="o">)</span>
+tests/test_wallet.py:3:<span class="w"> </span><span class="k">in</span><span class="w"> </span>&lt;module&gt;
+<span class="w">    </span>from<span class="w"> </span>wallet<span class="w"> </span>import<span class="w"> </span>Wallet,<span class="w"> </span>InsufficientAmount
+E<span class="w">   </span>ModuleNotFoundError:<span class="w"> </span>No<span class="w"> </span>module<span class="w"> </span>named<span class="w"> </span><span class="s1">&#39;wallet&#39;</span>
+<span class="o">=======================</span><span class="w"> </span>short<span class="w"> </span><span class="nb">test</span><span class="w"> </span>summary<span class="w"> </span><span class="nv">info</span><span class="w"> </span><span class="o">========================</span>
+ERROR<span class="w"> </span>tests/test_wallet.py
+!!!!!!!!!!!!!!!!<span class="w"> </span>Interrupted:<span class="w"> </span><span class="m">1</span><span class="w"> </span>error<span class="w"> </span>during<span class="w"> </span>collection<span class="w"> </span>!!!!!!!!!!!!!!!!
+<span class="o">==========================</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>error<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.08s<span class="w"> </span><span class="o">============================</span>
 </code></pre></div>
 
-<p>You will now see a new <code>.venv/</code> directory in your project. This folder contains a copy of the Python interpreter and is ready to hold your project's dependencies. You should add <code>.venv</code> to your <code>.gitignore</code> file to keep it out of version control.</p>
-<h3 id="activating-the-virtual-environment">Activating the Virtual Environment</h3>
-<p>Creating the environment isn't enough; you need to "activate" it to tell your shell session to use it.</p>
-<p><strong>On macOS and Linux:</strong></p>
-<div class="codehilite"><pre><span></span><code><span class="nb">source</span><span class="w"> </span>.venv/bin/activate
-</code></pre></div>
-
-<p><strong>On Windows (Command Prompt):</strong></p>
-<div class="codehilite"><pre><span></span><code>.venv<span class="se">\S</span>cripts<span class="se">\a</span>ctivate.bat
-</code></pre></div>
-
-<p><strong>On Windows (PowerShell):</strong></p>
-<div class="codehilite"><pre><span></span><code>.venv<span class="se">\S</span>cripts<span class="se">\A</span>ctivate.ps1
-</code></pre></div>
-
-<p>Once activated, you'll typically see the name of the environment in your shell prompt, like <code>(.venv) $</code>. This confirms that any Python or pip commands you run will now operate <em>inside</em> this isolated environment.</p>
-<h3 id="installing-dependencies">Installing Dependencies</h3>
-<p>With your environment active, you can now safely install pytest and any other libraries.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># This pip is the one inside .venv/bin/</span>
-pip<span class="w"> </span>install<span class="w"> </span>pytest
-
-<span class="c1"># Let&#39;s say our wallet needs an external library</span>
-pip<span class="w"> </span>install<span class="w"> </span>requests
-</code></pre></div>
-
-<p>To prove the isolation, you can deactivate the environment.</p>
-<div class="codehilite"><pre><span></span><code>deactivate
-</code></pre></div>
-
-<p>Now, if you try to run <code>pytest</code>, the command will likely fail (unless you made the mistake of installing it globally). This confirms your project's dependencies are neatly contained within <code>.venv</code>. Always remember to activate your virtual environment before working on your project.</p>
-<h2 id="pytest-configuration-files-pytestini-setupcfg-pyprojecttoml">Pytest Configuration Files (pytest.ini, setup.cfg, pyproject.toml)</h2>
-<h2 id="telling-pytest-how-to-behave">Telling Pytest How to Behave</h2>
-<p>While pytest works brilliantly out of the box, you'll soon want to customize its behavior. You can pass options on the command line (like <code>pytest -v</code>), but typing these every time is tedious.</p>
-<p>Pytest configuration files allow you to set default options and configure project-specific settings. Pytest looks for one of these files in your project root, in order of preference:</p>
+<h3 id="diagnostic-analysis-reading-the-failure">Diagnostic Analysis: Reading the Failure</h3>
+<p><strong>The complete output</strong>: The summary shows <code>1 error during collection</code>. This is a critical clue. The problem isn't a failing assertion; pytest couldn't even <em>load</em> the test file to find the tests.</p>
+<p><strong>Let's parse this section by section</strong>:</p>
 <ol>
-<li><code>pyproject.toml</code></li>
-<li><code>pytest.ini</code></li>
-<li><code>tox.ini</code></li>
-<li><code>setup.cfg</code></li>
+<li>
+<p><strong>The summary line</strong>: <code>ERROR collecting tests/test_wallet.py</code></p>
+<ul>
+<li><strong>What this tells us</strong>: The failure happened before any tests were run. Pytest was trying to discover tests inside <code>tests/test_wallet.py</code> and encountered a fatal error.</li>
+</ul>
+</li>
+<li>
+<p><strong>The traceback</strong>:
+    <code>tests/test_wallet.py:3: in &lt;module&gt;
+        from wallet import Wallet, InsufficientAmount
+    E   ModuleNotFoundError: No module named 'wallet'</code></p>
+<ul>
+<li><strong>What this tells us</strong>: The traceback points directly to the problem.</li>
+<li><strong>Key line</strong>: <code>from wallet import Wallet, InsufficientAmount</code> followed by <code>ModuleNotFoundError: No module named 'wallet'</code>.</li>
+</ul>
+</li>
 </ol>
-<p>Let's explore the three most common choices, showing multiple paths to the same destination. We'll configure a simple option: always add <code>-v</code> (verbose) to every <code>pytest</code> run.</p>
-<h3 id="pytestini"><code>pytest.ini</code></h3>
-<p>This is the simplest, most direct way to configure pytest. It's an INI-formatted file dedicated solely to pytest settings.</p>
-<p>Create a file named <code>pytest.ini</code> in your project root.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># pytest.ini</span>
-<span class="k">[pytest]</span>
-<span class="na">addopts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">-v</span>
+<p><strong>Root cause identified</strong>: Python can no longer find the <code>wallet</code> module.
+<strong>Why the current approach can't solve this</strong>: When we run <code>pytest</code>, it adds the root directory (<code>wallet-project/</code>) to Python's import path (<code>sys.path</code>). The test runner looks inside <code>tests/test_wallet.py</code> and tries to execute <code>from wallet import ...</code>. Python looks for <code>wallet.py</code> in the current directory (<code>tests/</code>) and in the directories on <code>sys.path</code>. It can't find <code>wallet.py</code> inside <code>tests/</code>, and while <code>wallet-project/</code> is on the path, the <code>wallet.py</code> file is in the parent directory relative to the test file's new location. This creates an import problem.</p>
+<p><strong>What we need</strong>: We need a project structure that makes our application code a proper, installable package, so that imports are reliable and unambiguous, regardless of where the tests are located.</p>
+<h3 id="the-src-layout-the-professional-standard">The <code>src</code> Layout: The Professional Standard</h3>
+<p>The most robust solution is the "source" or <code>src</code> layout. This involves placing your main application code inside a <code>src</code> directory. This forces you to install your project to test it, which mimics how it will be used in the real world and eliminates a whole class of import problems.</p>
+<p><strong>Technique Introduced</strong>: The <code>src</code> layout and editable installs.</p>
+<p><strong>Solution Implementation</strong>:</p>
+<ol>
+<li>Create a <code>src</code> directory.</li>
+<li>Inside <code>src</code>, create a directory for your package (e.g., <code>wallet</code>).</li>
+<li>Move your application code (<code>wallet.py</code>) into this package directory.</li>
+<li>Create a <code>pyproject.toml</code> file to make your project installable.</li>
+</ol>
+<p>Our new, much improved, project structure:</p>
+<div class="codehilite"><pre><span></span><code>wallet-project/
+├──<span class="w"> </span>pyproject.toml
+├──<span class="w"> </span>src/
+│<span class="w">   </span>└──<span class="w"> </span>wallet/
+│<span class="w">       </span>├──<span class="w"> </span>__init__.py<span class="w">   </span><span class="c1"># Can be empty</span>
+│<span class="w">       </span>└──<span class="w"> </span>wallet.py
+└──<span class="w"> </span>tests/
+<span class="w">    </span>└──<span class="w"> </span>test_wallet.py
 </code></pre></div>
 
-<p>Now, when you run <code>pytest</code>, it will automatically behave as if you had typed <code>pytest -v</code>.</p>
-<ul>
-<li><strong>Pros</strong>: Simple, clear, and focused only on pytest.</li>
-<li><strong>Cons</strong>: Adds another configuration file to your project root.</li>
-</ul>
-<h3 id="setupcfg"><code>setup.cfg</code></h3>
-<p>This file is a holdover from the <code>setuptools</code> packaging system. If your project already has one for packaging metadata, you can add a <code>[tool:pytest]</code> section to it.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># setup.cfg</span>
-<span class="k">[tool:pytest]</span>
-<span class="na">addopts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">-v</span>
-</code></pre></div>
-
-<ul>
-<li><strong>Pros</strong>: Consolidates configuration if you're already using <code>setup.cfg</code>.</li>
-<li><strong>Cons</strong>: <code>setuptools</code> is being superseded by newer standards. This is now considered a legacy approach.</li>
-</ul>
-<h3 id="pyprojecttoml-recommended"><code>pyproject.toml</code> (Recommended)</h3>
-<p>This is the modern, standardized way to configure Python tools. It's defined in PEP 518 and is designed to be the single configuration file for your entire project, from build systems to linters to test runners.</p>
-<p>Create a file named <code>pyproject.toml</code> in your project root.</p>
+<p>The <code>pyproject.toml</code> file tells Python's build tools that this is an installable project. A minimal version looks like this:</p>
 <div class="codehilite"><pre><span></span><code><span class="c1"># pyproject.toml</span>
-<span class="k">[tool.pytest.ini_options]</span>
-<span class="n">addopts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;-v&quot;</span>
+<span class="k">[project]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;wallet&quot;</span>
+<span class="n">version</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;0.1.0&quot;</span>
+
+<span class="k">[tool.setuptools.packages.find]</span>
+<span class="n">where</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;src&quot;</span><span class="p">]</span>
+</code></pre></div>
+
+<p>Now, the crucial step: we must <strong>install our package in editable mode</strong>. This creates a link from our virtual environment's <code>site-packages</code> directory to our source code. Any changes we make in <code>src/wallet/wallet.py</code> will be immediately available to our tests without reinstalling.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># First, ensure you are in a virtual environment (more on this next!)</span>
+<span class="c1"># Then, from the root directory (wallet-project/):</span>
+pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.
+</code></pre></div>
+
+<p>The <code>-e</code> stands for "editable". The <code>.</code> refers to the current directory, where <code>pyproject.toml</code> is located.</p>
+<h3 id="verification">Verification</h3>
+<p>With the project installed, let's run pytest again.</p>
+<div class="codehilite"><pre><span></span><code>$<span class="w"> </span><span class="nv">pytest</span>
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+platform<span class="w"> </span>linux<span class="w"> </span>--<span class="w"> </span>Python<span class="w"> </span><span class="m">3</span>.11.5,<span class="w"> </span>pytest-8.1.1,<span class="w"> </span>pluggy-1.4.0
+rootdir:<span class="w"> </span>/path/to/wallet-project
+collected<span class="w"> </span><span class="m">5</span><span class="w"> </span>items
+
+tests/test_wallet.py<span class="w"> </span>.....<span class="w">                                       </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">==========================</span><span class="w"> </span><span class="m">5</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.01s<span class="w"> </span><span class="o">===========================</span>
+</code></pre></div>
+
+<p>Success! The <code>ModuleNotFoundError</code> is gone. Because our <code>wallet</code> package is now properly installed, Python can find it no matter where the test runner is invoked from. We have achieved a clean separation of concerns.</p>
+<h3 id="when-to-apply-this-solution">When to Apply This Solution</h3>
+<ul>
+<li><strong>What it optimizes for</strong>: Reliability, maintainability, and preventing import errors. It ensures your test environment closely mirrors your production environment.</li>
+<li><strong>What it sacrifices</strong>: A tiny amount of initial setup complexity. You can no longer just run a Python script from a flat directory.</li>
+<li><strong>When to choose this approach</strong>: Always, for any project that you expect to last more than a day or be shared with others.</li>
+<li><strong>When to avoid this approach</strong>: Only for single-file, disposable scripts.</li>
+</ul>
+<p><strong>Limitation preview</strong>: Our project structure is now robust, but our development environment is not. We are likely installing packages into our global Python installation, which can lead to dependency conflicts between projects. We need to isolate our project's dependencies.</p>
+<h2 id="using-virtual-environments">Using Virtual Environments</h2>
+<h2 id="iteration-2-isolating-dependencies">Iteration 2: Isolating Dependencies</h2>
+<p>Our project structure is solid, but it lives on a shaky foundation: the system-wide Python environment. Every <code>pip install</code> command we run without a virtual environment modifies our global collection of packages.</p>
+<h3 id="current-state-recap_1">Current State Recap</h3>
+<p>We have a <code>src</code> layout and have installed our package in editable mode.</p>
+<div class="codehilite"><pre><span></span><code>wallet-project/
+├──<span class="w"> </span>pyproject.toml
+├──<span class="w"> </span>src/
+│<span class="w">   </span>└──<span class="w"> </span>wallet/
+│<span class="w">       </span>└──<span class="w"> </span>wallet.py
+└──<span class="w"> </span>tests/
+<span class="w">    </span>└──<span class="w"> </span>test_wallet.py
+</code></pre></div>
+
+<h3 id="current-limitation_1">Current Limitation</h3>
+<p>Our project's dependencies (like <code>pytest</code>) are installed globally. This creates two major problems:</p>
+<ol>
+<li><strong>Dependency Hell</strong>: Project A requires <code>pytest==7.0</code>, but Project B requires <code>pytest==8.0</code>. Installing one will break the other.</li>
+<li><strong>Implicit Dependencies</strong>: If our code happens to use a package that's already installed globally (e.g., <code>requests</code>), we might forget to list it as a dependency for our project. The code works on our machine but will crash for anyone else who tries to run it on a clean system.</li>
+</ol>
+<h3 id="new-scenario-ensuring-a-reproducible-environment">New Scenario: Ensuring a Reproducible Environment</h3>
+<p>We need to guarantee that our project has its own isolated set of dependencies that don't interfere with other projects and are explicitly defined.</p>
+<p>The "failure" here isn't a test crash, but a workflow failure. Imagine giving your project to a colleague. They run <code>pip install pytest</code> and get the latest version, which happens to be incompatible with your tests. Your test suite, which worked perfectly on your machine, now fails for them. This is a failure of reproducibility.</p>
+<p><strong>Technique Introduced</strong>: Python's built-in <code>venv</code> module for creating virtual environments.</p>
+<p>A virtual environment is a self-contained directory tree that contains a Python installation for a particular version of Python, plus a number of additional packages.</p>
+<h3 id="solution-implementation">Solution Implementation</h3>
+<p>Let's create and activate a virtual environment for our project.</p>
+<p><strong>Step 1: Create the virtual environment</strong></p>
+<p>From the root of <code>wallet-project/</code>, run the following command. It's conventional to name the environment <code>venv</code> or <code>.venv</code>.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># This creates a directory named &#39;venv&#39; containing a private Python installation.</span>
+python3<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>venv
+</code></pre></div>
+
+<p>You should also add <code>venv/</code> to your <code>.gitignore</code> file to prevent committing it to version control.</p>
+<p><strong>Step 2: Activate the virtual environment</strong></p>
+<p>Activation configures your current shell to use the Python interpreter and packages from within the <code>venv</code> directory.</p>
+<ul>
+<li>On macOS and Linux:</li>
+</ul>
+<div class="codehilite"><pre><span></span><code><span class="nb">source</span><span class="w"> </span>venv/bin/activate
 </code></pre></div>
 
 <ul>
-<li><strong>Pros</strong>: The official, future-proof standard. Consolidates all tool configuration into one file, reducing clutter.</li>
-<li><strong>Cons</strong>: The nested structure (<code>[tool.pytest.ini_options]</code>) is slightly more verbose.</li>
+<li>On Windows (Command Prompt):</li>
 </ul>
-<p><strong>Our Recommendation:</strong> For any new project, use <code>pyproject.toml</code>. It is the clear direction the Python ecosystem is heading, and most modern tools support it. We will use <code>pyproject.toml</code> for all examples going forward.</p>
+<div class="codehilite"><pre><span></span><code>venv<span class="se">\S</span>cripts<span class="se">\a</span>ctivate.bat
+</code></pre></div>
+
+<ul>
+<li>On Windows (PowerShell):</li>
+</ul>
+<div class="codehilite"><pre><span></span><code>venv<span class="se">\S</span>cripts<span class="se">\A</span>ctivate.ps1
+</code></pre></div>
+
+<p>After activation, your shell prompt will typically change to show the name of the active environment, like <code>(venv) $</code>.</p>
+<p><strong>Step 3: Install dependencies into the isolated environment</strong></p>
+<p>Now that the environment is active, any <code>pip</code> command will operate <em>only</em> inside the <code>venv</code> directory. Let's install our project and its testing dependencies.</p>
+<div class="codehilite"><pre><span></span><code><span class="o">(</span>venv<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>pip<span class="w">  </span><span class="c1"># Good practice to use the latest pip</span>
+<span class="o">(</span>venv<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>pytest
+<span class="o">(</span>venv<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.<span class="w">           </span><span class="c1"># Install our local &#39;wallet&#39; package</span>
+</code></pre></div>
+
+<p>If you run <code>pip list</code> now, you will see a very short list of packages—only what you just installed and their dependencies. This is our clean, isolated environment.</p>
+<h3 id="verification_1">Verification</h3>
+<p>Let's run our tests from within the activated virtual environment.</p>
+<div class="codehilite"><pre><span></span><code><span class="o">(</span>venv<span class="o">)</span><span class="w"> </span>$<span class="w"> </span><span class="nv">pytest</span>
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+platform<span class="w"> </span>linux<span class="w"> </span>--<span class="w"> </span>Python<span class="w"> </span><span class="m">3</span>.11.5,<span class="w"> </span>pytest-8.1.1,<span class="w"> </span>pluggy-1.4.0
+rootdir:<span class="w"> </span>/path/to/wallet-project
+collected<span class="w"> </span><span class="m">5</span><span class="w"> </span>items
+
+tests/test_wallet.py<span class="w"> </span>.....<span class="w">                                       </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+
+<span class="o">==========================</span><span class="w"> </span><span class="m">5</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.01s<span class="w"> </span><span class="o">===========================</span>
+</code></pre></div>
+
+<p>Everything still passes, but now we have a guarantee: our test run is completely self-contained and reproducible. Anyone else can create their own virtual environment, install the same dependencies, and get the exact same result.</p>
+<p><strong>Limitation preview</strong>: Our setup is now isolated and structured well. However, running tests still relies on remembering specific command-line options. If one developer runs <code>pytest</code> and another runs <code>pytest -v --strict-markers</code>, they might see different results or warnings. We need a way to enforce consistent test execution for everyone on the team.</p>
+<h2 id="pytest-configuration-files-pytestini-setupcfg-pyprojecttoml">Pytest Configuration Files (pytest.ini, setup.cfg, pyproject.toml)</h2>
+<h2 id="iteration-3-centralizing-configuration">Iteration 3: Centralizing Configuration</h2>
+<p>We have a professional project structure and an isolated environment. The final piece of the setup puzzle is creating a single source of truth for how our tests should be run. Relying on developers to remember command-line flags is a recipe for inconsistency.</p>
+<h3 id="current-state-recap_2">Current State Recap</h3>
+<p>We run <code>pytest</code> from within an activated virtual environment. The command is simple, but it uses pytest's default settings.</p>
+<h3 id="current-limitation_2">Current Limitation</h3>
+<p>To get more informative output or enforce stricter checks, we need to add flags. For example:</p>
+<ul>
+<li><code>pytest -v</code>: for verbose output, showing one line per test.</li>
+<li><code>pytest --strict-markers</code>: to fail the test suite if an unregistered marker is used.</li>
+</ul>
+<p>Forgetting these flags can lead to developers missing important information or introducing errors (like marker typos) that go unnoticed.</p>
+<h3 id="new-scenario-enforcing-consistent-test-runs">New Scenario: Enforcing Consistent Test Runs</h3>
+<p>We want to ensure that every time anyone runs <code>pytest</code>, it automatically uses a standard set of options, like <code>-v</code>.</p>
+<p><strong>Failure Demonstration</strong>: The "failure" is the subtle difference in output and behavior.</p>
+<p>Run without flags:</p>
+<div class="codehilite"><pre><span></span><code><span class="o">(</span>venv<span class="o">)</span><span class="w"> </span>$<span class="w"> </span><span class="nv">pytest</span>
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+...
+tests/test_wallet.py<span class="w"> </span>.....<span class="w">                                       </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+<span class="o">==========================</span><span class="w"> </span><span class="m">5</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.01s<span class="w"> </span><span class="o">===========================</span>
+</code></pre></div>
+
+<p>Now run with the verbose flag:</p>
+<div class="codehilite"><pre><span></span><code><span class="o">(</span>venv<span class="o">)</span><span class="w"> </span>$<span class="w"> </span>pytest<span class="w"> </span>-v
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+...
+tests/test_wallet.py::test_default_initial_amount<span class="w"> </span>PASSED<span class="w">         </span><span class="o">[</span><span class="w"> </span><span class="m">20</span>%<span class="o">]</span>
+tests/test_wallet.py::test_setting_initial_amount<span class="w"> </span>PASSED<span class="w">         </span><span class="o">[</span><span class="w"> </span><span class="m">40</span>%<span class="o">]</span>
+tests/test_wallet.py::test_wallet_add_cash<span class="w"> </span>PASSED<span class="w">                </span><span class="o">[</span><span class="w"> </span><span class="m">60</span>%<span class="o">]</span>
+tests/test_wallet.py::test_wallet_spend_cash<span class="w"> </span>PASSED<span class="w">              </span><span class="o">[</span><span class="w"> </span><span class="m">80</span>%<span class="o">]</span>
+tests/test_wallet.py::test_wallet_spend_cash_raises_exception_on_insufficient_amount<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+<span class="o">==========================</span><span class="w"> </span><span class="m">5</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.01s<span class="w"> </span><span class="o">===========================</span>
+</code></pre></div>
+
+<p>The verbose output is much more informative. We want this to be the default, without having to type it every time.</p>
+<p><strong>Technique Introduced</strong>: Pytest configuration files.</p>
+<p>Pytest automatically discovers and reads configuration from one of several files in your project's root directory. The search order is: <code>pytest.ini</code>, <code>pyproject.toml</code>, <code>tox.ini</code>, <code>setup.cfg</code>.</p>
+<p>The modern standard is <code>pyproject.toml</code>, as it is the unified configuration file for all Python tooling (build systems, linters, formatters, and test runners). We will use it.</p>
+<h3 id="solution-implementation_1">Solution Implementation</h3>
+<p>We will add a new section to our existing <code>pyproject.toml</code> file to hold our pytest configuration.</p>
+<p><strong>Before</strong>:</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># pyproject.toml</span>
+<span class="k">[project]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;wallet&quot;</span>
+<span class="n">version</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;0.1.0&quot;</span>
+
+<span class="k">[tool.setuptools.packages.find]</span>
+<span class="n">where</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;src&quot;</span><span class="p">]</span>
+</code></pre></div>
+
+<p><strong>After</strong>:</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># pyproject.toml</span>
+<span class="k">[project]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;wallet&quot;</span>
+<span class="n">version</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;0.1.0&quot;</span>
+
+<span class="k">[tool.setuptools.packages.find]</span>
+<span class="n">where</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;src&quot;</span><span class="p">]</span>
+
+<span class="k">[tool.pytest.ini_options]</span>
+<span class="c1"># Add command-line options here</span>
+<span class="n">addopts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;-v --strict-markers&quot;</span>
+</code></pre></div>
+
+<p>The <code>[tool.pytest.ini_options]</code> table is where all pytest settings go. The <code>addopts</code> key is a string of command-line arguments that pytest will automatically prepend to every run.</p>
+<h3 id="verification_2">Verification</h3>
+<p>Now, let's run the plain <code>pytest</code> command again, with no extra arguments.</p>
+<div class="codehilite"><pre><span></span><code><span class="o">(</span>venv<span class="o">)</span><span class="w"> </span>$<span class="w"> </span><span class="nv">pytest</span>
+<span class="o">=========================</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>session<span class="w"> </span><span class="nv">starts</span><span class="w"> </span><span class="o">==========================</span>
+...
+tests/test_wallet.py::test_default_initial_amount<span class="w"> </span>PASSED<span class="w">         </span><span class="o">[</span><span class="w"> </span><span class="m">20</span>%<span class="o">]</span>
+tests/test_wallet.py::test_setting_initial_amount<span class="w"> </span>PASSED<span class="w">         </span><span class="o">[</span><span class="w"> </span><span class="m">40</span>%<span class="o">]</span>
+tests/test_wallet.py::test_wallet_add_cash<span class="w"> </span>PASSED<span class="w">                </span><span class="o">[</span><span class="w"> </span><span class="m">60</span>%<span class="o">]</span>
+tests/test_wallet.py::test_wallet_spend_cash<span class="w"> </span>PASSED<span class="w">              </span><span class="o">[</span><span class="w"> </span><span class="m">80</span>%<span class="o">]</span>
+tests/test_wallet.py::test_wallet_spend_cash_raises_exception_on_insufficient_amount<span class="w"> </span>PASSED<span class="w"> </span><span class="o">[</span><span class="m">100</span>%<span class="o">]</span>
+<span class="o">==========================</span><span class="w"> </span><span class="m">5</span><span class="w"> </span>passed<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">0</span>.01s<span class="w"> </span><span class="o">===========================</span>
+</code></pre></div>
+
+<p>Perfect. The output is automatically verbose. We have successfully centralized our testing configuration, ensuring every test run is consistent.</p>
 <h2 id="common-configuration-options">Common Configuration Options</h2>
-<h2 id="fine-tuning-your-test-suite">Fine-Tuning Your Test Suite</h2>
-<p>Let's build on our <code>pyproject.toml</code> file and add some of the most useful configuration options. We'll introduce them one at a time, explaining the problem each one solves.</p>
-<p>Our starting <code>pyproject.toml</code>:</p>
+<h2 id="configuring-pytest-for-professional-workflows">Configuring Pytest for Professional Workflows</h2>
+<p>The <code>[tool.pytest.ini_options]</code> section in your <code>pyproject.toml</code> is your command center for controlling pytest's behavior. Let's explore some of the most valuable options you'll use in day-to-day development.</p>
+<p>Our starting configuration:</p>
 <div class="codehilite"><pre><span></span><code><span class="c1"># pyproject.toml</span>
+
 <span class="k">[tool.pytest.ini_options]</span>
-<span class="n">addopts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;-v&quot;</span>
+<span class="n">addopts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;-v --strict-markers&quot;</span>
 </code></pre></div>
 
 <h3 id="testpaths-specifying-where-to-find-tests"><code>testpaths</code>: Specifying Where to Find Tests</h3>
-<p>By default, pytest searches everywhere. In a large project, this can be slow. It might also accidentally pick up tests from a virtual environment directory or other places you don't intend. It's better to be explicit.</p>
-<p>The <code>testpaths</code> option tells pytest exactly where to look.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># pyproject.toml</span>
-<span class="k">[tool.pytest.ini_options]</span>
-<span class="n">addopts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;-v&quot;</span>
-<span class="n">testpaths</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span>
-<span class="w">    </span><span class="s2">&quot;tests&quot;</span><span class="p">,</span>
-<span class="p">]</span>
+<p>By default, pytest searches the entire project directory for tests. In a large project, this can be slow. You can speed up test discovery by telling pytest exactly where to look.</p>
+<p><strong>Problem</strong>: Slow test collection in large repositories with many files.
+<strong>Solution</strong>: Use <code>testpaths</code> to limit the search.</p>
+<div class="codehilite"><pre><span></span><code><span class="k">[tool.pytest.ini_options]</span>
+<span class="n">addopts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;-v --strict-markers&quot;</span>
+<span class="n">testpaths</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;tests&quot;</span><span class="p">]</span>
 </code></pre></div>
 
-<p>Now, pytest will <em>only</em> look for tests inside the <code>tests/</code> directory, making discovery faster and more predictable.</p>
-<h3 id="python_files-python_classes-python_functions-customizing-discovery"><code>python_files</code>, <code>python_classes</code>, <code>python_functions</code>: Customizing Discovery</h3>
-<p>Pytest's default discovery (looking for <code>test_*</code> and <code>*_test</code>) is excellent, but sometimes you need to change it. For example, a project might have a convention of naming test files <code>check_*.py</code>.</p>
-<p>You can override the default patterns:</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># pyproject.toml</span>
-<span class="k">[tool.pytest.ini_options]</span>
-<span class="n">addopts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;-v&quot;</span>
-<span class="n">testpaths</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span>
-<span class="w">    </span><span class="s2">&quot;tests&quot;</span><span class="p">,</span>
-<span class="p">]</span>
-<span class="c1"># Look for tests in files named test_*.py or check_*.py</span>
-<span class="n">python_files</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;test_*.py&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;check_*.py&quot;</span><span class="p">]</span>
-<span class="c1"># Look for test methods inside classes prefixed with &quot;Test&quot; or &quot;Check&quot;</span>
-<span class="n">python_classes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;Test*&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Check*&quot;</span><span class="p">]</span>
-<span class="c1"># Look for test functions prefixed with &quot;test_&quot; or &quot;check_&quot;</span>
-<span class="n">python_functions</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;test_*&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;check_*&quot;</span><span class="p">]</span>
+<p>With this setting, <code>pytest</code> will <em>only</em> look for tests inside the <code>tests/</code> directory and ignore everything else.</p>
+<h3 id="minversion-enforcing-a-pytest-version"><code>minversion</code>: Enforcing a Pytest Version</h3>
+<p><strong>Problem</strong>: A new developer joins the team and installs an old, incompatible version of pytest, causing strange errors.
+<strong>Solution</strong>: Specify a minimum required version.</p>
+<div class="codehilite"><pre><span></span><code><span class="k">[tool.pytest.ini_options]</span>
+<span class="n">minversion</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;8.0&quot;</span><span class="w"> </span><span class="c1"># Require pytest version 8.0 or newer</span>
+<span class="n">addopts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;-v --strict-markers&quot;</span>
+<span class="n">testpaths</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;tests&quot;</span><span class="p">]</span>
 </code></pre></div>
 
-<p>This gives you complete control over what pytest considers a test.</p>
-<h3 id="addopts-adding-more-default-options"><code>addopts</code>: Adding More Default Options</h3>
-<p>The <code>addopts</code> key is a space-separated string of command-line arguments you want to run every time. This is perfect for ensuring consistency across all test runs, especially in a team or a CI/CD environment.</p>
-<p>Let's add a few more common options:
-- <code>--strict-markers</code>: Fails the test suite if you use a marker that isn't registered. This prevents typos and keeps your markers clean (more in Chapter 6).
-- <code>-ra</code>: Shows a short summary for all test outcomes except passes (<code>r</code> for report, <code>a</code> for all-but-passing). This is great for seeing skips and xfails at a glance.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># pyproject.toml</span>
-<span class="k">[tool.pytest.ini_options]</span>
-<span class="c1"># Options are space-separated</span>
-<span class="n">addopts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;-v -ra --strict-markers&quot;</span>
-<span class="n">testpaths</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span>
-<span class="w">    </span><span class="s2">&quot;tests&quot;</span><span class="p">,</span>
-<span class="p">]</span>
-</code></pre></div>
-
+<p>If someone tries to run the suite with an older version, pytest will exit immediately with a clear error message.</p>
 <h3 id="markers-registering-custom-markers"><code>markers</code>: Registering Custom Markers</h3>
-<p>As we'll see in Chapter 6, markers are a powerful way to categorize tests. The <code>--strict-markers</code> option requires you to register them here. Even if you don't use strict mode, registering markers is a best practice as it provides a single source of truth for what each marker means.</p>
-<div class="codehilite"><pre><span></span><code><span class="c1"># pyproject.toml</span>
-<span class="k">[tool.pytest.ini_options]</span>
-<span class="n">addopts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;-v -ra --strict-markers&quot;</span>
-<span class="n">testpaths</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span>
-<span class="w">    </span><span class="s2">&quot;tests&quot;</span><span class="p">,</span>
-<span class="p">]</span>
+<p>As we'll see in Chapter 6, markers are a powerful way to categorize tests (e.g., <code>@pytest.mark.slow</code>, <code>@pytest.mark.api</code>). The <code>--strict-markers</code> option in <code>addopts</code> will cause an error if you use a marker that hasn't been officially registered. This is a good thing—it prevents typos!</p>
+<p><strong>Problem</strong>: Typos in marker names (<code>@pytest.mark.slwo</code>) go unnoticed, and tests are not selected or skipped as intended.
+<strong>Solution</strong>: Register all valid markers in the configuration file.</p>
+<div class="codehilite"><pre><span></span><code><span class="k">[tool.pytest.ini_options]</span>
+<span class="n">minversion</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;8.0&quot;</span>
+<span class="n">addopts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;-v --strict-markers&quot;</span>
+<span class="n">testpaths</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;tests&quot;</span><span class="p">]</span>
 <span class="n">markers</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span>
-<span class="w">    </span><span class="s2">&quot;slow: marks tests as slow (deselect with &#39;-m </span><span class="se">\&quot;</span><span class="s2">not slow</span><span class="se">\&quot;</span><span class="s2">&#39;)&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;slow: marks tests as slow (select with &#39;-m slow&#39;)&quot;</span><span class="p">,</span>
 <span class="w">    </span><span class="s2">&quot;api: marks tests that hit a live API endpoint&quot;</span><span class="p">,</span>
 <span class="p">]</span>
 </code></pre></div>
 
-<p>This configuration now serves as both a functional setting for pytest and documentation for your project's test categories.</p>
-<h2 id="setting-up-your-ide-for-testing">Setting Up Your IDE for Testing</h2>
-<h2 id="bringing-pytest-into-your-workflow">Bringing Pytest into Your Workflow</h2>
-<p>Running <code>pytest</code> from the command line is the fundamental way to execute your test suite. However, modern Integrated Development Environments (IDEs) like VS Code and PyCharm offer powerful integrations that can make you far more productive. These integrations allow you to run tests, view results, and debug failures directly within your editor.</p>
-<p>We'll use Visual Studio Code as our primary example, as it's a popular and free choice. The principles are nearly identical for other IDEs like PyCharm.</p>
-<h3 id="step-1-open-the-project-and-select-the-interpreter">Step 1: Open the Project and Select the Interpreter</h3>
-<p>First, open your <code>wallet_project/</code> folder in VS Code. The IDE needs to know which Python interpreter to use, and it's crucial that it uses the one from your virtual environment.</p>
-<ul>
-<li>Open the Command Palette (<code>Ctrl+Shift+P</code> or <code>Cmd+Shift+P</code>).</li>
-<li>Type "Python: Select Interpreter".</li>
-<li>Choose the interpreter that includes <code>.venv</code> in its path. It will often be labeled with <code>('.venv')</code>.</li>
-</ul>
-<p>This tells VS Code to use the isolated environment where you installed pytest.</p>
-<h3 id="step-2-configure-the-test-runner">Step 2: Configure the Test Runner</h3>
-<p>Next, you need to tell VS Code that you're using pytest.</p>
-<ul>
-<li>Open the Command Palette again.</li>
-<li>Type "Python: Configure Tests".</li>
-<li>Select <code>pytest</code> from the list of frameworks.</li>
-<li>When prompted, select the <code>tests</code> directory as the location of your tests.</li>
-</ul>
-<p>VS Code will create a <code>.vscode/settings.json</code> file in your project to store this configuration. It will look something like this:</p>
-<div class="codehilite"><pre><span></span><code><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;python.testing.pytestArgs&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<span class="w">        </span><span class="s2">&quot;tests&quot;</span>
-<span class="w">    </span><span class="p">],</span>
-<span class="w">    </span><span class="nt">&quot;python.testing.unittestEnabled&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;python.testing.pytestEnabled&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
-<span class="p">}</span>
+<p>Now, if you accidentally type <code>@pytest.mark.slwo</code>, the test suite will fail with an error telling you that the marker is not registered.</p>
+<h3 id="customizing-test-discovery">Customizing Test Discovery</h3>
+<p>Pytest's discovery rules are sensible by default (it looks for <code>test_*.py</code> or <code>*_test.py</code> files), but you can override them if your project has different conventions.</p>
+<p><strong>Problem</strong>: Your project uses a different naming convention for test files, like <code>check_*.py</code>.
+<strong>Solution</strong>: Use <code>python_files</code>, <code>python_classes</code>, and <code>python_functions</code> to change the discovery patterns.</p>
+<div class="codehilite"><pre><span></span><code><span class="k">[tool.pytest.ini_options]</span>
+<span class="c1"># ... other options</span>
+<span class="n">python_files</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;test_*.py *_test.py check_*.py&quot;</span>
+<span class="n">python_classes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;Test* Check*&quot;</span>
+<span class="n">python_functions</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;test_* check_*&quot;</span>
 </code></pre></div>
 
-<h3 id="step-3-discover-and-run-tests">Step 3: Discover and Run Tests</h3>
-<p>Once configured, VS Code will automatically discover your tests.</p>
-<ul>
-<li>Click on the <strong>Testing</strong> icon (a beaker) in the activity bar on the left.</li>
-<li>You should see a Test Explorer panel appear, showing a tree view of all your test files, classes, and functions.</li>
-<li>You can now run tests with a single click:<ul>
-<li>Click the main "play" button at the top of the Test Explorer to run the entire suite.</li>
-<li>Hover over a specific file or function to see a "play" button next to it, allowing you to run just that test or file.</li>
-</ul>
-</li>
-</ul>
-<p>You will also see small "Run Test | Debug Test" links appear directly above your test functions in the code editor. This is called a "CodeLens" and is an incredibly fast way to run a single test you are working on.</p>
-<p><img alt="VS Code Test Integration" src="https://code.visualstudio.com/assets/docs/python/testing/images/test-results-in-test-explorer.png" /></p>
-<h3 id="the-power-of-ide-integration">The Power of IDE Integration</h3>
-<p>Why is this so powerful?</p>
-<ul>
-<li><strong>Speed:</strong> Running a single test you're focused on is much faster than running the whole suite.</li>
-<li><strong>Debugging:</strong> You can click "Debug Test" to run a test with the debugger attached, allowing you to set breakpoints and inspect variables at the exact moment of failure. This transforms debugging from guesswork to a systematic process.</li>
-<li><strong>Visual Feedback:</strong> Seeing green checks and red crosses in the UI provides immediate, clear feedback on the health of your code.</li>
-</ul>
-<p>Setting up your IDE correctly is a one-time investment that pays off every single time you run a test. It closes the loop between writing code, testing it, and fixing it, making you a faster, more effective developer.</p>
+<p>This tells pytest to also discover tests in files like <code>check_wallet.py</code>, inside classes like <code>CheckWallet</code>, and from functions like <code>check_initial_balance</code>.</p>
+<h3 id="a-complete-configuration-example">A Complete Configuration Example</h3>
+<p>Here is what a robust, professional <code>pytest.ini_options</code> section might look like, combining these common settings.</p>
+<div class="codehilite"><pre><span></span><code><span class="c1"># pyproject.toml</span>
+
+<span class="c1"># ... [project] and [tool.setuptools.packages.find] sections ...</span>
+
+<span class="k">[tool.pytest.ini_options]</span>
+<span class="c1"># Enforce a minimum pytest version for consistency</span>
+<span class="n">minversion</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;8.0&quot;</span>
+
+<span class="c1"># Specify the directory where tests are located</span>
+<span class="n">testpaths</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;tests&quot;</span><span class="p">]</span>
+
+<span class="c1"># Add command-line options that should always be used</span>
+<span class="c1"># -v: verbose</span>
+<span class="c1"># -rA: show extra test summary info for all outcomes</span>
+<span class="c1"># --strict-markers: fail on unregistered markers</span>
+<span class="c1"># --color=yes: force color output (good for CI)</span>
+<span class="n">addopts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;-v -rA --strict-markers --color=yes&quot;</span>
+
+<span class="c1"># Register custom markers to avoid typos and provide help</span>
+<span class="n">markers</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="s2">&quot;slow: marks tests as slow to run&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;smoke: marks a small subset of critical-path tests&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="s2">&quot;regression: marks regression tests for a specific bug&quot;</span><span class="p">,</span>
+<span class="p">]</span>
+</code></pre></div>
         </div>
         <div class="footer">
-            Generated on 2025-11-22 17:25:04 | Made with ❤️ by GitHub Pages Generator
+            Generated on 2025-11-24 14:31:15 | Made with ❤️ by GitHub Pages Generator
         </div>
     </div>
     <script>

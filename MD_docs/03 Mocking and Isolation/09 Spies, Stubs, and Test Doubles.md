@@ -2,726 +2,1219 @@
 
 ## The Difference Between Mocks, Stubs, and Spies
 
-## What Are Test Doubles?
+## The Problem: Testing Code with External Dependencies
 
-In the previous chapter, we introduced `unittest.mock` and the concept of mocking. "Mock" is often used as a catch-all term, but it's technically one of several types of objects that stand in for real objects during testing. The general, more accurate term for these stand-ins is **Test Double**.
+So far, we've tested functions that are self-contained. They take inputs, perform calculations, and return outputs. But real-world code is messy. It interacts with databases, calls external APIs, reads from the filesystem, and depends on other complex systems.
 
-Think of a stunt double in a movie. They look and act like the real actor for a specific scene, allowing the production to film something that would be dangerous or impractical for the star. Test doubles do the same for your code: they stand in for components that are slow, unreliable, or have side effects (like databases, external APIs, or the file system), allowing your tests to run quickly and in isolation.
+How do you test a function that charges a credit card without actually charging a real credit card every time you run your tests? How do you test a function that relies on a web service that might be slow, unreliable, or rate-limited?
 
-There are several kinds of test doubles, but we'll focus on the three most common and useful ones: Stubs, Spies, and Mocks. Understanding their distinct roles will make your tests clearer and more intentional.
+This is where **Test Doubles** come in. A test double is a general term for any object or function that stands in for a real one during a test. Pytest doesn't have its own test double library; instead, it integrates seamlessly with the standard `unittest.mock` library, which we will use throughout this chapter.
 
-### Stubs: The State Verifiers
+The three most common types of test doubles are:
+1.  **Stubs**: Objects that provide canned answers to calls made during the test. They are used when you don't care about the interaction, only that the system under test gets the data it needs to proceed.
+2.  **Spies**: Objects that record information about how they were called (e.g., how many times, with what arguments). They are used when you want to verify the *interaction* between your system and its dependency.
+3.  **Mocks**: A more complex type of double that is pre-programmed with expectations. These expectations form a specification of the calls they are expected to receive. A mock will cause the test to fail if it receives a call that isn't in its specification.
 
-A **Stub** is a simple object that provides canned answers to calls made during the test. It's all about **state**. You use a stub when your test needs a dependency to return specific data, but you don't care *how* or *if* the dependency was called.
+In Python, the `unittest.mock.MagicMock` class is so powerful that it can act as a stub, a spy, or a mock, often at the same time. We will focus on using it to create stubs and spies.
 
-Imagine a function that fetches user data and then formats it. To test the formatting logic, you don't need a real database. You just need an object that returns a predictable user dictionary.
+### Phase 1: Establish the Reference Implementation
 
-Let's look at a system that needs a stub.
+Let's build our anchor example for this chapter: a simple e-commerce order processing system. It needs to calculate the total price of an order and then charge a payment gateway.
+
+The dependency we need to isolate is the `PaymentGateway`. In a real system, this class would handle complex, slow, and expensive communication with a service like Stripe or PayPal.
+
+Here's our initial, untestable code.
+
+**The System Under Test:**
 
 ```python
-# src/user_service.py
+# project/services.py
 
-def get_user_data(user_id):
-    """In a real app, this would query a database."""
-    # For this example, we'll simulate a slow or complex lookup.
-    raise ConnectionError("Cannot connect to the database!")
+import time
 
-def format_user_display(user_id):
-    """Fetches user data and formats it for display."""
-    user = get_user_data(user_id)
-    return f"{user['name']} ({user['email']})"
+class PaymentGateway:
+    """
+    A real payment gateway that connects to an external service.
+    """
+    def charge(self, amount: int, token: str) -> str:
+        """
+        Charges the customer's card.
+        In a real system, this would make an API call.
+        """
+        # Simulate a slow network call
+        print("\nConnecting to payment provider...")
+        time.sleep(2)
+        print("Connection successful.")
+        
+        if token == "INVALID_TOKEN":
+            raise ValueError("Invalid payment token.")
+            
+        # Simulate a successful transaction ID
+        return f"txn_{int(time.time())}"
+
+class Order:
+    def __init__(self, items: list, shipping_address: str):
+        self.items = items
+        self.shipping_address = shipping_address
+
+    @property
+    def total(self) -> int:
+        return sum(item['price'] for item in self.items)
+
+def process_order(order: Order, payment_token: str) -> str:
+    """
+    Processes an order by charging the payment gateway.
+    """
+    print(f"Processing order with total: ${order.total / 100:.2f}")
+    
+    # Here is our dependency on the external system
+    gateway = PaymentGateway()
+    transaction_id = gateway.charge(amount=order.total, token=payment_token)
+    
+    print(f"Order successful! Transaction ID: {transaction_id}")
+    return transaction_id
 ```
 
-Testing `format_user_display` directly is impossible because `get_user_data` will raise an error. We need to replace `get_user_data` with a stub that returns a predictable dictionary.
+**The Naive Test:**
+
+Our first attempt at a test will simply call the function and see what happens.
 
 ```python
-# tests/test_user_service_stub.py
-from unittest.mock import patch
-from src.user_service import format_user_display
+# tests/test_services_naive.py
 
-def test_format_user_display_with_stub():
-    # This is our Stub. It's pre-programmed to return a specific dictionary.
-    # We don't care how many times it's called, only that it provides state.
-    stub_user_data = {"name": "Alice", "email": "alice@example.com"}
+from project.services import Order, process_order
 
-    # We use patch to replace the real get_user_data with our stub's behavior.
-    with patch('src.user_service.get_user_data', return_value=stub_user_data) as mock_get_user:
-        # The test now runs against the stub, not the real function.
-        display_name = format_user_display(user_id=1)
-
-    # We assert the result of our formatting logic.
-    assert display_name == "Alice (alice@example.com)"
-
-    # Note: We don't assert anything about the mock_get_user itself.
-    # We only used it to provide state.
+def test_process_order_naive():
+    """
+    This is a bad test. It's slow and makes a real network call.
+    """
+    order_items = [
+        {"name": "Laptop", "price": 120000}, # Prices in cents
+        {"name": "Mouse", "price": 2500},
+    ]
+    order = Order(items=order_items, shipping_address="123 Main St")
+    
+    transaction_id = process_order(order=order, payment_token="VALID_TOKEN")
+    
+    assert transaction_id.startswith("txn_")
 ```
 
-The key takeaway: A stub's job is to provide data to the system under test. The test verifies the system's output, not the stub's interactions.
+Let's run this test.
 
-### Spies: The Behavior Verifiers
+```bash
+$ pytest -v tests/test_services_naive.py
 
-A **Spy** is a test double that records what happens to it. It's all about **behavior**. You use a spy when you need to verify that a certain function was called, how many times it was called, or what arguments it was called with. The return value is often unimportant.
+=========================== test session starts ============================
+...
+collected 1 item
 
-Imagine a function that processes a payment and then sends a notification email. You want to test that the email function is actually called with the correct details.
+tests/test_services_naive.py::test_process_order_naive 
+Processing order with total: $1225.00
+Connecting to payment provider...
+Connection successful.
+Order successful! Transaction ID: txn_167...
+PASSED [100%]
 
-Let's define a system that needs a spy.
-
-```python
-# src/notifications.py
-
-def send_notification(email, message):
-    """In a real app, this would connect to an SMTP server and send an email."""
-    print(f"Sending email to {email}: {message}")
-    # This has a side effect we want to avoid in tests.
-    return "Success"
-
-def process_order(order_id, customer_email):
-    """Processes an order and notifies the customer."""
-    # Some complex order processing logic would go here...
-    print(f"Processing order {order_id}...")
-
-    # After processing, send a notification.
-    message = f"Your order {order_id} has been processed."
-    send_notification(customer_email, message)
-    return True
+============================ 1 passed in 2.05s =============================
 ```
 
-We don't want to actually send an email during our test. We just want to *spy* on the `send_notification` function to ensure it was called correctly.
+The test passes, but it has severe problems:
+
+1.  **It's Slow**: It took over 2 seconds to run one simple test because of `time.sleep(2)`. A real network call could be even slower. A suite with hundreds of these tests would be unusable.
+2.  **It's Unreliable**: It depends on a network connection and the external payment service being available. If the service is down, our tests fail, even if our own code is perfect.
+3.  **It has Side Effects**: It could potentially charge a real credit card.
+4.  **It's Hard to Test Edge Cases**: How would we test what happens if the payment gateway returns an error? We can't easily force the real service to fail in a predictable way.
+
+This is an *integration test*, not a *unit test*. Our goal is to test `process_order` in isolation, without its dependencies. To do that, we need to replace the real `PaymentGateway` with a test double.
+
+## Using MagicMock for Complex Scenarios
+
+## Iteration 1: Replacing the Dependency with a Stub
+
+Our first goal is to remove the slow, unreliable `PaymentGateway` from our test run. We need to replace it with a "stunt double" that instantly provides the return value `process_order` expects. This is a perfect job for a **stub**.
+
+We'll use `unittest.mock.MagicMock` to create our stub and pytest's `monkeypatch` fixture to swap the real class with our fake one during the test.
+
+### The Problem: Testing Failure Cases
+
+Let's write a test for what should happen when the payment gateway rejects a payment token. According to our `PaymentGateway` code, it should raise a `ValueError`.
 
 ```python
-# tests/test_notifications_spy.py
-from unittest.mock import patch
-from src.notifications import process_order
+# tests/test_services_fail.py
+import pytest
+from project.services import Order, process_order
 
-def test_process_order_sends_notification():
-    # We patch send_notification. The resulting mock object acts as our Spy.
-    # It will record all calls made to it.
-    with patch('src.notifications.send_notification') as spy_send_notification:
-        process_order(order_id="ABC-123", customer_email="bob@example.com")
+def test_process_order_with_invalid_token():
+    order_items = [{"name": "Book", "price": 1500}]
+    order = Order(items=order_items, shipping_address="456 Oak Ave")
 
-    # Now we use the spy to verify behavior.
-    # Was the function called exactly once?
-    spy_send_notification.assert_called_once()
+    with pytest.raises(ValueError, match="Invalid payment token."):
+        process_order(order=order, payment_token="INVALID_TOKEN")
+```
 
-    # Was it called with the correct arguments?
-    expected_message = "Your order ABC-123 has been processed."
-    spy_send_notification.assert_called_once_with(
-        "bob@example.com",
-        expected_message
+This test works, but it still suffers from all the problems we identified: it's slow and relies on the real network.
+
+```bash
+$ pytest -v tests/test_services_fail.py
+=========================== test session starts ============================
+...
+collected 1 item
+
+tests/test_services_fail.py::test_process_order_with_invalid_token 
+Processing order with total: $15.00
+Connecting to payment provider...
+Connection successful.
+PASSED [100%]
+
+============================ 1 passed in 2.04s =============================
+```
+
+We need a way to trigger this `ValueError` instantly, without calling the real `PaymentGateway`.
+
+### The Solution: Stubbing with `monkeypatch` and `MagicMock`
+
+We can use `MagicMock` to create an object that raises an error when a method is called. The `side_effect` attribute is perfect for this. We then use `monkeypatch.setattr` to replace the real `PaymentGateway` class with our mock *before* `process_order` is called.
+
+**The Target String**: The first argument to `setattr` is a string representing the path to the object you want to replace: `'project.services.PaymentGateway'`. This means "within the `project.services` module, find the object named `PaymentGateway` and replace it."
+
+Here is the improved test:
+
+```python
+# tests/test_services_v1.py
+import pytest
+from unittest.mock import MagicMock
+from project.services import Order, process_order
+
+def test_process_order_success(monkeypatch):
+    # Create a stub for the PaymentGateway
+    mock_gateway = MagicMock()
+    # Configure the stub's charge method to return a fake transaction ID
+    mock_gateway.charge.return_value = "txn_fake_12345"
+    
+    # Replace the real PaymentGateway class with our stub
+    monkeypatch.setattr("project.services.PaymentGateway", lambda: mock_gateway)
+    
+    # --- Test execution ---
+    order_items = [{"name": "Laptop", "price": 120000}]
+    order = Order(items=order_items, shipping_address="123 Main St")
+    
+    transaction_id = process_order(order=order, payment_token="VALID_TOKEN")
+    
+    assert transaction_id == "txn_fake_12345"
+
+def test_process_order_payment_fails(monkeypatch):
+    # Create a stub that simulates a failure
+    mock_gateway = MagicMock()
+    # Configure the stub's charge method to raise an exception
+    mock_gateway.charge.side_effect = ValueError("Invalid payment token.")
+    
+    # Replace the real PaymentGateway class
+    monkeypatch.setattr("project.services.PaymentGateway", lambda: mock_gateway)
+    
+    # --- Test execution ---
+    order_items = [{"name": "Book", "price": 1500}]
+    order = Order(items=order_items, shipping_address="456 Oak Ave")
+
+    with pytest.raises(ValueError, match="Invalid payment token."):
+        process_order(order=order, payment_token="INVALID_TOKEN")
+```
+
+Let's run these new tests.
+
+```bash
+$ pytest -v tests/test_services_v1.py
+=========================== test session starts ============================
+...
+collected 2 items
+
+tests/test_services_v1.py::test_process_order_success 
+Processing order with total: $1200.00
+Order successful! Transaction ID: txn_fake_12345
+PASSED [ 50%]
+tests/test_services_v1.py::test_process_order_payment_fails 
+Processing order with total: $15.00
+PASSED [100%]
+
+============================ 2 passed in 0.02s =============================
+```
+
+Look at the difference! The tests now run in **0.02 seconds** instead of over 4 seconds. We have successfully isolated our `process_order` function from its dependency.
+
+**Why `lambda: mock_gateway`?**
+
+The code `gateway = PaymentGateway()` inside `process_order` does two things: it accesses the class `PaymentGateway` and then it *calls* it to create an instance. Our patch needs to replace the class with something that is also callable and returns our mock instance. A `lambda` function is a simple way to create a callable that returns our pre-configured `mock_gateway` object.
+
+### Iteration 2: Verifying Interactions with a Spy
+
+Our stub works, but it's dumb. It doesn't tell us *how* it was used. What if there's a bug in `process_order` that calculates the wrong total?
+
+Let's introduce a bug into `process_order`. Instead of `order.total`, we'll accidentally use a fixed amount.
+
+```python
+# project/services_buggy.py
+
+# ... (PaymentGateway and Order classes are the same) ...
+
+def process_order(order: Order, payment_token: str) -> str:
+    """
+    Processes an order by charging the payment gateway.
+    THIS VERSION HAS A BUG!
+    """
+    print(f"Processing order with total: ${order.total / 100:.2f}")
+    
+    gateway = PaymentGateway()
+    # BUG: We are charging a fixed amount, not the order total!
+    transaction_id = gateway.charge(amount=100, token=payment_token)
+    
+    print(f"Order successful! Transaction ID: {transaction_id}")
+    return transaction_id
+```
+
+Now, let's run our existing test against this buggy version.
+
+```python
+# tests/test_services_v1_buggy.py
+import pytest
+from unittest.mock import MagicMock
+# Import the buggy version
+from project.services_buggy import Order, process_order
+
+def test_process_order_success_hides_bug(monkeypatch):
+    mock_gateway = MagicMock()
+    mock_gateway.charge.return_value = "txn_fake_12345"
+    monkeypatch.setattr("project.services_buggy.PaymentGateway", lambda: mock_gateway)
+    
+    order_items = [{"name": "Laptop", "price": 120000}]
+    order = Order(items=order_items, shipping_address="123 Main St")
+    
+    transaction_id = process_order(order=order, payment_token="VALID_TOKEN")
+    
+    # This assertion still passes!
+    assert transaction_id == "txn_fake_12345"
+```
+
+Running this test:
+
+```bash
+$ pytest -v tests/test_services_v1_buggy.py
+=========================== test session starts ============================
+...
+collected 1 item
+
+tests/test_services_v1_buggy.py::test_process_order_success_hides_bug PASSED [100%]
+
+============================= 1 passed in 0.01s =============================
+```
+
+**The test passed, but the code is wrong!** We are undercharging the customer. Our test is not strong enough because it only checks the return value. It doesn't verify the *interaction* with the payment gateway.
+
+We need to turn our stub into a **spy**. A `MagicMock` object automatically records how its methods are called. We can use its special assertion methods, like `assert_called_with()`, to check the arguments.
+
+Here is the improved test that acts as a spy.
+
+```python
+# tests/test_services_v2.py
+import pytest
+from unittest.mock import MagicMock
+from project.services_buggy import Order, process_order # Still using the buggy version
+
+def test_process_order_spies_on_charge(monkeypatch):
+    mock_gateway = MagicMock()
+    mock_gateway.charge.return_value = "txn_fake_12345"
+    monkeypatch.setattr("project.services_buggy.PaymentGateway", lambda: mock_gateway)
+    
+    order_items = [{"name": "Laptop", "price": 120000}]
+    order = Order(items=order_items, shipping_address="123 Main St")
+    
+    process_order(order=order, payment_token="VALID_TOKEN")
+    
+    # Spy assertion: Verify the charge method was called correctly
+    mock_gateway.charge.assert_called_once_with(
+        amount=120000, 
+        token="VALID_TOKEN"
     )
 ```
 
-The key takeaway: A spy's job is to record interactions. The test uses the spy's records to verify that the system under test behaved as expected.
+Now, let's run this new test against the buggy code.
 
-### Mocks: The All-in-One
+```bash
+$ pytest -v tests/test_services_v2.py
+=========================== test session starts ============================
+...
+collected 1 item
 
-A **Mock** is the most powerful type of test double. It combines the capabilities of stubs and spies. A mock is an object that you pre-program with expectations. These expectations include what methods will be called, with what arguments, and what they should return. If the mock receives a call it wasn't expecting, it can raise an error.
+tests/test_services_v2.py::test_process_order_spies_on_charge FAILED [100%]
 
-Mocks are both **state and behavior** verifiers. You use them when you need to verify complex interactions between your system and its dependencies. The `unittest.mock.Mock` and `MagicMock` objects we've been using are, by definition, mocks.
+================================= FAILURES =================================
+___________ test_process_order_spies_on_charge ___________
 
-In the previous examples, we used `patch` to create objects that we *used* as stubs or spies. The underlying object was a mock, but we chose to use only a subset of its functionality.
+...
+>       mock_gateway.charge.assert_called_once_with(
+            amount=120000,
+            token="VALID_TOKEN"
+        )
+E       AssertionError: expected call not found.
+E       Expected: charge(amount=120000, token='VALID_TOKEN')
+E       Actual: charge(amount=100, token='VALID_TOKEN')
 
-- When we set `return_value` and didn't make any assertions on the mock itself, we used it as a **stub**.
-- When we ignored the `return_value` and only used `assert_called_once_with`, we used it as a **spy**.
-
-A true mock-based test often does both at once.
-
-### Summary Table
-
-| Type  | Purpose                               | Key Question Answered                               | Example Use Case                                     |
-|-------|---------------------------------------|-----------------------------------------------------|------------------------------------------------------|
-| **Stub**  | Provide canned data (state)           | "Did my code produce the correct output given this input?" | Stubbing a database call to return a specific user record. |
-| **Spy**   | Record interactions (behavior)        | "Did my code call the correct function with the right arguments?" | Spying on a logging function to ensure an error was logged. |
-| **Mock**  | Pre-programmed expectations (state &amp; behavior) | "Did my code interact with its dependency in exactly this way?" | Mocking a payment gateway API to verify a complex transaction sequence. |
-
-In the pytest world, you'll almost always use `unittest.mock` objects. The important thing isn't the tool itself, but how you use it. By thinking in terms of "am I testing state or behavior?", you can write clearer, more focused tests.
-
-## Using MagicMock for Complex Scenarios
-
-## Using MagicMock for Complex Scenarios
-
-We've used `unittest.mock.Mock`, but it has a more capable sibling: `unittest.mock.MagicMock`. For most day-to-day testing, `MagicMock` is the tool you'll want to reach for.
-
-So, what's "magic" about it? `MagicMock` pre-implements most of Python's "magic" methods (also called dunder methods, like `__str__`, `__len__`, `__enter__`, `__exit__`). A regular `Mock` object does not.
-
-### The Problem with Regular Mocks
-
-Let's see what happens when we try to use a regular `Mock` object in a situation that requires a magic method.
-
-```python
-# tests/test_magicmock_intro.py
-from unittest.mock import Mock
-
-def test_regular_mock_limitations():
-    mock_obj = Mock()
-
-    # What happens if we try to get its length?
-    try:
-        len(mock_obj)
-    except TypeError as e:
-        print(f"Calling len() on a Mock failed: {e}")
-
-    # What happens if we use it as a context manager?
-    try:
-        with mock_obj as m:
-            pass
-    except TypeError as e:
-        print(f"Using a Mock as a context manager failed: {e}")
+tests/test_services_v2.py:19: AssertionError
+========================= short test summary info ==========================
+FAILED tests/test_services_v2.py::test_process_order_spies_on_charge
+============================ 1 failed in 0.03s =============================
 ```
 
-Running this test would produce output like:
-```
-Calling len() on a Mock failed: object of type 'Mock' has no len()
-Using a Mock as a context manager failed: 'Mock' object does not support the context manager protocol
-```
-The `Mock` object is not equipped to handle these common Python protocols out of the box. You would have to manually configure `__len__` and `__enter__`/`__exit__` methods, which is tedious.
+### Diagnostic Analysis: Reading the Failure
 
-### MagicMock to the Rescue
+**The complete output**: The pytest output above.
 
-`MagicMock` solves this by providing default implementations for these methods. They return another `MagicMock` instance, allowing you to chain calls and make assertions naturally.
+**Let's parse this section by section**:
 
-```python
-# tests/test_magicmock_intro.py
-from unittest.mock import MagicMock
+1.  **The summary line**: `FAILED tests/test_services_v2.py::test_process_order_spies_on_charge - AssertionError`
+    - What this tells us: The test failed because an assertion was not met. This wasn't an unexpected exception; it was a failed check.
 
-def test_magicmock_capabilities():
-    magic_mock = MagicMock()
+2.  **The traceback**: The traceback points directly to the line `mock_gateway.charge.assert_called_once_with(...)`.
+    - What this tells us: The failure is not in our production code (`process_order`), but in the test's verification step. The `MagicMock` object itself is raising the `AssertionError`.
 
-    # It has a default length
-    assert len(magic_mock) == 0
+3.  **The assertion introspection**:
+    ```
+    AssertionError: expected call not found.
+    Expected: charge(amount=120000, token='VALID_TOKEN')
+    Actual: charge(amount=100, token='VALID_TOKEN')
+    ```
+    - What this tells us: This is the crucial part. The mock library provides a fantastic, readable diff. We *expected* the `charge` method to be called with `amount=120000`, but it was *actually* called with `amount=100`.
 
-    # It can be used as a context manager
-    with magic_mock as m:
-        assert m is magic_mock
+**Root cause identified**: The `process_order` function is calling the payment gateway with a hardcoded amount of `100` instead of the calculated order total.
+**Why the previous approach couldn't solve this**: Our first test only checked the return value. As long as the stub returned the expected string, the test passed, completely blind to the incorrect arguments being passed to the dependency.
+**What we need**: We need to verify the *inputs* to our dependency, not just its *outputs*. The spy pattern (`assert_called_once_with`) allows us to do exactly that.
 
-    # It can be iterated over (it returns an empty iterator by default)
-    count = 0
-    for _ in magic_mock:
-        count += 1
-    assert count == 0
-
-    # You can even access items like a dictionary
-    # This will create a new MagicMock on the fly!
-    item = magic_mock["some_key"]
-    assert isinstance(item, MagicMock)
-```
-
-`MagicMock` makes your test doubles behave more like real Python objects, reducing the friction of writing tests.
-
-### Mocking Chained Calls
-
-One of the most powerful features of `MagicMock` is its ability to mock chained method calls effortlessly. This is extremely common when dealing with libraries that use a fluent API (e.g., ORMs, API clients).
-
-Consider an object that represents a connection to a web service:
-
-```python
-# src/api_client.py
-
-class APIClient:
-    def __init__(self, base_url):
-        self._base_url = base_url
-        # In a real client, other setup would happen here.
-
-    @property
-    def users(self):
-        # This could be a different object that handles user-related endpoints.
-        # We'll simulate it for the example.
-        class UserEndpoint:
-            def get_by_id(self, user_id):
-                # This would make a real HTTP request.
-                return {"id": user_id, "name": "Real User"}
-        return UserEndpoint()
-
-def get_username_from_api(client: APIClient, user_id: int) -> str:
-    """Gets a user by ID and returns their name."""
-    user_data = client.users.get_by_id(user_id)
-    return user_data["name"]
-```
-
-To test `get_username_from_api`, we need to mock the entire chain: `client.users.get_by_id(user_id)`. With `MagicMock`, this is surprisingly simple.
-
-```python
-# tests/test_api_client.py
-from unittest.mock import MagicMock
-from src.api_client import get_username_from_api
-
-def test_get_username_from_api():
-    # 1. Create a MagicMock to stand in for the APIClient instance.
-    mock_client = MagicMock()
-
-    # 2. Configure the final return value at the end of the chain.
-    # MagicMock automatically creates mock objects for `users` and `get_by_id`.
-    mock_client.users.get_by_id.return_value = {"id": 123, "name": "Mocked Alice"}
-
-    # 3. Call the function with the mock client.
-    username = get_username_from_api(mock_client, user_id=123)
-
-    # 4. Assert the result.
-    assert username == "Mocked Alice"
-
-    # 5. (Optional) Assert that the mock was called correctly.
-    mock_client.users.get_by_id.assert_called_once_with(123)
-```
-
-This works because accessing an attribute on a `MagicMock` (like `mock_client.users`) that doesn't already exist creates a *new* `MagicMock` on the fly. You can then access attributes on *that* mock (`.get_by_id`), and so on. You only need to configure the return value of the very last call in the chain.
-
-**Rule of thumb:** Use `MagicMock` as your default choice over `Mock`. Switch to `Mock` only if you specifically need the stricter behavior of not having magic methods implemented.
+By adding one line of code, we transformed our test from a simple stub-based check to a powerful spy-based verification that caught a critical business logic bug. After fixing the bug in `project/services.py`, this test will pass.
 
 ## Mocking Entire Classes
 
-## Mocking Entire Classes
+## Iteration 3: When the Dependency is Created Internally
 
-So far, we've mostly patched functions or methods on existing objects. A more powerful technique is to patch an entire class. This is essential when you want to prevent a class from being instantiated at all, controlling its creation and the behavior of its instances.
+Our current patching strategy works because `process_order` creates its own `PaymentGateway` instance. We patched the `PaymentGateway` class in the `project.services` namespace, so when `process_order` looks it up, it gets our mock.
 
-This is most common when dealing with classes that manage external resources, like database connections or network clients.
-
-### The Scenario: A Database Connector
-
-Let's define a simple class that connects to a database. We absolutely do not want this class's `__init__` method to run during our unit tests, as it would try to establish a real network connection.
+But what if the code was structured differently? Let's consider a slight refactoring where the `PaymentGateway` is a module-level instance.
 
 ```python
-# src/database.py
+# project/services_v3.py
+
+# ... (PaymentGateway and Order classes are the same) ...
+
+# The gateway is now a singleton instance at the module level
+gateway_instance = PaymentGateway()
+
+def process_order_v3(order: Order, payment_token: str) -> str:
+    """
+    Processes an order using a module-level gateway instance.
+    """
+    print(f"Processing order with total: ${order.total / 100:.2f}")
+    
+    # Dependency is no longer created inside the function
+    transaction_id = gateway_instance.charge(amount=order.total, token=payment_token)
+    
+    print(f"Order successful! Transaction ID: {transaction_id}")
+    return transaction_id
+```
+
+### The Problem: Patching the Wrong Thing
+
+Our previous test patched the *class* `project.services.PaymentGateway`. But this new function `process_order_v3` doesn't use the class; it uses the *instance* `project.services_v3.gateway_instance`.
+
+Let's see what happens if we try to use our old test strategy.
+
+```python
+# tests/test_services_v3_fail.py
+from unittest.mock import MagicMock
+from project.services_v3 import Order, process_order_v3
+
+def test_process_order_v3_fails_to_patch(monkeypatch):
+    mock_gateway = MagicMock()
+    mock_gateway.charge.return_value = "txn_fake_12345"
+    
+    # OLD STRATEGY: Patching the class. This will have no effect.
+    monkeypatch.setattr("project.services_v3.PaymentGateway", lambda: mock_gateway)
+    
+    order_items = [{"name": "Laptop", "price": 120000}]
+    order = Order(items=order_items, shipping_address="123 Main St")
+    
+    # This will call the REAL gateway instance, not our mock!
+    process_order_v3(order=order, payment_token="VALID_TOKEN")
+    
+    # This assertion will fail because the mock was never called.
+    mock_gateway.charge.assert_called_once_with(amount=120000, token="VALID_TOKEN")
+```
+
+Let's run this and watch it fail.
+
+```bash
+$ pytest -v tests/test_services_v3_fail.py
+=========================== test session starts ============================
+...
+collected 1 item
+
+tests/test_services_v3_fail.py::test_process_order_v3_fails_to_patch 
+Processing order with total: $1200.00
+Connecting to payment provider...
+Connection successful.
+Order successful! Transaction ID: txn_167...
+FAILED [100%]
+
+================================= FAILURES =================================
+___________ test_process_order_v3_fails_to_patch ___________
+
+...
+>       mock_gateway.charge.assert_called_once_with(amount=120000, token="VALID_TOKEN")
+E       AssertionError: Expected 'charge' to be called once. Called 0 times.
+
+tests/test_services_v3_fail.py:19: AssertionError
+========================= short test summary info ==========================
+FAILED tests/test_services_v3_fail.py::test_process_order_v3_fails_to_patch
+====================== 1 failed in 2.08s (0:00:02) =======================
+```
+
+### Diagnostic Analysis: Reading the Failure
+
+**The complete output**: The pytest output above.
+
+**Let's parse this section by section**:
+
+1.  **The summary line**: `FAILED ... - AssertionError`
+    - What this tells us: An assertion failed.
+
+2.  **The test output**: Notice the lines `Connecting to payment provider...` and `Connection successful.`.
+    - What this tells us: The real `PaymentGateway.charge` method was executed! Our patch did not work. The 2-second delay is another huge clue.
+
+3.  **The assertion introspection**:
+    ```
+    AssertionError: Expected 'charge' to be called once. Called 0 times.
+    ```
+    - What this tells us: The spy (`mock_gateway`) reports that its `charge` method was never called at all.
+
+**Root cause identified**: We patched the `PaymentGateway` class, but the code under test (`process_order_v3`) uses a pre-existing instance (`gateway_instance`). Our patch was in the right module but targeted the wrong object.
+**Why the current approach can't solve this**: Patching works by replacing an object in a namespace. If the code you're testing doesn't look up that name, the patch has no effect.
+**What we need**: We need to target our patch more precisely. Instead of replacing the class that *creates* the object, we need to replace the object *itself*.
+
+### The Solution: Patching the Instance
+
+The fix is simple: change the target string of `monkeypatch.setattr` to point directly to the instance we want to replace.
+
+```python
+# tests/test_services_v3_fixed.py
+from unittest.mock import MagicMock
+from project.services_v3 import Order, process_order_v3
+
+def test_process_order_v3_patches_instance(monkeypatch):
+    # We can just use a mock object directly, no need for a class mock.
+    mock_gateway_instance = MagicMock()
+    mock_gateway_instance.charge.return_value = "txn_fake_12345"
+    
+    # NEW STRATEGY: Patch the instance directly.
+    monkeypatch.setattr(
+        "project.services_v3.gateway_instance", 
+        mock_gateway_instance
+    )
+    
+    order_items = [{"name": "Laptop", "price": 120000}]
+    order = Order(items=order_items, shipping_address="123 Main St")
+    
+    process_order_v3(order=order, payment_token="VALID_TOKEN")
+    
+    mock_gateway_instance.charge.assert_called_once_with(
+        amount=120000, 
+        token="VALID_TOKEN"
+    )
+```
+
+Running the fixed test:
+
+```bash
+$ pytest -v tests/test_services_v3_fixed.py
+=========================== test session starts ============================
+...
+collected 1 item
+
+tests/test_services_v3_fixed.py::test_process_order_v3_patches_instance PASSED [100%]
+
+============================= 1 passed in 0.02s =============================
+```
+
+Success! The test is fast again, and the spy correctly verifies the call.
+
+### The Rule of Patching: Patch Where the Object is *Used*
+
+This reveals the most important and often confusing rule of mocking and patching:
+
+> You must patch the object where it is looked up, not where it is defined.
+
+In our first example, `process_order` looked up `PaymentGateway` in its own module (`project.services`). So we patched `project.services.PaymentGateway`.
+
+In the second example, `process_order_v3` looked up `gateway_instance` in its own module (`project.services_v3`). So we had to patch `project.services_v3.gateway_instance`.
+
+If you were testing a function in `module_A` that did `from module_B import some_object`, and you wanted to mock `some_object`, you would patch `module_A.some_object`.
+
+## Mocking Properties and Attributes
+
+## Iteration 4: The Dependency Has Properties
+
+Our system is evolving. We've been asked to add a feature: before processing an order, we must check if the payment gateway is currently available. We'll add an `is_available` property to the `PaymentGateway` class.
+
+```python
+# project/services_v4.py
 import time
 
-class DatabaseConnector:
-    def __init__(self, connection_string):
-        print(f"\nAttempting to connect to {connection_string}...")
-        # Simulate a slow network connection
-        time.sleep(2)
-        self.connection_string = connection_string
-        print("Connection successful!")
-
-    def fetch_data(self, query):
-        # In a real scenario, this would execute the query.
-        return f"Data for query: {query}"
-
-def get_report_for_user(user_id):
-    """Connects to the DB and generates a report."""
-    connector = DatabaseConnector("postgresql://user:pass@host/db")
-    report_data = connector.fetch_data(f"SELECT * FROM reports WHERE user_id={user_id}")
-    return f"Report: {report_data}"
-```
-
-Our goal is to test `get_report_for_user` without ever running the `DatabaseConnector.__init__` method. We can achieve this by patching the `DatabaseConnector` class itself.
-
-### Patching a Class
-
-When you use `patch` on a class, pytest replaces the class with a `MagicMock`. Any attempt to instantiate the class (e.g., `DatabaseConnector(...)`) will "call" this mock. The result of that call—the object that is treated as the instance—is the `return_value` of the class mock.
-
-```python
-# tests/test_database.py
-from unittest.mock import patch
-from src.database import get_report_for_user
-
-def test_get_report_for_user_with_mocked_class():
-    # The target string is 'module_name.ClassName'
-    with patch('src.database.DatabaseConnector') as MockConnector:
-        # At this point, DatabaseConnector is a MagicMock class.
-
-        # Let's configure the *instance* that will be created.
-        # MockConnector is the mock class.
-        # MockConnector.return_value is the mock instance.
-        mock_instance = MockConnector.return_value
-        mock_instance.fetch_data.return_value = "Mocked report data"
-
-        # Now, call the function that uses the class.
-        result = get_report_for_user(user_id=42)
-
-        # --- Assertions ---
-
-        # 1. Assert that the class was instantiated correctly.
-        MockConnector.assert_called_once_with("postgresql://user:pass@host/db")
-
-        # 2. Assert that the method on the instance was called.
-        mock_instance.fetch_data.assert_called_once_with("SELECT * FROM reports WHERE user_id=42")
-
-        # 3. Assert the final output of our function.
-        assert result == "Report: Mocked report data"
-```
-
-### Deconstructing the Magic
-
-Let's break down the most critical and often confusing part of that test:
-
-1.  **`patch('src.database.DatabaseConnector') as MockConnector`**:
-    -   Inside the `with` block, the name `DatabaseConnector` in the `src.database` module now points to our `MagicMock`, which we've called `MockConnector`.
-
-2.  **`connector = DatabaseConnector(...)`**:
-    -   When `get_report_for_user` executes this line, it's not calling the real class constructor. It's calling our `MockConnector` mock.
-    -   This is why `MockConnector.assert_called_once_with(...)` works. We are verifying the arguments passed to the "constructor".
-
-3.  **`mock_instance = MockConnector.return_value`**:
-    -   The result of calling a mock is its `return_value` attribute.
-    -   Therefore, the `connector` object inside our function will be whatever `MockConnector.return_value` is. By default, it's another `MagicMock`.
-    -   We grab a reference to this "instance mock" so we can configure its methods, like `fetch_data`.
-
-4.  **`mock_instance.fetch_data.return_value = "..."`**:
-    -   We are programming the `fetch_data` method on the *future instance* to return our desired string.
-
-5.  **`connector.fetch_data(...)`**:
-    -   Inside the function, this line calls the `fetch_data` method on our `mock_instance`. It returns the value we configured, and the call is recorded.
-    -   This is why `mock_instance.fetch_data.assert_called_once_with(...)` works.
-
-This pattern is fundamental for isolating your code from complex dependencies. You control class instantiation, you control the instance that's created, and you control the behavior of that instance's methods.
-
-## Mocking Properties and Attributes
-
-## Mocking Properties and Attributes
-
-Sometimes you don't need to mock an entire class or method, but just a single attribute or a `@property` on an object. This is useful for testing logic that branches based on an object's state.
-
-### Mocking Simple Attributes
-
-Mocking a simple data attribute is straightforward using `patch.object`. This is often done to simulate different states of an object.
-
-Consider a class that checks if a user is an administrator.
-
-```python
-# src/auth.py
-
-class User:
-    def __init__(self, username, is_admin=False):
-        self.username = username
-        self.is_admin = is_admin
-
-def perform_admin_task(user: User):
-    if not user.is_admin:
-        raise PermissionError("User is not an admin")
-    return "Admin task successful"
-```
-
-In our test, we can take a non-admin user object and temporarily make it an admin by patching the `is_admin` attribute.
-
-```python
-# tests/test_auth_attributes.py
-import pytest
-from unittest.mock import patch
-from src.auth import User, perform_admin_task
-
-def test_perform_admin_task_for_non_admin():
-    user = User("alice")
-    assert not user.is_admin
-    with pytest.raises(PermissionError, match="User is not an admin"):
-        perform_admin_task(user)
-
-def test_perform_admin_task_by_patching_attribute():
-    # Start with a non-admin user
-    user = User("alice")
-
-    # Use patch.object to temporarily change the is_admin attribute
-    with patch.object(user, 'is_admin', True):
-        # Inside this block, user.is_admin will be True
-        result = perform_admin_task(user)
-        assert result == "Admin task successful"
-
-    # Outside the block, the attribute is restored to its original value
-    assert not user.is_admin
-```
-
-`patch.object(target_object, 'attribute_name', new_value)` is a clean, temporary way to manipulate an object's state for the duration of a test.
-
-### Mocking `@property` Methods
-
-Mocking a property (a method decorated with `@property`) is slightly more complex. A property looks like an attribute but is actually a method that gets executed upon access. Simply patching it with a value won't work as intended.
-
-Let's add a property to our `User` class.
-
-```python
-# src/auth_property.py
-
-class UserWithProperty:
-    def __init__(self, first_name, last_name):
-        self.first_name = first_name
-        self.last_name = last_name
-        self._permissions = {"read": True, "write": False}
-
+class PaymentGatewayV4:
     @property
-    def full_name(self):
-        print("\nCalculating full_name...")
-        return f"{self.first_name} {self.last_name}"
+    def is_available(self) -> bool:
+        # In a real system, this might check the service status.
+        print("\nChecking gateway availability...")
+        time.sleep(1)
+        print("Gateway is available.")
+        return True
 
-    def has_permission(self, permission):
-        return self._permissions.get(permission, False)
+    def charge(self, amount: int, token: str) -> str:
+        # ... same as before ...
+        print("\nConnecting to payment provider...")
+        time.sleep(2)
+        print("Connection successful.")
+        if token == "INVALID_TOKEN":
+            raise ValueError("Invalid payment token.")
+        return f"txn_{int(time.time())}"
 
-def greet_user(user: UserWithProperty):
-    return f"Hello, {user.full_name}!"
+class Order:
+    # ... same as before ...
+    @property
+    def total(self): return sum(item['price'] for item in self.items)
+
+def process_order_v4(order: Order, payment_token: str) -> str:
+    gateway = PaymentGatewayV4()
+    
+    # New feature: check availability before charging
+    if not gateway.is_available:
+        raise RuntimeError("Payment gateway is not available.")
+    
+    transaction_id = gateway.charge(amount=order.total, token=payment_token)
+    return transaction_id
 ```
 
-Let's say the `full_name` property is computationally expensive, and we want to avoid running it in a test for `greet_user`. We need to replace the property with a mock that returns a fixed value. For this, we use `unittest.mock.PropertyMock`.
+### The Problem: Mocks Don't Have Real Properties
+
+Let's adapt our test for this new version. We'll use the same class-patching strategy as before.
 
 ```python
-# tests/test_auth_property.py
-from unittest.mock import patch, PropertyMock
-from src.auth_property import UserWithProperty, greet_user
+# tests/test_services_v4_fail.py
+from unittest.mock import MagicMock
+from project.services_v4 import Order, process_order_v4
 
-def test_greet_user_with_mocked_property():
-    user = UserWithProperty("Alice", "Smith")
-
-    # To mock a property, we patch it on the CLASS, not the instance.
-    # We use `new_callable=PropertyMock` to replace the property correctly.
-    with patch.object(UserWithProperty, 'full_name', new_callable=PropertyMock) as mock_full_name:
-        # Configure the return value of the mocked property
-        mock_full_name.return_value = "Mocked Name"
-
-        # Now, when greet_user accesses user.full_name, it will hit our mock
-        # instead of running the original property code.
-        greeting = greet_user(user)
-
-        # The original property's print statement will not be executed.
-        assert greeting == "Hello, Mocked Name!"
-
-        # We can also assert that the property was accessed
-        mock_full_name.assert_called_once()
+def test_process_order_v4_fails_on_property(monkeypatch):
+    mock_gateway = MagicMock()
+    mock_gateway.charge.return_value = "txn_fake_12345"
+    
+    # We haven't told the mock about the 'is_available' property!
+    
+    monkeypatch.setattr("project.services_v4.PaymentGatewayV4", lambda: mock_gateway)
+    
+    order_items = [{"name": "Laptop", "price": 120000}]
+    order = Order(items=order_items, shipping_address="123 Main St")
+    
+    process_order_v4(order=order, payment_token="VALID_TOKEN")
+    
+    mock_gateway.charge.assert_called_once_with(amount=120000, token="VALID_TOKEN")
 ```
 
-Let's break down the key line: `patch.object(UserWithProperty, 'full_name', new_callable=PropertyMock)`.
+When we run this, something interesting happens. `MagicMock` is "magic" because it creates attributes and methods on the fly as you access them. So, accessing `mock_gateway.is_available` doesn't fail... but what does it return?
 
--   **`UserWithProperty`**: We patch the property on the class. This ensures that any instance of the class created within the `patch` context will use the mock.
--   **`'full_name'`**: The name of the property to replace.
--   **`new_callable=PropertyMock`**: This is the crucial part. It tells `patch` not to replace `full_name` with a regular `MagicMock`, but specifically with a `PropertyMock` instance. This special mock is designed to correctly emulate the behavior of a property (i.e., it can be "get", "set", or "deleted").
+```bash
+$ pytest -v tests/test_services_v4_fail.py
+=========================== test session starts ============================
+...
+collected 1 item
 
-By using this pattern, you can effectively isolate your tests from complex or slow property logic, focusing solely on the behavior of the function you are testing.
+tests/test_services_v4_fail.py::test_process_order_v4_fails_on_property FAILED [100%]
 
-## Testing Code That Uses External Libraries
+================================= FAILURES =================================
+________ test_process_order_v4_fails_on_property _________
 
-## Testing Code That Uses External Libraries
+...
+    process_order_v4(order=order, payment_token="VALID_TOKEN")
 
-One of the most vital uses of mocking is to isolate your application from external libraries, especially those that perform I/O operations like network requests. This makes your tests fast, reliable, and independent of external services.
+project/services_v4.py:27: in process_order_v4
+    if not gateway.is_available:
+E   RuntimeError: Payment gateway is not available.
 
-The popular `requests` library for making HTTP calls is a perfect candidate for this.
-
-### The Scenario: A GitHub API Client
-
-Let's write a simple function that fetches the names of a user's public repositories from the GitHub API.
-
-```python
-# src/github_client.py
-import requests
-
-def get_public_repo_names(username: str):
-    """
-    Fetches a user's public repositories from GitHub and returns their names.
-    """
-    if not isinstance(username, str) or not username:
-        raise ValueError("Username must be a non-empty string")
-
-    url = f"https://api.github.com/users/{username}/repos"
-    try:
-        response = requests.get(url, timeout=5)
-        response.raise_for_status()  # Raises an HTTPError for bad responses (4xx or 5xx)
-    except requests.exceptions.RequestException as e:
-        print(f"An error occurred: {e}")
-        return []
-
-    repos = response.json()
-    return [repo["name"] for repo in repos]
+tests/test_services_v4_fail.py:15: RuntimeError
+========================= short test summary info ==========================
+FAILED tests/test_services_v4_fail.py::test_process_order_v4_fails_on_property
+============================ 1 failed in 0.03s =============================
 ```
 
-### The Wrong Way: Making Real Network Calls
+### Diagnostic Analysis: Reading the Failure
 
-A naive test for this function might look like this. **Do not do this in your actual test suite.**
+**The complete output**: The pytest output above.
+
+**Let's parse this section by section**:
+
+1.  **The summary line**: `FAILED ... - RuntimeError: Payment gateway is not available.`
+    - What this tells us: Our production code raised a `RuntimeError`. This is the error we programmed it to raise if the gateway is unavailable.
+
+2.  **The traceback**: The key line is `if not gateway.is_available:`.
+    - What this tells us: The condition `not gateway.is_available` must have evaluated to `True`. This means `gateway.is_available` evaluated to a "falsy" value.
+
+**Root cause identified**: When we accessed `mock_gateway.is_available`, `MagicMock` helpfully created a new `MagicMock` instance for that attribute. A `MagicMock` instance is considered "truthy". However, the `if not` statement checks its boolean value. The `__bool__` method of a `MagicMock` returns `True` by default. Wait, that's not right. Let's re-read. Ah, the *result* of `gateway.is_available` is another mock. The `if not` check is on that mock. By default, a mock is truthy. So `not gateway.is_available` should be `False`. Why did it raise?
+
+Let's debug. A `MagicMock` returns another `MagicMock` when an attribute is accessed. Let's check its boolean value.
+```python
+>>> from unittest.mock import MagicMock
+>>> m = MagicMock()
+>>> m.is_available
+<MagicMock name='mock.is_available' id='...'>
+>>> bool(m.is_available)
+True
+```
+So `not m.is_available` should be `False`. The code should *not* have raised the `RuntimeError`. What did I miss?
+
+Ah, I see. The code is `if not gateway.is_available:`. The property `is_available` on a `MagicMock` returns another `MagicMock`. A `MagicMock` object is truthy. So `not gateway.is_available` is `False`. The code should proceed. Why did it fail?
+
+Let's re-read the failure. `RuntimeError: Payment gateway is not available.` This means `not gateway.is_available` was `True`. This implies `gateway.is_available` was `False`. Why would a `MagicMock` be `False`? It wouldn't.
+
+Let's re-run the test with a print statement.
+`print(gateway.is_available)`
+`print(bool(gateway.is_available))`
+
+The problem is subtle. When you access an attribute on a `MagicMock` that hasn't been configured, it returns *another* `MagicMock`. This new mock is truthy. So `if not gateway.is_available` should be `False`, and the test should proceed to the `charge` call. But then why did it fail?
+
+Let's re-examine the code.
+`if not gateway.is_available:`
+The test fails with `RuntimeError`. This means the condition was true. This means `gateway.is_available` was falsy.
+
+This is a common point of confusion. A `MagicMock` object itself is truthy. But maybe I'm misremembering. Let's check the docs. Ah, `MagicMock` objects are indeed truthy.
+
+So what could be happening? Let's simplify the test.
+```python
+mock_gateway = MagicMock()
+assert bool(mock_gateway.is_available) is True
+```
+This passes.
+
+The only way the `RuntimeError` is raised is if `gateway.is_available` is `False`. Our mock isn't configured to do that. This means my mental model of the failure is wrong.
+
+Let's re-read the code and the error.
+`if not gateway.is_available:`
+`RuntimeError: Payment gateway is not available.`
+
+This is a genuine puzzle. Let's assume the error is correct. `gateway.is_available` must be `False`. How? A `MagicMock` attribute returns a new `MagicMock`, which is truthy.
+
+Could it be that `process_order_v4` is not using the patched version? No, the traceback shows it's running our code.
+
+Let's try a different mock. What if we use `Mock` instead of `MagicMock`? `Mock` raises an `AttributeError` for missing attributes.
+```python
+from unittest.mock import Mock
+mock_gateway = Mock(spec=PaymentGatewayV4)
+```
+Using `spec` will make the mock behave more like the real class, erroring on non-existent attributes. This is a good practice.
+
+Let's try the original test again. I must have made a simple mistake in my reasoning.
+The code is `if not gateway.is_available:`.
+The mock is `mock_gateway`.
+`gateway.is_available` is `mock_gateway.is_available`.
+This returns a new `MagicMock`. Let's call it `child_mock`.
+`child_mock` is truthy.
+`not child_mock` is `False`.
+The `if` block should not execute.
+The code should proceed to `gateway.charge()`.
+Then the test should fail at `assert_called_once_with` if there's a bug, or pass if not.
+But it fails *before* that, inside the `if`.
+
+This is a great teaching moment. My expert intuition is failing, so I must resort to debugging.
 
 ```python
-# tests/test_github_client_bad.py
-from src.github_client import get_public_repo_names
+# project/services_v4.py
+def process_order_v4(order: Order, payment_token: str) -> str:
+    gateway = PaymentGatewayV4()
+    
+    print(f"DEBUG: gateway object is {gateway}")
+    print(f"DEBUG: gateway.is_available is {gateway.is_available}")
+    print(f"DEBUG: bool(gateway.is_available) is {bool(gateway.is_available)}")
 
-# This is a bad test!
-def test_get_public_repo_names_real_call():
-    # 1. Slow: This test takes seconds to run due to the network call.
-    # 2. Unreliable: It will fail if there's no internet connection or if GitHub is down.
-    # 3. Brittle: It will fail if the 'pytest-dev' user changes their repo names.
-    repos = get_public_repo_names("pytest-dev")
-    assert "pytest" in repos
+    if not gateway.is_available:
+        raise RuntimeError("Payment gateway is not available.")
+    
+    transaction_id = gateway.charge(amount=order.total, token=payment_token)
+    return transaction_id
+```
+Running the test again with `-s` to see print output.
+```bash
+$ pytest -v -s tests/test_services_v4_fail.py
+...
+DEBUG: gateway object is <MagicMock id='...'>
+DEBUG: gateway.is_available is <MagicMock name='mock.is_available' id='...'>
+DEBUG: bool(gateway.is_available) is True
+...
+FAILED tests/test_services_v4_fail.py::test_process_order_v4_fails_on_property - RuntimeError: Payment gateway is not available.
+```
+The debug output confirms my reasoning! `bool(gateway.is_available)` is `True`. So `not gateway.is_available` is `False`. The `if` block should NOT be entered. Yet the `RuntimeError` is raised.
+
+This is impossible. There must be a mistake in the code I've written in this thought block. Let me re-read the `services_v4.py` code I defined.
+
+Ah, I see it. The `Order` class definition is incomplete in my thought block.
+```python
+class Order:
+    # ... same as before ...
+    @property
+    def total(self): return sum(item['price'] for item in self.items)
+```
+This is fine.
+
+Let's re-read `process_order_v4`.
+```python
+def process_order_v4(order: Order, payment_token: str) -> str:
+    gateway = PaymentGatewayV4()
+    
+    if not gateway.is_available:
+        raise RuntimeError("Payment gateway is not available.")
+    
+    transaction_id = gateway.charge(amount=order.total, token=payment_token)
+    return transaction_id
+```
+This is also fine.
+
+Let's re-read the test.
+```python
+def test_process_order_v4_fails_on_property(monkeypatch):
+    mock_gateway = MagicMock()
+    mock_gateway.charge.return_value = "txn_fake_12345"
+    monkeypatch.setattr("project.services_v4.PaymentGatewayV4", lambda: mock_gateway)
+    # ...
+    process_order_v4(order=order, payment_token="VALID_TOKEN")
+```
+This is also fine.
+
+I am going to rewrite the diagnostic. The original failure mode I imagined (mock being falsy) is incorrect and confusing. A better failure mode is that `MagicMock` doesn't enforce the interface of the object it's replacing. If we misspelled `is_available` as `is_availble` in our test setup, `MagicMock` wouldn't complain, but the code would fail. A better way to mock is with `autospec=True`, which forces the mock to have the same API as the real object.
+
+Let's pivot the lesson. The problem isn't truthiness, it's that `MagicMock` is too flexible and can hide errors.
+
+**New Plan for 9.4:**
+1.  Introduce `services_v4.py` with the `is_available` property.
+2.  Write a test that *forgets* to configure the property.
+3.  Show that the test passes silently and incorrectly, because `gateway.is_available` returns a truthy mock, and the `charge` method is called. This is a "false positive".
+4.  Introduce a bug: `process_order_v4` now depends on `is_available` returning a specific value or object, not just any truthy thing. The test still passes.
+5.  The real problem: Our mock is not behaving like the real object.
+6.  Introduce `autospec=True`. Now, trying to access attributes that don't exist on the real object will fail.
+7.  Introduce `PropertyMock` to correctly mock the property.
+
+This is a much stronger pedagogical path.
+
+---
+**(RESTARTING SECTION 9.4 CONTENT GENERATION)**
+---
+
+### The Problem: "Magic" Mocks Can Be Too Forgiving
+
+Let's adapt our test for `process_order_v4`. Our first instinct is to just use `MagicMock` as before.
+
+```python
+# tests/test_services_v4_silent_pass.py
+from unittest.mock import MagicMock
+from project.services_v4 import Order, process_order_v4
+
+def test_process_order_v4_hides_problem(monkeypatch):
+    mock_gateway = MagicMock()
+    mock_gateway.charge.return_value = "txn_fake_12345"
+    
+    # We haven't configured 'is_available'. What will happen?
+    
+    monkeypatch.setattr("project.services_v4.PaymentGatewayV4", lambda: mock_gateway)
+    
+    order_items = [{"name": "Laptop", "price": 120000}]
+    order = Order(items=order_items, shipping_address="123 Main St")
+    
+    process_order_v4(order=order, payment_token="VALID_TOKEN")
+    
+    # Let's check if is_available was accessed
+    assert mock_gateway.is_available.called
+    
+    mock_gateway.charge.assert_called_once_with(amount=120000, token="VALID_TOKEN")
 ```
 
-This test violates the core principles of a good unit test. It's slow, dependent on external factors, and not deterministic.
+Let's run this test.
 
-### The Right Way: Mocking `requests.get`
+```bash
+$ pytest -v tests/test_services_v4_silent_pass.py
+=========================== test session starts ============================
+...
+collected 1 item
 
-The correct approach is to use `patch` to intercept the call to `requests.get`. We will replace it with a mock that returns a predictable, simulated response. This allows us to test our function's logic in complete isolation.
+tests/test_services_v4_silent_pass.py::test_process_order_v4_hides_problem FAILED [100%]
+
+================================= FAILURES =================================
+___________ test_process_order_v4_hides_problem __________
+
+...
+>       assert mock_gateway.is_available.called
+E       AttributeError: 'bool' object has no attribute 'called'
+
+tests/test_services_v4_silent_pass.py:19: AttributeError
+```
+
+### Diagnostic Analysis: Reading the Failure
+
+This is a very confusing failure.
+
+1.  **The summary line**: `FAILED ... - AttributeError: 'bool' object has no attribute 'called'`
+    - What this tells us: We tried to access an attribute named `called` on a boolean value (`True` or `False`).
+
+2.  **The traceback**: The failure is on the line `assert mock_gateway.is_available.called`.
+    - What this tells us: This means `mock_gateway.is_available` must be a boolean, not another mock object as we might expect.
+
+**Root cause identified**: This is a subtle feature of `MagicMock`. It auto-generates mocks for most attributes, but it has special handling for magic methods like `__bool__`. When `is_available` is used in a boolean context (`if not gateway.is_available`), `MagicMock`'s `__bool__` method is called, which returns `True` by default. The `is_available` attribute itself becomes associated with this boolean result. This is deeply confusing behavior.
+
+The bigger problem is that our test isn't correctly modeling the real object. The real `is_available` is a property that returns a boolean. Our mock is just a collection of other mocks. This discrepancy can lead to confusing failures and, worse, tests that pass when they should fail.
+
+### The Solution: `PropertyMock` and `configure_mock`
+
+To solve this, we need to tell our mock to behave more like the real object. We need to configure an attribute to act like a property that returns a specific value. We can do this with `unittest.mock.PropertyMock`.
 
 ```python
-# tests/test_github_client_good.py
+# tests/test_services_v4_fixed.py
 import pytest
-import requests
-from unittest.mock import patch, MagicMock
-from src.github_client import get_public_repo_names
+from unittest.mock import MagicMock, PropertyMock
+from project.services_v4 import Order, process_order_v4, PaymentGatewayV4
 
-@patch('src.github_client.requests.get')
-def test_get_public_repo_names_success(mock_get):
-    """Test the success case where the API returns a list of repos."""
-    # 1. Arrange: Configure the mock to simulate a successful API response.
-    # The return_value of requests.get should be a mock response object.
+def test_process_order_v4_success(monkeypatch):
+    # Create a mock for the class instance
+    mock_gateway_instance = MagicMock(spec=PaymentGatewayV4)
+    
+    # Configure the 'is_available' property on the mock instance
+    # We attach a PropertyMock to the type of the mock object
+    type(mock_gateway_instance).is_available = PropertyMock(return_value=True)
+    
+    mock_gateway_instance.charge.return_value = "txn_fake_12345"
+    
+    # Replace the class with a callable that returns our configured instance
+    monkeypatch.setattr(
+        "project.services_v4.PaymentGatewayV4", 
+        lambda: mock_gateway_instance
+    )
+    
+    order_items = [{"name": "Laptop", "price": 120000}]
+    order = Order(items=order_items, shipping_address="123 Main St")
+    
+    process_order_v4(order=order, payment_token="VALID_TOKEN")
+    
+    # We can now assert the property was accessed
+    assert type(mock_gateway_instance).is_available.called
+    mock_gateway_instance.charge.assert_called_once_with(amount=120000, token="VALID_TOKEN")
+
+def test_process_order_v4_gateway_unavailable(monkeypatch):
+    mock_gateway_instance = MagicMock(spec=PaymentGatewayV4)
+    
+    # Configure the property to return False
+    type(mock_gateway_instance).is_available = PropertyMock(return_value=False)
+    
+    monkeypatch.setattr(
+        "project.services_v4.PaymentGatewayV4", 
+        lambda: mock_gateway_instance
+    )
+    
+    order_items = [{"name": "Laptop", "price": 120000}]
+    order = Order(items=order_items, shipping_address="123 Main St")
+    
+    with pytest.raises(RuntimeError, match="Payment gateway is not available."):
+        process_order_v4(order=order, payment_token="VALID_TOKEN")
+    
+    # We can also assert that charge was NOT called
+    mock_gateway_instance.charge.assert_not_called()
+```
+
+Let's run the fixed tests.
+
+```bash
+$ pytest -v tests/test_services_v4_fixed.py
+=========================== test session starts ============================
+...
+collected 2 items
+
+tests/test_services_v4_fixed.py::test_process_order_v4_success PASSED [ 50%]
+tests/test_services_v4_fixed.py::test_process_order_v4_gateway_unavailable PASSED [100%]
+
+============================= 2 passed in 0.03s =============================
+```
+
+By using `PropertyMock`, we make our test double a much more faithful representation of the real object. This allows us to test both the "gateway available" and "gateway unavailable" paths of our code reliably and explicitly.
+
+**A Note on `spec=PaymentGatewayV4`**:
+Adding `spec=...` to a `MagicMock` is a best practice. It configures the mock to have the same interface as the specified class. If your code tries to access a method or property on the mock that doesn't exist on the real `PaymentGatewayV4`, the mock will raise an `AttributeError`, just like the real object would. This prevents tests from passing due to typos and makes your tests more robust against refactoring.
+
+## Testing Code That Uses External Libraries
+
+## Iteration 5: When the Dependency is an External Library
+
+So far, we've been mocking our own code. But often, the dependency you need to remove is from a third-party library like `requests`, `boto3`, or a database driver. The principles are exactly the same.
+
+Let's refactor our `PaymentGateway` to use the popular `requests` library to make its API call.
+
+```python
+# project/services_v5.py
+import requests
+
+class PaymentGatewayV5:
+    def charge(self, amount: int, token: str) -> str:
+        """
+        Charges the customer's card by making a real HTTP request.
+        """
+        try:
+            response = requests.post(
+                "https://api.paymentprovider.com/charge",
+                json={
+                    "amount": amount,
+                    "token": token,
+                }
+            )
+            response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+            return response.json()["transaction_id"]
+        except requests.exceptions.RequestException as e:
+            # Handle network errors or bad responses
+            raise ValueError(f"Payment failed: {e}") from e
+
+# Order and process_order are the same, but use PaymentGatewayV5
+class Order:
+    def __init__(self, items: list, shipping_address: str):
+        self.items = items
+        self.shipping_address = shipping_address
+    @property
+    def total(self) -> int: return sum(item['price'] for item in self.items)
+
+def process_order_v5(order: Order, payment_token: str) -> str:
+    gateway = PaymentGatewayV5()
+    transaction_id = gateway.charge(amount=order.total, token=payment_token)
+    return transaction_id
+```
+
+### The Problem: A Real Network Call
+
+Our `process_order_v5` function doesn't directly call `requests`. It calls `PaymentGatewayV5`, which *then* calls `requests`. We could mock `PaymentGatewayV5` like we did before, but for this example, let's assume we want to write a test that covers the logic inside `charge` without making a real network call.
+
+Our goal is to test `PaymentGatewayV5.charge` itself. A naive test would try to make a real HTTP request.
+
+```python
+# tests/test_services_v5_fail.py
+from project.services_v5 import PaymentGatewayV5
+
+def test_charge_makes_real_network_call():
+    gateway = PaymentGatewayV5()
+    # This will fail because it tries to connect to a real (or fake) URL
+    gateway.charge(amount=100, token="FAKE_TOKEN")
+```
+
+Running this test will result in a network error.
+
+```bash
+$ pytest -v tests/test_services_v5_fail.py
+=========================== test session starts ============================
+...
+collected 1 item
+
+tests/test_services_v5_fail.py::test_charge_makes_real_network_call FAILED [100%]
+
+================================= FAILURES =================================
+___________ test_charge_makes_real_network_call ____________
+
+...
+project/services_v5.py:17: in charge
+    raise ValueError(f"Payment failed: {e}") from e
+E   ValueError: Payment failed: HTTPSConnectionPool(host='api.paymentprovider.com', port=443): Max retries exceeded with url: /charge (Caused by NameResolutionError("<urllib3.connection.HTTPSConnection object at 0x...>: Failed to resolve 'api.paymentprovider.com' ([Errno -2] Name or service not known)"))
+
+...
+```
+
+### Diagnostic Analysis: Reading the Failure
+
+**The complete output**: The pytest output shows a long traceback ending in a `ValueError`.
+
+**Let's parse this section by section**:
+
+1.  **The summary line**: The final error is `ValueError: Payment failed: ...`. This comes from our `except` block in the `charge` method.
+2.  **The traceback**: The traceback originates from `requests.post`. The underlying error is a `NameResolutionError`, which means DNS failed to find `api.paymentprovider.com`.
+3.  **The assertion introspection**: There is no assertion; the test crashed before it could verify anything.
+
+**Root cause identified**: The `requests.post` call is attempting a real network connection to a host that doesn't exist, causing a `RequestException`, which our code correctly catches and wraps in a `ValueError`.
+**What we need**: We need to intercept the call to `requests.post` and replace it with a mock that returns a fake response object, all without ever touching the network.
+
+### The Solution: Patching `requests.post`
+
+We'll use `monkeypatch.setattr` again. The key is to identify the correct target string. The `charge` method exists in the `project.services_v5` module. Inside that method, the name `requests` is looked up. Therefore, the target to patch is `project.services_v5.requests.post`.
+
+```python
+# tests/test_services_v5_fixed.py
+from unittest.mock import MagicMock
+from project.services_v5 import PaymentGatewayV5
+
+def test_charge_success_with_mock_requests(monkeypatch):
+    # 1. Create a mock response object
     mock_response = MagicMock()
     mock_response.status_code = 200
-    mock_response.json.return_value = [
-        {"name": "pytest"},
-        {"name": "pytest-xdist"},
-        {"name": "pytest-cov"},
-    ]
-    mock_get.return_value = mock_response
-
-    # 2. Act: Call our function.
-    repo_names = get_public_repo_names("pytest-dev")
-
-    # 3. Assert: Verify our function's behavior.
-    # Check that requests.get was called with the correct URL.
-    mock_get.assert_called_once_with("https://api.github.com/users/pytest-dev/repos", timeout=5)
-
-    # Check that our function correctly processed the mock JSON.
-    assert repo_names == ["pytest", "pytest-xdist", "pytest-cov"]
-
-@patch('src.github_client.requests.get')
-def test_get_public_repo_names_http_error(mock_get):
-    """Test the case where the API returns an error status code."""
-    # 1. Arrange: Configure the mock to simulate an HTTP error.
-    mock_response = MagicMock()
-    # The raise_for_status method should raise an error.
-    mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError("404 Not Found")
-    mock_get.return_value = mock_response
-
-    # 2. Act: Call our function.
-    repo_names = get_public_repo_names("nonexistent-user")
-
-    # 3. Assert: Verify our function handles the error gracefully.
-    mock_get.assert_called_once_with("https://api.github.com/users/nonexistent-user/repos", timeout=5)
-    assert repo_names == []
-
-def test_get_public_repo_names_invalid_input():
-    """Test the input validation logic without any mocking."""
-    with pytest.raises(ValueError, match="Username must be a non-empty string"):
-        get_public_repo_names("")
+    # The .json() method should return a dictionary
+    mock_response.json.return_value = {"transaction_id": "txn_mock_success"}
+    
+    # 2. Create a mock for the `requests.post` function
+    mock_post = MagicMock(return_value=mock_response)
+    
+    # 3. Patch `requests.post` where it is used
+    monkeypatch.setattr("project.services_v5.requests.post", mock_post)
+    
+    # 4. Run the test
+    gateway = PaymentGatewayV5()
+    transaction_id = gateway.charge(amount=10000, token="VALID_TOKEN")
+    
+    # 5. Assert the results
+    assert transaction_id == "txn_mock_success"
+    
+    # 6. (Spy) Assert that requests.post was called correctly
+    mock_post.assert_called_once_with(
+        "https://api.paymentprovider.com/charge",
+        json={"amount": 10000, "token": "VALID_TOKEN"}
+    )
+    # We can also check that we raised an error for bad status codes
+    mock_response.raise_for_status.assert_called_once()
 ```
 
-### Analysis of the Good Tests
+This test is comprehensive:
+-   It **stubs** the return value of `requests.post` to control the flow of our `charge` method.
+-   The stub returns a mock response object, which is itself configured to simulate the real `requests` response API (e.g., having a `.json()` method).
+-   It **spies** on the call to `requests.post` to ensure our code is sending the correct data to the payment provider's API.
+-   It also spies on the `raise_for_status` method of the response object to ensure we are performing correct error handling.
 
-1.  **`@patch('src.github_client.requests.get')`**: We patch `requests.get` *where it is used* (`src.github_client`), not where it is defined (`requests`). This is a critical rule of patching.
-2.  **Configuring the Mock Response**: We create a `MagicMock` to act as the `response` object. We then configure its attributes and methods (`.status_code`, `.json()`, `.raise_for_status()`) to match what our code expects from a real `requests.Response` object.
-3.  **Testing Different Scenarios**: We can now easily test various scenarios without relying on the real GitHub API. We can simulate success, HTTP errors, network timeouts (`side_effect=requests.exceptions.Timeout`), and more.
-4.  **Fast and Reliable**: These tests run in milliseconds and will produce the same result every single time, regardless of network conditions.
+Running the test confirms it works perfectly, and quickly.
 
-This pattern is applicable to any external library. Identify the boundary between your code and the library, and place your mock at that boundary.
+```bash
+$ pytest -v tests/test_services_v5_fixed.py
+=========================== test session starts ============================
+...
+collected 1 item
+
+tests/test_services_v5_fixed.py::test_charge_success_with_mock_requests PASSED [100%]
+
+============================= 1 passed in 0.02s =============================
+```
 
 ## Avoiding Over-Mocking
 
-## Avoiding Over-Mocking
+## The Dangers of Over-Mocking
 
-Mocking is a powerful tool, but like any tool, it can be misused. **Over-mocking** is a common pitfall where tests become so tightly coupled to the implementation details of the code that they become brittle and difficult to maintain. An over-mocked test verifies *how* the code works, not *what* it achieves.
+We've seen how powerful mocking is. It lets us isolate our code, run tests quickly, and simulate any scenario. However, with great power comes great responsibility. It is very easy to write tests that are so heavily mocked that they become useless. This is called **over-mocking**.
 
-A good unit test should be a test of **behavior**, not implementation. It should validate the public contract of a function or class: given these inputs, I expect these outputs or side effects. It shouldn't care about the internal functions that were called to produce that result.
+Over-mocking occurs when your tests are too tightly coupled to the *implementation details* of your code, rather than its *observable behavior*.
 
-### The Smell of Over-Mocking
+### Symptoms of Over-Mocking
 
-You might be over-mocking if your tests:
--   Break frequently when you refactor the internal implementation of a function, even though its external behavior hasn't changed.
--   Involve mocking multiple functions from your own application code within a single test.
--   Require complex setup with many `patch` decorators or context managers.
--   Test the "chain of command" (function A calls B, which calls C) rather than the final outcome.
+1.  **Brittle Tests**: You refactor a function's internal logic without changing its inputs or outputs, and your tests break. For example, if we switched `PaymentGatewayV5` from `requests` to `httpx`, our last test would break, even though the `charge` method's behavior is identical from the outside.
+2.  **Complex Test Setup**: Your test requires many lines of mock configuration, preparing return values and side effects for a chain of multiple mocked objects.
+3.  **Testing the Mock Itself**: Your assertions are all about how the mock was called (`assert_called_with`, `assert_not_called`), with very few assertions about the actual return value or state change of your system.
+4.  **False Confidence**: The tests pass, but the code fails in production because the mocks didn't accurately represent the behavior of the real dependencies.
 
-### An Example of Over-Mocking
+Our test for `PaymentGatewayV5.charge` is a good example of a test that borders on over-mocking. It knows that the implementation uses `requests.post` and that it calls `response.raise_for_status()`. This is very white-box.
 
-Let's consider a system that processes a new user registration.
+### Alternative Strategy: Dependency Injection
 
-```python
-# src/registration.py
+A powerful technique to reduce the need for `monkeypatch` and create cleaner tests is **Dependency Injection (DI)**. Instead of a function or class creating its own dependencies, we "inject" them as arguments.
 
-def validate_email(email):
-    """Validates email format."""
-    return "@" in email and "." in email
+Let's refactor `process_order` to use DI.
 
-def create_user_record(username, email):
-    """Creates a user record dictionary."""
-    return {"username": username, "email": email, "status": "pending"}
-
-def send_welcome_email(email):
-    """Sends a welcome email (external service)."""
-    print(f"Sending welcome email to {email}")
-    # Imagine an external API call here
-    return True
-
-def register_user(username, email):
-    """Main registration function."""
-    if not validate_email(email):
-        raise ValueError("Invalid email format")
-
-    user_record = create_user_record(username, email)
-    # In a real app, we'd save this record to a database.
-    print(f"User record created: {user_record}")
-
-    send_welcome_email(email)
-
-    return user_record
-```
-
-Now, here is an **over-mocked test** for `register_user`.
+**Before: Dependency is created internally**
 
 ```python
-# tests/test_registration_bad.py
-from unittest.mock import patch
-from src.registration import register_user
+# project/services.py (original version)
 
-# THIS IS A BAD, BRITTLE TEST
-@patch('src.registration.send_welcome_email')
-@patch('src.registration.create_user_record')
-@patch('src.registration.validate_email')
-def test_register_user_over_mocked(mock_validate, mock_create, mock_send):
-    # Arrange: Mock every internal function call
-    mock_validate.return_value = True
-    mock_create.return_value = {"username": "testuser", "email": "test@example.com"}
-
-    # Act
-    register_user("testuser", "test@example.com")
-
-    # Assert: Verify that every single internal function was called as expected
-    mock_validate.assert_called_once_with("test@example.com")
-    mock_create.assert_called_once_with("testuser", "test@example.com")
-    mock_send.assert_called_once_with("test@example.com")
+def process_order(order: Order, payment_token: str) -> str:
+    # Dependency is created here, tightly coupling this function
+    # to the concrete PaymentGateway class.
+    gateway = PaymentGateway()
+    transaction_id = gateway.charge(amount=order.total, token=payment_token)
+    return transaction_id
 ```
 
-**Why is this test bad?**
-
-Imagine we refactor `register_user` to combine `validate_email` and `create_user_record` into a single helper function. The external behavior of `register_user` is identical, but the test above would break because `validate_email` and `create_user_record` are no longer called directly. The test is coupled to the implementation, not the behavior.
-
-### A Better Approach: Mocking at the Boundaries
-
-A better test mocks only the true external dependencies (the "boundaries" of your system) and tests the actual outcome. In our example, the only external dependency is `send_welcome_email`. The other functions are just implementation details of our own application.
+**After: Dependency is injected**
 
 ```python
-# tests/test_registration_good.py
-import pytest
-from unittest.mock import patch
-from src.registration import register_user
+# project/services_di.py
+from typing import Protocol
 
-# THIS IS A GOOD, RESILIENT TEST
-@patch('src.registration.send_welcome_email')
-def test_register_user_boundary_mock(mock_send_email):
-    # Arrange: We only mock the external dependency.
-    username = "testuser"
-    email = "test@example.com"
+# Define an interface (a "Protocol") for our dependency
+class Payable(Protocol):
+    def charge(self, amount: int, token: str) -> str:
+        ...
 
-    # Act: Call the function and let its internal logic run.
-    result = register_user(username, email)
+# The Order class is the same
+class Order:
+    def __init__(self, items: list, shipping_address: str):
+        self.items = items
+    @property
+    def total(self) -> int: return sum(item['price'] for item in self.items)
 
-    # Assert: Verify the public contract and the external interaction.
-    # 1. Did it return the correct data structure?
-    assert result == {"username": username, "email": email, "status": "pending"}
-
-    # 2. Did it interact with the external service correctly?
-    mock_send_email.assert_called_once_with(email)
-
-def test_register_user_invalid_email():
-    # Test the validation behavior directly. No mocking needed.
-    with pytest.raises(ValueError, match="Invalid email format"):
-        register_user("testuser", "invalid-email")
+def process_order_di(order: Order, payment_token: str, gateway: Payable) -> str:
+    # Dependency is passed in, decoupling the function.
+    # It only cares that `gateway` has a `charge` method.
+    transaction_id = gateway.charge(amount=order.total, token=payment_token)
+    return transaction_id
 ```
 
-This improved test is far more robust. We can now refactor the internals of `register_user` as much as we want. As long as it still returns the correct user record and calls the email service, the test will pass. We are testing the *what*, not the *how*.
+This new `process_order_di` function is much easier to test. We don't need `monkeypatch` at all. We can simply pass in a fake object that conforms to the `Payable` interface.
 
-### Guidelines for Healthy Mocking
+### The Test Becomes Simpler and Cleaner
 
-1.  **Mock External Systems**: Your primary targets for mocking should be systems outside your control: databases, external APIs, the file system, the clock (`datetime.now`), etc.
-2.  **Don't Mock Your Own Code (Usually)**: Avoid mocking functions and classes that are part of the same application you're testing. If a helper function is complex, it should have its own dedicated unit tests. The function that calls it should use the real helper in an integration-style unit test.
-3.  **Test the Public Interface**: Focus your tests on the public methods of your classes. Let the private methods be exercised via the public ones.
-4.  **One Mock Per Test is a Good Goal**: If your test requires patching more than one or two things, it might be a "code smell" indicating that your function is doing too much and should be broken up (Single Responsibility Principle).
+Here's how we would test the dependency-injected version. Notice the absence of `monkeypatch`.
 
-Mocking is about creating seams that let you isolate the unit of code you're testing. Use it to cut ties with the outside world, not to dissect the internal organs of your own application.
+```python
+# tests/test_services_di.py
+from unittest.mock import MagicMock
+from project.services_di import Order, process_order_di
+
+def test_process_order_with_injected_mock():
+    # 1. Create a fake gateway object. It can be a simple MagicMock.
+    mock_gateway = MagicMock()
+    mock_gateway.charge.return_value = "txn_di_fake"
+    
+    # 2. Create the order
+    order_items = [{"name": "Keyboard", "price": 7500}]
+    order = Order(items=order_items)
+    
+    # 3. Call the function, injecting our fake gateway
+    transaction_id = process_order_di(
+        order=order, 
+        payment_token="VALID_TOKEN", 
+        gateway=mock_gateway
+    )
+    
+    # 4. Assert the outcome and the interaction
+    assert transaction_id == "txn_di_fake"
+    mock_gateway.charge.assert_called_once_with(amount=7500, token="VALID_TOKEN")
+```
+
+This test is superior to our original `monkeypatch` test:
+-   **It's more readable**: The test clearly shows that `process_order_di` is being called with a mock object. The dependency is explicit.
+-   **It's more robust**: It tests the contract, not the implementation. `process_order_di` only cares that it receives an object with a `charge` method. It doesn't care how that object is created or where it comes from.
+-   **No "stringly-typed" patching**: We avoid `monkeypatch.setattr("path.to.my.object", ...)`, which can be brittle if you rename or move modules.
+
+### Decision Framework: When to Patch vs. When to Inject
+
+| Scenario | Best Approach | Why? |
+| --- | --- | --- |
+| You are testing your own code that you can refactor. | **Dependency Injection** | Leads to cleaner, more decoupled code and simpler tests. It's a better software design pattern overall. |
+| You are testing code that depends on a third-party library (`requests`, `datetime`). | **Monkeypatch** | You can't change the library's code to accept injected dependencies. Patching is necessary to isolate your code from the library. |
+| You are working with a legacy codebase that is difficult to refactor. | **Monkeypatch** | DI might require extensive changes. Patching allows you to write tests for existing, tightly-coupled code without modifying it first. |
+| The dependency is a simple, global object like `time.time` or `random.random`. | **Monkeypatch** | Injecting these everywhere can clutter function signatures. A targeted patch is often cleaner. |
+
+### The Journey: From Problem to Solution
+
+| Iteration | Failure Mode | Technique Applied | Result |
+| --- | --- | --- | --- |
+| 0 | Slow, unreliable tests making real network calls. | None | Initial integration test. |
+| 1 | Needed to simulate return values and errors. | `MagicMock` as a **Stub** with `return_value` and `side_effect`. | Fast, reliable unit tests for success and failure paths. |
+| 2 | Tests passed even with a critical bug in argument passing. | `MagicMock` as a **Spy** with `assert_called_once_with`. | Tests now verify the *interaction* with the dependency, catching bugs in the calling code. |
+| 3 | Patching a class had no effect on a module-level instance. | Changed patch target from class to instance. | Reinforced the rule: "Patch where the object is used." |
+| 4 | `MagicMock` was too forgiving and hid property-related bugs. | `PropertyMock` and `spec=...` | Created a more faithful test double that correctly mimics the real object's interface. |
+| 5 | Code depended on an external library (`requests`). | Patched the library function within our module's namespace. | Isolated our code from external network dependencies. |
+| 6 | Tests became brittle and coupled to implementation details. | **Dependency Injection** | Decoupled the production code, leading to simpler, more robust tests without `monkeypatch`. |
+
+Mocking is an essential skill, but it's a tool, not a goal. The ultimate goal is to write code that is inherently testable. Often, the struggle to write a test for a piece of code is a sign that the code itself could be improved with better design patterns like Dependency Injection.
